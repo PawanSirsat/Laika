@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
+import { credentialPath } from './agent-session.ts';
 import { shellQuote } from './agents.ts';
 import { asJson, backupOnce, isObject, parseConfig, paths, replaceFile } from './activity-hooks.ts';
 import { REQUEST_TIMEOUT_MS } from './activity-sync.ts';
@@ -18,7 +19,9 @@ import { writePrivately } from './connect.ts';
  * The owner's manual fix on Belka (2026-10-22) is the reference, and this
  * writes exactly it: six non-secret variables in `env`, and a top-level
  * `otelHeadersHelper` naming a 0700 script that reads `LAIKA_TOKEN` from
- * `~/.laika/env` each time it runs and prints the `Authorization` header as
+ * `~/.laika/env` each time it runs — or, with no personal token for the board
+ * there, this machine's own Claude Code credential, the one `laika tool add
+ * claude-code` saved (LAI-1325) — and prints the `Authorization` header as
  * JSON. **The token is never written** — not into settings.json, not into the
  * script.
  *
@@ -49,6 +52,8 @@ export const otelPaths = (home: string) => ({
   helper: join(home, '.laika', 'otel-headers'),
   record: join(home, '.laika', 'otel.json'),
   env: join(home, '.laika', 'env'),
+  /** This machine's own Claude Code credential (`laika tool add claude-code`, LAI-1325). */
+  tool: credentialPath(home, 'claude-code'),
 });
 
 /** The value `otelHeadersHelper` holds: Claude Code runs it as a command. */
@@ -58,29 +63,44 @@ export const helperCommand = (home: string): string => shellQuote(otelPaths(home
  * The script. It reads `~/.laika/env` the way `readEnvFile` does — the last
  * `LAIKA_…=` line, `export` and quotes allowed — and answers only for the
  * board it was written for, so a token for another board is never sent here.
+ *
+ * **With no personal token for that board** it reads this machine's own
+ * Claude Code credential instead (LAI-1325): `~/.laika/agents/claude-code.json`,
+ * which `laika tool add` writes one key to a line, so its `"url"` and
+ * `"token"` lines are read the same way — and only for the same board.
  */
 export function helperScript(home: string, board: string): string {
-  const envFile = otelPaths(home).env;
+  const { env: envFile, tool: toolFile } = otelPaths(home);
   return [
     '#!/bin/sh',
     `# ${HELPER_MARKER}: Claude Code's OpenTelemetry Authorization header for Laika.`,
     '# Written by `laika activity on`, removed by `laika activity off` (LAI-867).',
-    '# The token is read from ~/.laika/env each time this runs; it is never stored here.',
+    '# The token is read from ~/.laika/env each time this runs — or, with none there',
+    "# for this board, from this machine's Claude Code credential (LAI-1325); it is",
+    '# never stored here.',
     `env_file=${shellQuote(envFile)}`,
+    `tool_file=${shellQuote(toolFile)}`,
     `board=${shellQuote(board)}`,
     'value() {',
     `  sed -n "s/^[[:space:]]*\\(export[[:space:]][[:space:]]*\\)\\{0,1\\}$1[[:space:]]*=[[:space:]]*//p" "$env_file" 2>/dev/null |`,
     `    tail -n 1 | sed -e 's/[[:space:]]*$//' -e 's/^"\\(.*\\)"$/\\1/' -e "s/^'\\(.*\\)'$/\\1/"`,
     '}',
+    'tool_value() {',
+    `  sed -n "s/^[[:space:]]*\\"$1\\"[[:space:]]*:[[:space:]]*\\"\\([^\\"]*\\)\\".*$/\\1/p" "$tool_file" 2>/dev/null | head -n 1`,
+    '}',
     "url=$(value LAIKA_URL | sed 's:/*$::')",
     'token=$(value LAIKA_TOKEN)',
+    'if [ "$url" != "$board" ] || [ -z "$token" ]; then',
+    "  url=$(tool_value url | sed 's:/*$::')",
+    '  token=$(tool_value token)',
+    'fi',
     'if [ "$url" != "$board" ]; then',
-    '  echo "laika: $env_file has no LAIKA_URL for $board" >&2',
+    '  echo "laika: no credential for $board in $env_file or $tool_file" >&2',
     '  exit 1',
     'fi',
     'case $token in',
     "  '' | *[!A-Za-z0-9_]*)",
-    '    echo "laika: $env_file has no LAIKA_TOKEN" >&2',
+    '    echo "laika: no token for $board in $env_file or $tool_file" >&2',
     '    exit 1',
     '    ;;',
     'esac',

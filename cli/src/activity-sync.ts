@@ -1,6 +1,8 @@
 import { appendFileSync, existsSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { HARNESSES, type Harness } from './agent-adapters.ts';
+import { readCredential } from './agent-session.ts';
 import { normaliseUrl } from './api.ts';
 import {
   buildSnapshot,
@@ -132,12 +134,83 @@ export function findCredentials(
 }
 
 /**
+ * The tools whose own credential activity may send with, in the order it is
+ * looked for (LAI-1325): Claude Code first — activity's hooks and telemetry
+ * are Claude Code's — then every other tool by name.
+ */
+export const MACHINE_CREDENTIAL_ORDER: readonly Harness[] = [
+  'claude-code',
+  ...HARNESSES.filter((harness) => harness !== 'claude-code').sort(),
+];
+
+/**
+ * **This machine's own connection** (LAI-1325): the credential `laika tool add`
+ * saved for one of its tools, `~/.laika/agents/<tool>.json`, for `board` when
+ * one is named. A machine set up the current way — Add device, `laika device
+ * pair`, `laika tool add` — has no personal token anywhere, and these are what
+ * it has.
+ *
+ * Each is a registered agent's token, acting as the person who paired the
+ * machine, and the board grants an agent's token exactly the collector's own
+ * actions — reading the switch, sending a report, the time settings and drafts
+ * (`AGENT_TOKEN_ORG_ACTIONS`, SPEC §6.2) — and refuses it every other org-wide
+ * one, consent included. So nothing here widens what a token may do.
+ *
+ * The file only, never `LAIKA_AGENT_TOKEN`: that is whichever tool happens to
+ * be running, and a hook-launched sync must not depend on it.
+ */
+export function machineCredentials(
+  home: string,
+  board?: string,
+): (Credentials & { readonly harness: Harness }) | undefined {
+  for (const harness of MACHINE_CREDENTIAL_ORDER) {
+    const saved = readCredential(home, harness, {});
+    if (saved === undefined || saved.token.trim() === '') continue;
+    const url = normaliseUrl(saved.url);
+    if (board !== undefined && url !== board) continue;
+    return { url, token: saved.token.trim(), harness };
+  }
+  return undefined;
+}
+
+/** Which credential activity sends with: the person's own, or one of this machine's tools. */
+export type CredentialVia = 'personal' | Harness;
+
+/**
+ * The credential `laika activity on` and `otel` connect with (LAI-1325): the
+ * person's own token where there is one — {@link findCredentials}' order, as
+ * before — else {@link machineCredentials}. Activity's alone: `laika time
+ * push` and others keep {@link findCredentials}, because the board refuses an
+ * agent's token their routes.
+ */
+export function activityCredentials(
+  home: string,
+  env: Readonly<Record<string, string | undefined>>,
+): (Credentials & { readonly via: CredentialVia }) | undefined {
+  const personal = findCredentials(home, env);
+  if (personal !== undefined) return { ...personal, via: 'personal' };
+  const machine = machineCredentials(home);
+  return machine === undefined
+    ? undefined
+    : { url: machine.url, token: machine.token, via: machine.harness };
+}
+
+/** What `on` and `otel` say when this machine has no way to reach a board (LAI-1325). */
+export const NOT_CONNECTED = [
+  'This machine is not connected to a board: no personal token, and no tool added here.',
+  'Pair it the way the board’s Add device shows (`laika device pair`), then add a tool',
+  '(`laika tool add claude-code`) — or put a personal token in ~/.laika/env.',
+] as const;
+
+/**
  * The token for the board activity was turned on for, and for no other.
  *
  * `~/.laika/env` first — the file `install.sh` and `laika connect` write, and
  * the one a hook-launched sync can always read — then `laika init`'s
  * `~/.claude/settings.json`, then the environment; from each, only when its
- * `LAIKA_URL` is that board.
+ * `LAIKA_URL` is that board. **Then this machine's own connection** for that
+ * board ({@link machineCredentials}, LAI-1325), so a machine with no personal
+ * token still sends.
  */
 export function credentialsFor(
   home: string,
@@ -162,7 +235,8 @@ export function credentialsFor(
       return { url: board, token };
     }
   }
-  return undefined;
+  const machine = machineCredentials(home, board);
+  return machine === undefined ? undefined : { url: board, token: machine.token };
 }
 
 /**
@@ -651,7 +725,9 @@ async function syncLocked(
     }
     const creds = credentialsFor(ctx.home, ctx.env, board);
     if (creds === undefined) {
-      return fail(`no token for ${board} in ~/.laika/env — run laika connect`);
+      return fail(
+        `no credential for ${board} on this machine — no personal token in ~/.laika/env, and no tool added with laika tool add`,
+      );
     }
 
     // --- the switch and the scope, every time -----------------------------------

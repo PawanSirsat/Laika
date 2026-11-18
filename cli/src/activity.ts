@@ -46,9 +46,10 @@ import {
   writeState,
 } from './activity-store.ts';
 import {
+  activityCredentials,
   credentialsFor,
-  findCredentials,
   getSharing,
+  NOT_CONNECTED,
   currentSharing,
   previewSnapshot,
   putActivity,
@@ -284,17 +285,21 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
     forced.push(agent);
   }
 
-  const creds = findCredentials(io.home, io.env);
+  // The person's own token, else this machine's own connection (LAI-1325).
+  const creds = activityCredentials(io.home, io.env);
   if (creds === undefined) {
-    io.err('This machine is not connected to a board (no LAIKA_URL / LAIKA_TOKEN).');
-    io.err('Run `laika connect <agent>` or `laika init` first.');
+    for (const line of NOT_CONNECTED) io.err(line);
     return 1;
   }
 
   const answer = await getSharing(creds, io.nowMs());
   if (!answer.ok) {
     if (answer.status === 401) {
-      io.err(`${creds.url} refused the token. Run \`laika init\` to mint a new one.`);
+      io.err(
+        creds.via === 'personal'
+          ? `${creds.url} refused the token. Run \`laika init\` to mint a new one.`
+          : `${creds.url} refused this machine's ${creds.via} credential. Add the tool again from the board (\`laika tool add ${creds.via}\`).`,
+      );
     } else if (answer.status === 404) {
       io.err(`${creds.url} does not offer local activity collection yet — it needs a newer Laika.`);
     } else {
@@ -319,6 +324,9 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
   const nowS = Math.floor(io.nowMs() / 1000);
   const paths = activityPaths(io.home);
   startCollecting(paths, sharing, nowS, creds.url);
+  if (creds.via !== 'personal') {
+    io.out(`No personal token here: sending as this machine's ${creds.via} connection.`);
+  }
 
   const settingsExisted = existsSync(otelPaths(io.home).settings);
   const detected = configuredAgents(io.home, io.env);
@@ -411,10 +419,10 @@ export function otelVariables(board: string): string[] {
 
 function otel(io: ActivityIo): number {
   // The board activity was turned on for, else the one this machine is connected to.
-  const board = readState(activityPaths(io.home))?.board ?? findCredentials(io.home, io.env)?.url;
+  const board =
+    readState(activityPaths(io.home))?.board ?? activityCredentials(io.home, io.env)?.url;
   if (board === undefined) {
-    io.err('This machine is not connected to a board (no LAIKA_URL / LAIKA_TOKEN).');
-    io.err('Run `laika connect <agent>` or `laika init` first.');
+    for (const line of NOT_CONNECTED) io.err(line);
     return 1;
   }
   for (const line of otelVariables(board)) io.out(line);
@@ -722,7 +730,9 @@ async function backfill(args: readonly string[], io: ActivityIo): Promise<number
   }
   const creds = credentialsFor(io.home, io.env, state.board);
   if (creds === undefined) {
-    io.err(`No token for ${state.board} in ~/.laika/env — run laika connect.`);
+    io.err(
+      `No credential for ${state.board} on this machine: no personal token in ~/.laika/env, and no tool added with \`laika tool add\`.`,
+    );
     return 1;
   }
   const tokens = await backfillTokens(io, { paths, state, creds, yes });
