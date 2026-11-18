@@ -50,6 +50,7 @@ import { orgRoutes } from './http/routes/orgs.ts';
 import { hrRoutes } from './http/routes/hr.ts';
 import { emailRoutes } from './http/routes/email.ts';
 import { orgTeamsRoutes, projectTeamsRoutes } from './http/routes/teams.ts';
+import { calendarRoutes } from './http/routes/calendar.ts';
 import { githubWebhookRoutes } from './http/routes/webhooks.ts';
 import { checkpointRoutes, taskCheckpointRoutes } from './http/routes/checkpoints.ts';
 import {
@@ -107,6 +108,7 @@ import { setTokenAlertLogger } from './services/token-budgets.ts';
 import { setTokenUsageLogger } from './services/token-usage.ts';
 import { type HrSyncDeps } from './services/hr-sync.ts';
 import { type TeamsPostingDeps } from './services/teams-posting.ts';
+import { type CalendarSyncDeps } from './services/calendar-sync.ts';
 import { type AttachmentsDeps } from './services/attachments.ts';
 import { type MailTransport, noTransport } from './services/email-transport.ts';
 
@@ -223,6 +225,12 @@ export interface CreateAppOptions {
    * `ENOTRANSPORT` instead.
    */
   emailTransport?: MailTransport;
+  /**
+   * The Outlook calendar sync's `fetch`, clock and waits (D-157, LAI-1316).
+   * Injected by the tests so **none of them calls Microsoft**; `index.ts`
+   * passes nothing and the real `fetch` is used.
+   */
+  calendarSync?: CalendarSyncDeps;
 }
 
 /**
@@ -491,6 +499,16 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     };
     app.route(`${API_BASE}/org`, orgTeamsRoutes(teams));
     app.route(`${API_BASE}/projects`, projectTeamsRoutes(teams));
+    // The Outlook calendar connection (D-157, LAI-1316): `/calendar*`, a path
+    // `orgRoutes` does not have.
+    app.route(
+      `${API_BASE}/org`,
+      calendarRoutes({
+        db,
+        serverSecret: options.serverSecret ?? '',
+        calendarSync: options.calendarSync,
+      }),
+    );
 
     // **Outside `/api/v1`, and that is §10's first sentence** — *"Mounted at
     // `/webhooks/*`, outside `/api/v1`, no user session."* It still passes

@@ -407,6 +407,10 @@ void describe('an entry from Solidtime is read-only here (LAI-788 review round 1
     assert.equal(canChange(entry({ source: 'import' })), false);
   });
 
+  void test('a meeting the Outlook sync logged is the person’s to change (D-157)', () => {
+    assert.equal(canChange(entry({ source: 'calendar' })), true);
+  });
+
   void test('the inspector offers Delete, a card and −/+ only where it may, and says where to change an import', async () => {
     // Since LAI-831 a confirmed entry is changed in the inspector, not its row.
     const src = code(

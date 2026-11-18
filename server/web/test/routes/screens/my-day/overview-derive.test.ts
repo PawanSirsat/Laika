@@ -84,6 +84,19 @@ void describe('the open day, in a summary’s shape', () => {
     ]);
   });
 
+  void test('an Outlook meeting is meeting time and not typed time (D-157)', () => {
+    const day = summaryOfDay({
+      day: '2026-10-22',
+      entries: [
+        entry({ id: 'o', minutes: 45, kind: 'meeting', source: 'calendar' }),
+        entry({ id: 'm', minutes: 15, source: 'manual' }),
+      ],
+      drafts: [],
+    });
+    assert.equal(day.meeting_minutes, 45);
+    assert.equal(day.manual_minutes, 15);
+  });
+
   void test('by project, largest first, null for time on none', () => {
     assert.deepEqual(
       DAY.by_project.map((p) => [p.project?.slug ?? null, p.confirmed_minutes, p.drafted_minutes]),

@@ -130,7 +130,13 @@ export const ENTRY_KINDS = [
 ] as const;
 export type EntryKind = (typeof ENTRY_KINDS)[number];
 
-export type EntrySource = 'draft' | 'manual' | 'import';
+/**
+ * Where a confirmed entry came from: a draft the person confirmed, one they
+ * typed, a Solidtime import (changed there, LAI-788), or a meeting the
+ * Outlook calendar sync logged for them (D-157, LAI-1316) — theirs to change
+ * or delete like one they typed, and once they do, the sync leaves it alone.
+ */
+export type EntrySource = 'draft' | 'manual' | 'import' | 'calendar';
 
 /**
  * A confirmed entry: the time the organisation sees. Drafts are read only by

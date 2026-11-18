@@ -176,7 +176,9 @@ type History =
  *   General; and **the counts it was drafted from — never what was typed, a
  *   file name or a commit message**, which the server never has.
  * - **Confirmed**: its task, kind and words, each change a revision listed
- *   under HISTORY; *Delete entry*. One from Solidtime is changed there.
+ *   under HISTORY; *Delete entry*. One from Solidtime is changed there; one
+ *   the Outlook sync logged (D-157) is changed here, and the first change
+ *   keeps later syncs off it.
  * - **A gap** fills with Add time, or becomes a break.
  * - **A break** turns back into work time, or goes.
  */
@@ -660,6 +662,9 @@ export function Inspector({
     if (entry !== undefined) {
       const block = placed(entry.id);
       const imported = entry.source === 'import';
+      // A meeting the Outlook sync logged (D-157, LAI-1316): the person's to
+      // change like one they typed, and a change keeps later syncs off it.
+      const outlook = entry.source === 'calendar';
       // An owner or admin on somebody else's day may change an import too
       // (D-143): it stays in Laika, never pushed back. Your own stays Solidtime's.
       const changeable = canEdit && (readOnly || canChange(entry));
@@ -695,13 +700,23 @@ export function Inspector({
               ? changeable
                 ? `${subject}’s confirmed time. Changes you make are kept with your name and shown to them.`
                 : 'Read-only. You can see this because you may read everyone’s day.'
-              : undefined;
+              : outlook
+                ? 'Logged from your Outlook calendar. Change or delete it here — once you do, later syncs leave it alone.'
+                : undefined;
       return (
         <EditorFrame
           kind="entry"
           forId={entry.id}
           label="The selected confirmed entry"
-          pill={imported ? 'Imported' : untimedEntry ? 'No set time' : 'Confirmed'}
+          pill={
+            imported
+              ? 'Imported'
+              : outlook
+                ? 'From Outlook'
+                : untimedEntry
+                  ? 'No set time'
+                  : 'Confirmed'
+          }
           pillClass={imported ? 'inspector-kind-imported' : 'inspector-kind-confirmed'}
           icon={imported ? ICONS.imported : ICONS.confirmed}
           saved={saved && changeable}
@@ -716,9 +731,11 @@ export function Inspector({
                 : 'Imported from Solidtime · read-only here'
               : readOnly
                 ? changeable
-                  ? `${subject}’s entry · confirmed`
-                  : `Read-only · ${subject}’s entry`
-                : 'Confirmed · owners and admins can see it'
+                  ? `${subject}’s entry · ${outlook ? 'from Outlook' : 'confirmed'}`
+                  : `Read-only · ${subject}’s entry${outlook ? ' · from Outlook' : ''}`
+                : outlook
+                  ? 'From your Outlook calendar · owners and admins can see it'
+                  : 'Confirmed · owners and admins can see it'
           }${entry.note !== null ? ` · “${entry.note}”` : ''}`}
           banner={banner}
           bannerTone={stopped === entry.id ? 'accent' : 'blue'}

@@ -27,6 +27,10 @@ export function revisionBy(
  * What a revision did, in the design's words — and, when it was not the
  * person's own (D-143), who did it: *Changed by Pawan Sirsat*. `personId` is
  * whose entry it is.
+ *
+ * A meeting the Outlook sync logged (D-157, LAI-1316) is written in the
+ * person's own name, so its first revision says where it came from rather
+ * than *Added by hand*; a later sync's update reads as an edit, which it is.
  */
 export function revisionWords(
   r: TimeRevision,
@@ -39,11 +43,13 @@ export function revisionWords(
   if (r.change === 'created' || first) {
     return source === 'import'
       ? 'Imported from Solidtime'
-      : by !== undefined
-        ? `Added by ${by} · ${duration(r.minutes)}`
-        : source === 'manual'
-          ? `Added by hand · ${duration(r.minutes)}`
-          : `Confirmed · ${duration(r.minutes)}`;
+      : source === 'calendar' && by === undefined
+        ? `From Outlook · ${duration(r.minutes)}`
+        : by !== undefined
+          ? `Added by ${by} · ${duration(r.minutes)}`
+          : source === 'manual'
+            ? `Added by hand · ${duration(r.minutes)}`
+            : `Confirmed · ${duration(r.minutes)}`;
   }
   return by === undefined
     ? `Edited · ${duration(r.minutes)}`

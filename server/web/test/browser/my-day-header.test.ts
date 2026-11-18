@@ -393,7 +393,12 @@ void describe('the header (LAI-502)', () => {
 
         await h.page.setViewportSize({ width: 390, height: 844 });
         await until(async () => h.page.locator('[data-day-nav]').isVisible());
-        // The phone's own day row (LAI-518): a letter a day, the desktop's week gone.
+        // The phone's own day row (LAI-518): a letter a day, the desktop's week
+        // gone. Waited for before it is read: the row can draw a frame after
+        // the nav, and on a loaded CI shard the dark pass read it in between
+        // (LAI-1316's PR, twice). `until` returns quietly when time runs out,
+        // so the assert after it is what fails when the row never comes.
+        await until(async () => h.page.locator('.myday-phone-letter').first().isVisible());
         assert.equal(await h.page.locator('.myday-phone-letter').first().isVisible(), true);
         assert.equal(await h.page.locator('.myday-week-weekday').first().isVisible(), false);
         assert.equal(await h.page.locator('[data-add-time] .myday-head-text').isVisible(), false);
