@@ -297,7 +297,7 @@ void describe('the title rule: each screen is named once, by the page (LAI-1227)
     }
   });
 
-  void test('a space: its name is the page’s, under Spaces /, and the top bar has neither', async () => {
+  void test('a space: its name starts the page, with no breadcrumb, and the top bar has neither', async () => {
     const h = await open('/board?project=laika-core', stub());
     try {
       await ready(h.page);
@@ -305,17 +305,17 @@ void describe('the title rule: each screen is named once, by the page (LAI-1227)
       await until(async () => (await name.innerText()).trim() === 'Laika Core', 20_000);
       assert.equal(await h.page.locator('.space-name').count(), 1);
       assert.equal(await h.page.locator(`${HEADER} .space-name`).count(), 0);
-      const crumb = h.page.locator('#main [data-space-crumbs] a');
-      assert.equal((await crumb.innerText()).trim(), 'Spaces');
-      assert.equal(await crumb.getAttribute('href'), '/projects');
-      const above = await h.page.evaluate(() => {
-        const c = document.querySelector('[data-space-crumbs]')?.getBoundingClientRect();
-        const n = document.querySelector('.space-name')?.getBoundingClientRect();
-        return c !== undefined && n !== undefined && c.bottom <= n.top;
-      });
-      assert.equal(above, true, 'the breadcrumb is not above the name');
-      await crumb.click();
-      await until(() => pathOf(h.page) === '/projects');
+      // No *Spaces /* above it (LAI-1328, the owner): no breadcrumb in the
+      // page, none in the top bar, and nothing above the name in the space bar.
+      assert.equal(await h.page.locator('#main nav[aria-label="Breadcrumb"]').count(), 0);
+      assert.equal(
+        await h.page.locator('#main .space-bar').getByText('Spaces', { exact: true }).count(),
+        0,
+      );
+      const first = await h.page.evaluate(
+        () => document.querySelector('.space-bar-top')?.firstElementChild?.className ?? '',
+      );
+      assert.equal(first, 'space-bar-row', 'something sits above the space’s name');
     } finally {
       await h.close();
     }
