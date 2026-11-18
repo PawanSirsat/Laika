@@ -131,21 +131,35 @@ outbox kind.
 
 ## Acceptance criteria
 
-- [ ] `POST /webhooks/email`: bearer token, fixed-length hashed compare; `401` on a bad
+- [x] `POST /webhooks/email`: bearer token, fixed-length hashed compare; `401` on a bad
       token; idempotent on `MessageId`; `200` for every item processed or dropped; its own
       rate-limit bucket and 4 MiB body limit
-- [ ] A space address is lazy, matched on its token, rotatable under `project.settings.edit`,
+- [x] A space address is lazy, matched on its token, rotatable under `project.settings.edit`,
       and visible to those who may `task.create`
-- [ ] A mail from an authenticated, allowed member creates a task as that member
+- [x] A mail from an authenticated, allowed member creates a task as that member
       (`created_via: 'webhook'`); a reply in the thread, or one carrying `[KEY-N]`, adds a
       comment
-- [ ] Every drop reason is tested, including a forged From address, own-sender and
+- [x] Every drop reason is tested, including a forged From address, own-sender and
       auto-reply loops; the log carries no mail text
-- [ ] The switch defaults off; turning it on needs a domain and a token; require-authenticated
+- [x] The switch defaults off; turning it on needs a domain and a token; require-authenticated
       defaults on; `org.email.configure` is session only
-- [ ] The *Email to tasks* card and the Space settings address work in both themes, at 1440
+- [x] The *Email to tasks* card and the Space settings address work in both themes, at 1440
       and 390
-- [ ] D-155; SPEC §1.1, §3.4, §4, §6.4, §10.3, §11.6, §13.4; OPERATIONS
+- [x] D-155; SPEC §1.1, §3.4, §4, §6.4, §10.3, §11.6, §13.4; OPERATIONS
 - [ ] (PR B) attachments are fetched from Brevo and PUT to the store as ready rows linked to
       the task or comment; a failure never blocks the task
 - [ ] CI green on each PR
+
+## Progress (2026-11-18)
+
+- **PR A** — branch `LAI-1315-email-to-task`: the webhook, addresses, sender matching, the
+  record, the switch, the card and the space address, D-155, the SPEC and OPERATIONS. Opened
+  for CHIEF's review; criteria 1–7 above are its own.
+- **PR B** — branch `LAI-1315-email-attachments`, cut from PR A at `fdc54dd60` and pushed
+  (`2b62ccca2`): the store's header-signed `PUT`, Brevo's attachment fetch, and the
+  `system.email.attachments` job. Its PR opens once PR A is merged, so that it shows only its
+  own diff.
+- **Outside the plan, and flagged:** `/webhooks/*` resolves no Laika credential
+  (`http/middleware/auth.ts`). Brevo's `Authorization: Bearer` was refused as an invalid Laika
+  token before the route could check it. GitHub and the transcript route send no Authorization
+  header, so nothing changes for them.
