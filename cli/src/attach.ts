@@ -723,19 +723,60 @@ async function upload(
   };
 }
 
-/** Delete what was uploaded, best effort: the board's sweep takes anything left within a day. */
+/** The ids of the files on the task, read twice at most, or `undefined` when neither read answered. */
+async function readBack(
+  io: AttachIo,
+  c: AttachCredential,
+  taskId: string,
+): Promise<Set<string> | undefined> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const listed = await api(
+      io.fetch,
+      c,
+      'GET',
+      `/api/v1/tasks/${encodeURIComponent(taskId)}/attachments`,
+    );
+    if (
+      listed.ok &&
+      listed.status === 200 &&
+      isRecord(listed.body) &&
+      Array.isArray(listed.body.data)
+    ) {
+      return new Set(
+        listed.body.data.flatMap((row) =>
+          isRecord(row) && row.task_id === taskId && typeof row.id === 'string' ? [row.id] : [],
+        ),
+      );
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Delete what was uploaded, each `DELETE` checked. One the board did not
+ * confirm is returned as failed and said loudly; the board's sweep, which
+ * takes an upload no task took within a day, is the backstop.
+ */
+interface CleanUp {
+  /** The uploads the board confirmed deleted (204), or already gone (404). */
+  readonly deleted: string[];
+  /** The ones it did not: said loudly, by id. */
+  readonly failed: string[];
+}
+
 async function cleanUp(
   io: AttachIo,
   c: AttachCredential,
   ids: readonly string[],
-): Promise<string[]> {
-  const left: string[] = [];
+): Promise<CleanUp> {
+  const result: CleanUp = { deleted: [], failed: [] };
   for (const id of ids) {
     const gone = await api(io.fetch, c, 'DELETE', `/api/v1/attachments/${encodeURIComponent(id)}`);
     // 404 is gone too: a file the board already removed, as it does a secret.
-    if (!gone.ok || (gone.status !== 204 && gone.status !== 404)) left.push(id);
+    if (gone.ok && (gone.status === 204 || gone.status === 404)) result.deleted.push(id);
+    else result.failed.push(id);
   }
-  return left;
+  return result;
 }
 
 /** The `**Attached**` block, one captioned link per file, as the board's own tools write it. */
@@ -766,8 +807,9 @@ export async function attach(argv: readonly string[], io: AttachIo = CONSOLE): P
   const args = parsed;
   const fail = (
     lines: readonly string[],
-    left: { readonly uploads: readonly string[]; readonly comment?: string } = { uploads: [] },
+    left: { readonly cleanup?: CleanUp; readonly comment?: string } = {},
   ): number => {
+    const failed = left.cleanup?.failed ?? [];
     // What could not be undone is said loudly, by id: the board's sweep
     // removes an upload no task took within 24 hours, but a person should know.
     const loud = [
@@ -776,10 +818,10 @@ export async function attach(argv: readonly string[], io: AttachIo = CONSOLE): P
         : [
             `COULD NOT REMOVE comment ${left.comment}, which links the files: delete it on the task`,
           ]),
-      ...(left.uploads.length === 0
+      ...(failed.length === 0
         ? []
         : [
-            `COULD NOT DELETE ${String(left.uploads.length)} upload${left.uploads.length === 1 ? '' : 's'} already made (${left.uploads.join(', ')}). ${left.comment === undefined ? 'They are on no task, and' : 'Unlinked ones'} the board's sweep removes them within 24 hours`,
+            `COULD NOT DELETE ${String(failed.length)} upload${failed.length === 1 ? '' : 's'} already made (${failed.join(', ')}). ${left.comment === undefined ? 'They are on no task, and' : 'Unlinked ones'} the board's sweep removes them within 24 hours`,
           ]),
     ];
     if (args.json) {
@@ -788,7 +830,9 @@ export async function attach(argv: readonly string[], io: AttachIo = CONSOLE): P
           ok: false,
           linked: left.comment !== undefined ? 'unknown' : false,
           errors: [...lines, ...loud],
-          ...(left.uploads.length === 0 ? {} : { not_deleted: left.uploads }),
+          ...(left.cleanup === undefined
+            ? {}
+            : { cleaned_up: left.cleanup.deleted, cleanup_failed: failed }),
           ...(left.comment === undefined ? {} : { comment_not_removed: left.comment }),
         }),
       );
@@ -844,7 +888,7 @@ export async function attach(argv: readonly string[], io: AttachIo = CONSOLE): P
   for (const file of files) {
     const result = await upload(io, c, slug, file, created);
     if (typeof result === 'string') {
-      return fail([result], { uploads: await cleanUp(io, c, created) });
+      return fail([result], { cleanup: await cleanUp(io, c, created) });
     }
     done.push(result);
   }
@@ -874,7 +918,7 @@ export async function attach(argv: readonly string[], io: AttachIo = CONSOLE): P
     if (!logged.ok || typeof unlisted?.id !== 'string') {
       return fail(
         [`the board did not log the finding: ${logged.ok ? 'no id in its answer' : logged.why}`],
-        { uploads: await cleanUp(io, c, created) },
+        { cleanup: await cleanUp(io, c, created) },
       );
     }
     if (args.json) {
@@ -915,23 +959,19 @@ export async function attach(argv: readonly string[], io: AttachIo = CONSOLE): P
       [
         `the comment was not posted: ${posted.ok ? refusal(posted.status, posted.body) : posted.why}`,
       ],
-      { uploads: await cleanUp(io, c, created) },
+      { cleanup: await cleanUp(io, c, created) },
     );
   }
-  const listed = await api(
-    io.fetch,
-    c,
-    'GET',
-    `/api/v1/tasks/${encodeURIComponent(task.id)}/attachments`,
-  );
-  const onTask = new Set(
-    listed.ok && isRecord(listed.body) && Array.isArray(listed.body.data)
-      ? listed.body.data.flatMap((row) =>
-          isRecord(row) && row.task_id === task.id && typeof row.id === 'string' ? [row.id] : [],
-        )
-      : [],
-  );
-  const missing = done.filter((d) => !onTask.has(d.id));
+  // Read back: the task's files, asked twice at most. A read that fails is
+  // not a link that failed — the comment was written — so it is reported as
+  // linked but unverified, never undone.
+  const onTask = await readBack(io, c, task.id);
+  if (onTask === undefined) {
+    io.err(
+      `laika attach: warning — the comment was posted, but the task's files could not be read back to confirm; check ${task.key} on the board`,
+    );
+  }
+  const missing = onTask === undefined ? [] : done.filter((d) => !onTask.has(d.id));
   if (missing.length > 0) {
     const removed = await api(
       io.fetch,
@@ -941,7 +981,7 @@ export async function attach(argv: readonly string[], io: AttachIo = CONSOLE): P
     );
     const commentGone = removed.ok && (removed.status === 204 || removed.status === 404);
     return fail([`the comment did not link ${missing.map((d) => d.filename).join(', ')}`], {
-      uploads: await cleanUp(io, c, created),
+      cleanup: await cleanUp(io, c, created),
       ...(commentGone ? {} : { comment: comment.id }),
     });
   }
@@ -953,13 +993,14 @@ export async function attach(argv: readonly string[], io: AttachIo = CONSOLE): P
         task: task.key,
         task_id: task.id,
         comment_id: comment.id,
+        verified: onTask !== undefined,
         via: c.via,
         attachments: done.map(view),
       }),
     );
   } else {
     io.out(
-      `Attached ${String(done.length)} file${done.length === 1 ? '' : 's'} to ${task.key} in one comment (${c.via}):`,
+      `Attached ${String(done.length)} file${done.length === 1 ? '' : 's'} to ${task.key} in one comment (${c.via})${onTask === undefined ? ' — linked, unverified' : ''}:`,
     );
     for (const d of done) io.out(`  ${d.id}  ${d.caption}  ${view(d).url}`);
   }

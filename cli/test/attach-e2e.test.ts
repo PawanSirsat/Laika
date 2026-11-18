@@ -160,8 +160,16 @@ void describe('three files, one comment', () => {
       ['After, light theme [laptop]', 'Accounts created — passwords masked', 'run-report.txt'],
     );
 
-    // The store got the bytes, one PUT each, with the headers the board signed.
+    // The store got the bytes, one PUT each, with the headers the board signed
+    // — and never the board's token: a presigned URL carries its own signature.
     assert.equal(storePuts() - puts, 3);
+    for (const put of store.requests.filter((r) => r.method === 'PUT').slice(puts)) {
+      assert.equal(
+        put.headers.authorization,
+        undefined,
+        `${put.path} was sent an Authorization header`,
+      );
+    }
     for (const a of answer.attachments) {
       const stored = [...store.objects.values()].find(
         (o) => o.headers['content-disposition']?.includes(a.filename) === true,
@@ -258,28 +266,74 @@ void describe('a secret is refused here, before anything is sent', () => {
 });
 
 void describe('all or none', () => {
-  void test('a store that fails the second upload leaves nothing on the task, and the first upload deleted', async () => {
+  void test('a store that fails the second upload leaves nothing on the task, and every upload made deleted', async () => {
     const task = await newTask('Half an upload');
     store.failPut = 2;
+    let ran: Ran;
     try {
-      const ran = await run([task.key, file('one.png', PNG), file('two.png', PNG)]);
-      assert.equal(ran.code, 1);
-      assert.match(ran.err.join('\n'), /two\.png: the file store answered 500/);
-      assert.ok(!ran.err.join('\n').includes('STORE-SECRET-WORDS'), 'the store’s body was shown');
+      ran = await run([task.key, file('one.png', PNG), file('two.png', PNG), '--json']);
     } finally {
       store.failPut = null;
+    }
+    assert.equal(ran.code, 1);
+    assert.match(ran.err.join('\n'), /two\.png: the file store answered 500/);
+    assert.ok(!ran.err.join('\n').includes('STORE-SECRET-WORDS'), 'the store’s body was shown');
+    const answer = JSON.parse(ran.out.join('\n')) as {
+      linked: boolean;
+      cleaned_up: string[];
+      cleanup_failed: string[];
+    };
+    assert.equal(answer.linked, false);
+    assert.deepEqual(answer.cleanup_failed, []);
+    // Both uploads were made — the second asked for, its PUT refused — and the
+    // board answered each one's DELETE with 204, as its own log says.
+    assert.equal(answer.cleaned_up.length, 2);
+    for (const id of answer.cleaned_up) {
+      const deleted = board.requests.filter(
+        (r) => r.method === 'DELETE' && r.path === `/api/v1/attachments/${id}`,
+      );
+      assert.deepEqual(
+        deleted.map((r) => r.status),
+        [204],
+        `the DELETE of ${id} did not succeed once`,
+      );
     }
     const listed = (await asOwner(`/api/v1/tasks/${task.id}/attachments`)).data as unknown[];
     assert.deepEqual(listed, []);
     const comments = (await asOwner(`/api/v1/tasks/${task.id}/comments`)).data as unknown[];
     assert.deepEqual(comments, []);
-    assert.equal(
-      board.requests.filter(
-        (r) => r.method === 'DELETE' && r.path.startsWith('/api/v1/attachments/'),
-      ).length >= 2,
-      true,
-      'the uploads made were not deleted',
+  });
+
+  void test('a read-back that fails twice is linked, unverified — exit 0 with a warning, nothing undone', async () => {
+    const task = await newTask('Read-back down');
+    const path = `/api/v1/tasks/${task.id}/attachments`;
+    let reads = 0;
+    const readsFail: typeof fetch = (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if ((init?.method ?? 'GET') === 'GET' && url.endsWith(path)) {
+        reads += 1;
+        return Promise.resolve(new Response('{}', { status: 503 }));
+      }
+      return fetch(input, init);
+    };
+    const deletes = board.requests.filter((r) => r.method === 'DELETE').length;
+
+    const ran = await run([task.key, file('five.png', PNG), '--json'], readsFail);
+
+    assert.equal(ran.code, 0, ran.err.join('\n'));
+    assert.equal(reads, 2, 'the read-back was not tried twice');
+    const answer = JSON.parse(ran.out.join('\n')) as { ok: boolean; verified: boolean };
+    assert.deepEqual([answer.ok, answer.verified], [true, false]);
+    assert.match(
+      ran.err.join('\n'),
+      /warning — the comment was posted, but the task's files could not be read back/,
     );
+    assert.equal(
+      board.requests.filter((r) => r.method === 'DELETE').length,
+      deletes,
+      'a successful attach was undone',
+    );
+    assert.equal(((await asOwner(path)).data as unknown[]).length, 1);
   });
 
   void test('an upload it cannot delete is named loudly, by id, with the sweep as the backstop', async () => {
@@ -300,13 +354,20 @@ void describe('all or none', () => {
       store.failPut = null;
     }
     assert.equal(ran.code, 1);
-    const answer = JSON.parse(ran.out.join('\n')) as { linked: boolean; not_deleted: string[] };
+    const answer = JSON.parse(ran.out.join('\n')) as {
+      linked: boolean;
+      cleaned_up: string[];
+      cleanup_failed: string[];
+    };
     assert.equal(answer.linked, false);
     // Both uploads were made — the second asked for, its PUT refused — and neither could go.
-    assert.equal(answer.not_deleted.length, 2);
+    assert.equal(answer.cleanup_failed.length, 2);
+    assert.deepEqual(answer.cleaned_up, []);
     const said = ran.err.join('\n');
     assert.ok(
-      said.includes(`COULD NOT DELETE 2 uploads already made (${answer.not_deleted.join(', ')})`),
+      said.includes(
+        `COULD NOT DELETE 2 uploads already made (${answer.cleanup_failed.join(', ')})`,
+      ),
       said,
     );
     assert.match(said, /the board's sweep removes them within 24 hours/);
