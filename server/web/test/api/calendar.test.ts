@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { ApiError, NetworkError } from '../../src/api/errors.ts';
 import {
+  backfillCalendarSource,
   CALENDAR_REFUSAL_WORDS,
   calendarRefusal,
   calendarSyncErrorWords,
@@ -56,6 +57,7 @@ void describe('the calls (§6.4, LAI-1316)', () => {
     });
     await testCalendarSource();
     await syncCalendarSource();
+    await backfillCalendarSource(30);
     await disconnectCalendarSource();
     assert.deepEqual(
       sent.map((s) => [s.method, s.url, s.body]),
@@ -84,6 +86,8 @@ void describe('the calls (§6.4, LAI-1316)', () => {
         ],
         ['POST', '/api/v1/org/calendar/test', undefined],
         ['POST', '/api/v1/org/calendar/sync', undefined],
+        // LAI-1335: the days in the body, and nothing else.
+        ['POST', '/api/v1/org/calendar/backfill', { days: 30 }],
         ['DELETE', '/api/v1/org/calendar', undefined],
       ],
     );
@@ -112,6 +116,8 @@ void describe('a refusal, in words', () => {
       'secret_unreadable',
       'graph_bad_answer',
       'time_off',
+      // LAI-1335's backfill.
+      'days_out_of_range',
     ];
     // Both sides of the list, so a reason added to one and not the other fails here.
     assert.deepEqual(Object.keys(CALENDAR_REFUSAL_WORDS).sort(), [...reasons].sort());
@@ -165,12 +171,14 @@ void describe('a refusal, in words', () => {
 });
 
 void describe('a failed sync, in words', () => {
-  void test('the four codes the sync records, and anything else as sent', () => {
+  void test('the codes the sync records, and anything else as sent', () => {
     const codes: CalendarSyncErrorCode[] = [
       'credentials_rejected',
       'not_granted',
       'unreachable',
       'bad_answer',
+      // LAI-1335 review F5.
+      'stopped_partway',
     ];
     for (const code of codes) {
       assert.notEqual(calendarSyncErrorWords({ code, message: 'x' }), 'x', code);

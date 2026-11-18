@@ -155,10 +155,14 @@ export const INBOUND_EMAIL_PATH = '/webhooks/email';
 /** A space's Teams test post (D-154, LAI-1314): `/projects/:slug/teams/test`. */
 export const TEAMS_TEST_PATH = /^\/api\/v1\/projects\/[^/]+\/teams\/test$/;
 
-/** The calls to Microsoft a person makes (D-157, LAI-1316): test the connection, sync now. */
+/**
+ * The calls to Microsoft a person makes (D-157, LAI-1316): test the
+ * connection, sync now, backfill (LAI-1335).
+ */
 export const CALENDAR_CALL_PATHS: ReadonlySet<string> = new Set([
   '/api/v1/org/calendar/test',
   '/api/v1/org/calendar/sync',
+  '/api/v1/org/calendar/backfill',
 ]);
 
 export function classify(

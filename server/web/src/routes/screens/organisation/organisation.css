@@ -3200,6 +3200,22 @@
   overflow-wrap: anywhere;
 }
 
+/* The backfill (LAI-1335): "The last [30] days [Backfill]" on one line, wrapping
+   whole on a phone. */
+.org-cal-backfill {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin: var(--space-1) 0;
+  min-width: 0;
+}
+
+/* Above `.input`'s full width: three digits and the spinner. */
+.input.org-cal-backfill-days {
+  width: 6rem;
+}
+
 /* A phone: the match and the remove button share a line, then the words and
    the space each take the card's full width. */
 @media (max-width: 640px) {

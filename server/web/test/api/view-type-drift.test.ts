@@ -1226,6 +1226,20 @@ const PAIRS: readonly Pair[] = [
     client: 'PersonDirectory',
     clientFile: 'people-directory.ts',
   },
+  // The backfill's answer (LAI-1335): its counts and the connection after it,
+  // and the backfill the connection says is running (review F1).
+  {
+    server: 'CalendarBackfillView',
+    serverFile: 'services/calendar-source.ts',
+    client: 'CalendarBackfill',
+    clientFile: 'calendar.ts',
+  },
+  {
+    server: 'CalendarBackfillRunningView',
+    serverFile: 'services/calendar-source.ts',
+    client: 'CalendarBackfillRunning',
+    clientFile: 'calendar.ts',
+  },
   {
     server: 'HolidayView',
     serverFile: 'services/holidays.ts',

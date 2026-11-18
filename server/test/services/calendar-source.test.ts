@@ -12,8 +12,10 @@ import {
 import { ApiError } from '../../src/errors.ts';
 import { decryptSecret } from '../../src/secrets.ts';
 import {
+  backfillCalendar,
   disconnectCalendar,
   getCalendarSource,
+  lastRunOf,
   saveCalendarSource,
   syncCalendarNow,
   testCalendarSource,
@@ -108,6 +110,7 @@ describe('reading it', () => {
       last_success_at: null,
       last_error: null,
       last_result: null,
+      backfill_running: null,
     });
   });
 
@@ -366,19 +369,23 @@ describe('sync now and disconnect', () => {
     expect(view.last_result).toMatchObject({ people: 1, no_mailbox: 0 });
   });
 
-  it('serves a result stored before LAI-1331 with no out-of-office count as 0, and a new one as counted', () => {
+  it('serves a result stored before LAI-1331 or LAI-1335 with no out-of-office or older-kept count as 0, and a new one as counted', () => {
     saveCalendarSource(t.db, owner, SECRET, SAVE);
     const old = { people: 2, no_mailbox: 0, mailbox_denied: 0, mailbox_refused: 0, meetings: 3 };
     t.db
       .update(orgCalendarSource)
       .set({ lastResultJson: JSON.stringify(old) })
       .run();
-    expect(getCalendarSource(t.db, owner).last_result).toEqual({ ...old, away: 0 });
+    expect(getCalendarSource(t.db, owner).last_result).toEqual({ ...old, away: 0, kept_older: 0 });
     t.db
       .update(orgCalendarSource)
-      .set({ lastResultJson: JSON.stringify({ ...old, away: 2 }) })
+      .set({ lastResultJson: JSON.stringify({ ...old, away: 2, kept_older: 3 }) })
       .run();
-    expect(getCalendarSource(t.db, owner).last_result).toEqual({ ...old, away: 2 });
+    expect(getCalendarSource(t.db, owner).last_result).toEqual({
+      ...old,
+      away: 2,
+      kept_older: 3,
+    });
   });
 
   it('forgets the credentials and keeps the meetings already logged', async () => {
@@ -411,5 +418,162 @@ describe('sync now and disconnect', () => {
     expect(t.db.select().from(calendarAway).all()).toHaveLength(2);
     disconnectCalendar(t.db, owner);
     expect(t.db.select().from(calendarAway).all()).toEqual([]);
+  });
+});
+
+describe('a backfill (LAI-1335)', () => {
+  it('refuses 0, 91 and a fraction by name, before anything else is asked', async () => {
+    saveCalendarSource(t.db, owner, SECRET, { ...SAVE, enabled: true }, deps());
+    await new Promise((done) => setTimeout(done, 0));
+    await calendarSyncInFlight(t.db);
+    const asked = fake.requests.length;
+    for (const days of [0, 91, 1.5, -7]) {
+      const err = await caught(backfillCalendar(t.db, owner, SECRET, { days }, deps()));
+      expect(err.code, String(days)).toBe('unprocessable');
+      expect(err.details, String(days)).toEqual({
+        field: 'days',
+        reason: 'days_out_of_range',
+        min: 1,
+        max: 90,
+      });
+    }
+    expect(fake.requests).toHaveLength(asked);
+  });
+
+  it('is an owner’s or an admin’s, never a member’s', async () => {
+    saveCalendarSource(t.db, owner, SECRET, { ...SAVE, enabled: true }, deps());
+    const member = load(person('member@example.test', 'member'));
+    const err = await caught(backfillCalendar(t.db, member, SECRET, { days: 7 }, deps()));
+    expect(err.code).toBe('forbidden');
+    const admin = load(person('admin@example.test', 'admin'));
+    expect((await backfillCalendar(t.db, admin, SECRET, { days: 1 }, deps())).days).toBe(1);
+  });
+
+  it('refuses while the switch is off and while Time is off', async () => {
+    expect(
+      (await caught(backfillCalendar(t.db, owner, SECRET, { days: 7 }, deps()))).details,
+    ).toEqual({ reason: 'calendar_off' });
+    saveCalendarSource(t.db, owner, SECRET, SAVE);
+    expect(
+      (await caught(backfillCalendar(t.db, owner, SECRET, { days: 7 }, deps()))).details,
+    ).toEqual({ reason: 'calendar_off' });
+    t.db.update(orgCalendarSource).set({ enabled: 1 }).run();
+    t.db.update(orgTimeSettings).set({ mode: 'off' }).run();
+    const off = await caught(backfillCalendar(t.db, owner, SECRET, { days: 7 }, deps()));
+    expect(off.code).toBe('forbidden');
+    expect(off.details).toMatchObject({ reason: 'time_off' });
+    expect(fake.requests).toEqual([]);
+  });
+
+  it('answers the days, what it did and the connection after it; a failed read has no result', async () => {
+    fake.calendars.set('owner@example.test', [
+      graphEvent(Date.UTC(2026, 10, 2, 9), { responseStatus: { response: 'notResponded' } }),
+    ]);
+    saveCalendarSource(t.db, owner, SECRET, SAVE);
+    t.db.update(orgCalendarSource).set({ enabled: 1 }).run();
+    const view = await backfillCalendar(t.db, owner, SECRET, { days: 30 }, deps());
+    expect(view.days).toBe(30);
+    expect(view.result).toMatchObject({ people: 1, meetings: 1, created: 1 });
+    expect(view.connection).toMatchObject({ last_success_at: NOW, last_error: null });
+    expect(view.connection.last_result).toEqual(view.result);
+    expect(t.db.select().from(timeEntries).all()).toHaveLength(1);
+
+    fake.intercept = (req) =>
+      req.kind === 'calendarView' ? new Response('{}', { status: 500 }) : undefined;
+    const failed = await backfillCalendar(t.db, owner, SECRET, { days: 30 }, deps(fake, NOW + 1));
+    expect(failed.result).toBeNull();
+    expect(failed.connection.last_error).toMatchObject({ code: 'unreachable' });
+  });
+});
+
+describe('a backfill going (LAI-1335 review F1)', () => {
+  it('is served while it runs, a second one joins it, and it is gone when done', async () => {
+    fake.calendars.set('owner@example.test', [graphEvent(Date.UTC(2026, 10, 2, 9))]);
+    saveCalendarSource(t.db, owner, SECRET, SAVE);
+    t.db.update(orgCalendarSource).set({ enabled: 1 }).run();
+    const release = fake.hold();
+    const first = backfillCalendar(t.db, owner, SECRET, { days: 30 }, deps());
+    expect(getCalendarSource(t.db, owner).backfill_running).toEqual({ days: 30, started_at: NOW });
+    const retry = backfillCalendar(t.db, owner, SECRET, { days: 14 }, deps());
+    release();
+    const [a, b] = await Promise.all([first, retry]);
+    expect(b.days).toBe(30);
+    expect(b.result).toEqual(a.result);
+    expect(a.result).toMatchObject({ created: 1 });
+    expect(fake.of('calendarView')).toHaveLength(1);
+    expect(a.connection.backfill_running).toBeNull();
+    expect(getCalendarSource(t.db, owner).backfill_running).toBeNull();
+  });
+});
+
+describe('a backfill stopped part-way, as read (LAI-1335 review F5)', () => {
+  const counts = {
+    people: 2,
+    no_mailbox: 0,
+    mailbox_denied: 0,
+    mailbox_refused: 0,
+    meetings: 9,
+    not_a_meeting: 0,
+    created: 9,
+    updated: 0,
+    removed: 0,
+    unchanged: 0,
+    kept_edits: 0,
+    kept_older: 0,
+    skipped: 0,
+    away: 0,
+  };
+  const row = (over: Partial<Parameters<typeof lastRunOf>[0]> = {}) => ({
+    lastErrorCode: null,
+    lastError: null,
+    lastResultJson: JSON.stringify({ ...counts, stopped_partway: true }),
+    ...over,
+  });
+
+  it('is served as last_error stopped_partway, with the counts so far and never the mark', () => {
+    const { last_error, last_result } = lastRunOf(row());
+    expect(last_error).toEqual({
+      code: 'stopped_partway',
+      message: expect.stringMatching(/stopped part-way/) as unknown,
+    });
+    expect(last_result).toEqual(counts);
+    expect(last_result).not.toHaveProperty('stopped_partway');
+  });
+
+  it('gives way to a hard failure recorded since, and is gone once a run stores its counts unmarked', () => {
+    expect(
+      lastRunOf(row({ lastErrorCode: 'unreachable', lastError: 'Microsoft could not be reached.' }))
+        .last_error,
+    ).toEqual({ code: 'unreachable', message: 'Microsoft could not be reached.' });
+    expect(lastRunOf(row({ lastResultJson: JSON.stringify(counts) })).last_error).toBeNull();
+    // Only `true` marks it.
+    expect(
+      lastRunOf(row({ lastResultJson: JSON.stringify({ ...counts, stopped_partway: 'yes' }) }))
+        .last_error,
+    ).toBeNull();
+    expect(lastRunOf(row({ lastResultJson: null }))).toEqual({
+      last_error: null,
+      last_result: null,
+    });
+  });
+
+  it('is what GET answers after a backfill the switch stopped, and the backfill answers its counts', async () => {
+    fake.calendars.set('owner@example.test', [graphEvent(Date.UTC(2026, 10, 2, 9))]);
+    saveCalendarSource(t.db, owner, SECRET, SAVE);
+    t.db.update(orgCalendarSource).set({ enabled: 1 }).run();
+    // As the sync leaves the row when it stops (calendar-sync.test.ts proves it does).
+    t.db
+      .update(orgCalendarSource)
+      .set({
+        lastAttemptAt: NOW,
+        lastResultJson: JSON.stringify({ ...counts, stopped_partway: true }),
+      })
+      .run();
+    const view = getCalendarSource(t.db, owner);
+    expect(view.last_error?.code).toBe('stopped_partway');
+    expect(view.last_result).toEqual(counts);
+    // A run since clears it.
+    await backfillCalendar(t.db, owner, SECRET, { days: 30 }, deps());
+    expect(getCalendarSource(t.db, owner).last_error).toBeNull();
   });
 });

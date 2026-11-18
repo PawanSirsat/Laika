@@ -117,9 +117,9 @@ export const LIMITS = {
    */
   inboundEmailRefused: { perMinute: 30, burst: 30 },
   /**
-   * Testing the Outlook calendar connection and syncing it now (D-157,
-   * LAI-1316): each calls Microsoft, so 6 a minute per person on its own
-   * bucket, as the HR system's.
+   * Testing the Outlook calendar connection, syncing it now (D-157,
+   * LAI-1316) and backfilling it (LAI-1335): each calls Microsoft, so 6 a
+   * minute per person on its own bucket, as the HR system's.
    */
   calendar: { perMinute: 6 },
 } as const satisfies Record<string, LimitPolicy>;

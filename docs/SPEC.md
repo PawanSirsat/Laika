@@ -448,8 +448,9 @@ slug's `404`. The posting job acts as §3.4's `system.teams.post`.
 **"Connect the organisation's Outlook calendar" is `org.calendar.configure`**
 (D-157, LAI-1316), behind §6.4's `/org/calendar` routes: save the Entra app's
 tenant, client id and secret, the rules that send a meeting to a space and the
-switch, test whether `Calendars.Read` has been granted, sync now, disconnect.
-Session only, because the secret reads every member's calendar. **The meetings
+switch, test whether `Calendars.Read` has been granted, sync now, backfill the
+last 1 to 90 days (LAI-1335), disconnect. Session only, because the secret
+reads every member's calendar. **The meetings
 it logs are each member's own time** (§4.48), read and changed under
 `time_entries.*_own` like an entry they typed.
 
@@ -815,7 +816,7 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.email.notify` | §11.6: every 30 seconds, assignment and @mention mail queued and daily digests collected and sent, read from `activity` and `member_notices` (§4.97 – §4.100, D-153, LAI-1313) |
 | `system.teams.post` | §11.6: every minute, each space's Teams stand-ups, nightly digest and instant notices, and the record of posts kept 90 days (§4.94 – §4.96, D-154, LAI-1314) |
 | `system.email.receive` | §10.3: an inbound mail's space address and sender resolved — the reads made before anyone is known. **Everything it writes is the matched sender's own `can()`** (§4.103 – §4.106, D-155, LAI-1315) |
-| `system.calendar.sync` | §11.6: members' Outlook meetings — invitations accepted, Teams meetings organised — logged as their time, and their out-of-office spans kept as away, never time, every 15 minutes while the switch is on (§4.101, §4.102, §4.107, D-157, LAI-1316, LAI-1331) |
+| `system.calendar.sync` | §11.6: members' Outlook meetings — invitations not declined (D-157 item 3 amended, LAI-1335), Teams meetings organised — logged as their time, and their out-of-office spans kept as away, never time, every 15 minutes while the switch is on (§4.101, §4.102, §4.107, D-157, LAI-1316, LAI-1331) |
 | `system.email.attachments` | §11.6: every 30 seconds, an inbound mail's queued attachments fetched from Brevo and stored — each stored as the mail's sender, under their own `attachment.create` (§4.106, D-155 item 6, LAI-1315) |
 | `system.people.sync` | §11.6: every hour, each member's photo, job title, department and manager read from Microsoft and kept (§4.108), and — with *Leavers* on — a person Microsoft says has left deactivated behind its guards, as `user.deactivated` with no human actor (§4.109, D-161, LAI-1330) |
 | `system.directory.sync` | §11.6: every enabled Member of the Microsoft directory added as a `member`, every 15 minutes and once at boot, while `LAIKA_MICROSOFT_DIRECTORY_SYNC` is on; *Sync now* runs the same code after asking the person `org.settings.edit` (D-158, LAI-1239, LAI-1317) |
@@ -2414,7 +2415,7 @@ row.
 | `tz` | IANA zone, stored per entry; the board stays UTC |
 | `started_at`, `ended_at` | nullable, together, end after start (CHECK) — a confirmed block keeps its span |
 | `minutes` | 1–1440 (CHECK); a person's live entries on one day sum to at most 1440 (`422 day_full`) |
-| `source` | `draft` \| `manual` \| `import` \| `calendar` — an `import` came from Solidtime and is read-only here: changed in Solidtime, and taken by the next pull (LAI-788); a `calendar` entry is a meeting the Outlook sync logged (§4.102, D-157), `kind` `meeting`, the person's to change or delete as a typed one, and never pushed to Solidtime |
+| `source` | `draft` \| `manual` \| `import` \| `calendar` — an `import` came from Solidtime and is read-only here: changed in Solidtime, and taken by the next pull (LAI-788); a `calendar` entry is a meeting the Outlook sync logged (§4.102, D-157) — an invitation the person has not declined (accepted, tentative or not answered: D-157 item 3 amended, LAI-1335) or a Teams meeting they organised — `kind` `meeting`, the person's to change or delete as a typed one, and never pushed to Solidtime |
 | `source_ref` | nullable — the draft it came from, an import's own id (LAI-788), or a calendar meeting's Graph event id (D-157); unique per `(user_id, source)` where set |
 | `note` | nullable, ≤ 280 characters |
 | `kind` | nullable — what the person said it was (D-108, LAI-897; the design's eight since LAI-516): `work` \| `meeting` \| `thinking` \| `research` \| `pairing` \| `review` \| `support` \| `admin` — validated by the API on every path (no CHECK here: SQLite cannot add one without rebuilding a table that carries retention triggers; `time_timers.kind` carries it). Null on a confirmed draft, an import, and an entry nobody typed a kind for; the Timeline colours a block by it. Migration 0060 mapped the first eight: call → meeting, planning → thinking, learning → research, other → work |
@@ -4278,9 +4279,9 @@ only through `org.calendar.configure` and the sync.
 | `last_test_roles_json` | nullable — the roles that token carried, A–Z; set and cleared with `last_test_at` (CHECK), and cleared when the credentials change |
 | `last_attempt_at` | nullable — the last sync, whatever came of it |
 | `last_success_at` | nullable |
-| `last_error_code` | nullable — `credentials_rejected` \| `not_granted` \| `unreachable` \| `bad_answer` (CHECK) |
+| `last_error_code` | nullable — `credentials_rejected` \| `not_granted` \| `unreachable` \| `bad_answer` (CHECK) — **hard failures only**: the run changed nothing |
 | `last_error` | nullable — Laika's words, never Microsoft's body |
-| `last_result_json` | nullable — the last complete sync's counts |
+| `last_result_json` | nullable — the last complete sync's counts; or a backfill's counts so far marked `"stopped_partway": true` when the switch stopped it between two people (LAI-1335) — not a hard failure, so no `last_error_code`: `GET /org/calendar` serves it as `last_error` `stopped_partway`, derived from the mark, until a hard failure or the next run's counts replace it |
 | `updated_at` | |
 
 **An application, never a person's sign-in** (D-157 item 1): the sync reads each
@@ -4928,10 +4929,11 @@ PUT    /api/v1/org/teams                     body { posting_enabled } — the sw
 GET    /api/v1/org/email-inbound             the Email to tasks card → { enabled, domain, require_authenticated, authserv_id, token_last4, api_key_last4, webhook_url, own_address, can_store_secrets, can_change, authserv_seen, example_domain, updated_at, updated_by, recent: [the 20 newest inbound mails in spaces the caller can open: { id, received_at, outcome, reason, from_address, sender, project: { slug, name } | null, task_key, comment_id, auth, authserv_ids, attachment_count }] } — never the token, the key, or a mail's subject or text   (Configure the organisation's email: owner, admin; session only; D-155, LAI-1315)
 PUT    /api/v1/org/email-inbound             body { enabled?, domain?, require_authenticated?, authserv_id?, api_key? } — every field optional; domain null clears it and turns the switch off; api_key write-only, null removes it → as GET; 422 field enabled reason inbound_not_configured without a domain and a token; 422 field authserv_id reason authserv_required to be on, authentication required, with no receiving server named; **403 reason owner_only, naming the field, for anything from anyone but an owner except `{ enabled: false }`**; 422 naming the field   (same)
 POST   /api/v1/org/email-inbound/token       make the webhook's bearer token, replacing any before it → 201 { token, settings } — the token **said once**; 403 owner_only for anyone but an owner   (same)
-GET    /api/v1/org/calendar                  the Outlook calendar connection → { configured, enabled, tenant_id, client_id, secret_last4, rules: [{ kind: title | channel, text, project: { id, slug, name } | null }], sync_every_minutes, last_test: { at, calendars_read, roles } | null, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, no_mailbox, mailbox_denied, mailbox_refused, meetings, not_a_meeting, created, updated, removed, unchanged, kept_edits, skipped, away } | null } — away counts the out-of-office spans read (§4.107), 0 in a result stored before LAI-1331 — a mailbox Microsoft does not have (404), will not open (403) or will not look up (400) is that person skipped and counted, nothing of theirs retired; only a refused token or one without Calendars.Read fails the run   (owner, admin; session only; D-157, LAI-1316)
+GET    /api/v1/org/calendar                  the Outlook calendar connection → { configured, enabled, tenant_id, client_id, secret_last4, rules: [{ kind: title | channel, text, project: { id, slug, name } | null }], sync_every_minutes, last_test: { at, calendars_read, roles } | null, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, no_mailbox, mailbox_denied, mailbox_refused, meetings, not_a_meeting, created, updated, removed, unchanged, kept_edits, kept_older, skipped, away } | null, backfill_running: { days, started_at } | null } — away counts the out-of-office spans read (§4.107), 0 in a result stored before LAI-1331; kept_older a backfill's entries before yesterday left as they were, 0 before LAI-1335; backfill_running the backfill going now, which one asked for meanwhile joins — a mailbox Microsoft does not have (404), will not open (403) or will not look up (400) is that person skipped and counted, nothing of theirs retired; only a refused token or one without Calendars.Read fails the run   (owner, admin; session only; D-157, LAI-1316)
 PUT    /api/v1/org/calendar                  body { tenant_id, client_id, client_secret?, enabled, rules: [{ kind, text (1–120), project: slug }] (≤ 50) } — reads nothing from Microsoft; the secret may be left out once one is stored; new credentials forget the last test; another tenant or client id makes the people sync forget every Entra id and first sighting and turns *Leavers* off (D-161); turning the switch on starts a sync → the connection; 422 reasons tenant_invalid, client_invalid, secret_required, unknown_project, too_many_rules (with max); turning the switch on while the organisation's Time is off is 403 forbidden reason time_off   (owner, admin; session only)
 POST   /api/v1/org/calendar/test             asks Microsoft for a fresh app token and keeps the roles it carries — reads no calendar, works with the switch off → the connection with last_test; 409 conflict reason calendar_not_configured or secret_unreadable (`LAIKA_SECRET` can no longer open the stored secret: save it again), 422 unprocessable reason graph_credentials_refused, 503 unavailable reason graph_unreachable or graph_bad_answer   (owner, admin; session only; its own rate-limit bucket)
 POST   /api/v1/org/calendar/sync             syncs now, or joins the sync already running → the connection; 409 conflict reason calendar_off unless saved and switched on; 403 forbidden reason time_off while the organisation's Time is off   (owner, admin; session only; its own rate-limit bucket)
+POST   /api/v1/org/calendar/backfill         body { days } — the sync over the last `days` days for every member: from the start of the day `days` before today to the end of tomorrow, each in their own zone, under every rule of §11.6's (the closed period and a full day held back, an entry the person changed or deleted left alone, one entry per event, retiring only inside the window it read whole) — **before yesterday it only adds**: an entry already there is never changed or retired, counted kept_older; it joins a backfill already running that reaches at least as far back, answering that one's days and result, else waits for a sync already running, is joined by a sync asked for meanwhile, and writes a person to a transaction → { days, result: { …last_result's counts } | null — what was written before it stopped when the switch went off between two people (the connection's last_error then stopped_partway, derived from those counts' mark — §4.101), null when a read failed (the connection's last_error) or nothing was written, connection: the connection after it }; 422 unprocessable reason days_out_of_range (with min 1, max 90) unless days is a whole number from 1 to 90; 409 conflict reason calendar_off unless saved and switched on; 403 forbidden reason time_off while the organisation's Time is off   (owner, admin; session only; its own rate-limit bucket; LAI-1335)
 DELETE /api/v1/org/calendar                  disconnect: the credentials and out-of-office spans (§4.107) go, logged meetings stay; the people sync forgets every Entra id and first sighting, and *Leavers* goes off (D-161) (204)   (owner, admin; session only)
 GET    /api/v1/org/people-sync               the people sync on the Microsoft 365 card → { connected, profile_enabled, leavers_enabled, photos_stored, sync_every_minutes, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, found, not_found, denied, refused, changed, updated, photos_fetched, photos_unchanged, photos_removed, photos_refused, photos_deferred } | null, leavers: { at, state: none | dry_run | held | deactivated, breaker, people: [{ user_id, name, email, reason: disabled | gone, protected: owner | last_admin | null, failed }], changed: [{ user_id, name, email, reason: account_changed | shared_account | disabled_at_match }] } | null } — with *Leavers* off, `leavers` is a dry run   (owner, admin; session only; org.calendar.configure; D-161, LAI-1330)
 PUT    /api/v1/org/people-sync               body { profile_enabled, leavers_enabled } → the people sync; turning *Photos and profile* on starts a run; 422 reason leavers_need_profile (Leavers without it); 409 conflict reason microsoft_not_connected (either turned on with no §4.101 connection); turning *Leavers* on also asks user.deactivate, else 403   (owner, admin; session only)
@@ -7786,7 +7788,7 @@ call MCP; agents do.
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read ; *Overview*'s Week, Month and Range (LAI-1138): `GET /time/report?members=<the reader>`, JSON and `format=csv`; *My availability* (LAI-1139): `GET/PUT /me/availability`, `POST /me/availability/away`, `DELETE /me/availability/away/:id`; *For you* (LAI-1139): `GET /me/notices`, `POST /me/notices/:id/read`, `POST /me/notices/read-all` — the rail's count on *My day* reads the same list; the **View**'s Week (LAI-1174): `GET /me/time` for each of its seven days, its Month and Year: `GET /me/time/days` (LAI-1173), a year in four reads | `propose_time_entry` | ✅ D-088, LAI-796, D-130, D-131, D-134, LAI-1174 |
 | **Tokens** *(on Developer access)* | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
-| **Organisation** *(seven tabs, LAI-796; Work since D-147)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET/DELETE /org/hr`, `POST /org/hr/connect`, `POST /org/hr/connect/verify`, `POST /org/hr/sync`, `PUT /org/hr/people`, `GET/POST /org/holidays`, `DELETE /org/holidays/:id` (D-149), `GET/PUT/DELETE /org/calendar`, `POST /org/calendar/test`, `POST /org/calendar/sync` (D-157) — the *Microsoft 365* card, with `GET/PUT /org/people-sync` and `POST /org/people-sync/sync` for its *Photos and profile* and *Leavers* switches (D-161), `GET/PUT /org/teams` (D-154), `GET/PUT /org/email-inbound`, `POST /org/email-inbound/token` (D-155), `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites`; the *Work* tab (LAI-952, LAI-1170): `GET /tasks?fields=slim` (paged), `GET /tasks/summary`, `GET /projects/:slug/sprints`, and for its bulk bar `GET /projects/:slug/statuses`, `PATCH /tasks/:id`, `POST /tasks/:id/status`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId` — one request per task | — | ✅ |
+| **Organisation** *(seven tabs, LAI-796; Work since D-147)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET/DELETE /org/hr`, `POST /org/hr/connect`, `POST /org/hr/connect/verify`, `POST /org/hr/sync`, `PUT /org/hr/people`, `GET/POST /org/holidays`, `DELETE /org/holidays/:id` (D-149), `GET/PUT/DELETE /org/calendar`, `POST /org/calendar/test`, `POST /org/calendar/sync` (D-157), `POST /org/calendar/backfill` (LAI-1335) — the *Microsoft 365* card, with `GET/PUT /org/people-sync` and `POST /org/people-sync/sync` for its *Photos and profile* and *Leavers* switches (D-161), `GET/PUT /org/teams` (D-154), `GET/PUT /org/email-inbound`, `POST /org/email-inbound/token` (D-155), `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites`; the *Work* tab (LAI-952, LAI-1170): `GET /tasks?fields=slim` (paged), `GET /tasks/summary`, `GET /projects/:slug/sprints`, and for its bulk bar `GET /projects/:slug/statuses`, `PATCH /tasks/:id`, `POST /tasks/:id/status`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId` — one request per task | — | ✅ |
 | **Connect** *(Developer access's first tab, `/developer?tab=connect`; not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET /me/activity-sharing` (whether the organisation collects, so the machine prompt turns the collector on), `GET /projects` (the Projects tab), `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` (the Activity tab) | — | ✅ D-079, D-084, D-087, LAI-507 |
 | **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins); each person's title, department and manager, and *My team* (`?team=mine`, the people whose manager is the reader), from `GET /people/directory` (D-161) | — | ✅ LAI-754, LAI-767; LAI-1330 |
 | **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
@@ -8852,17 +8854,35 @@ One interval-driven scheduler in the same process:
   at boot**, and only while the Outlook connection is saved, **its switch is
   on** and the organisation's Time is not off: each active member's calendar
   from the start of yesterday to the end of tomorrow in their zone, every
-  member read before one transaction writes; invitations the member accepted
-  (online or in person) and Teams meetings they organised (`isOnlineMeeting`)
+  member read before one transaction writes; invitations the member has not
+  declined — accepted, tentative or not answered, online or in person, shown
+  busy or tentative (D-157 item 3 amended, LAI-1335: the owner's choice of
+  2026-11-18, made knowing it is about 1,080 hours a month of invitations
+  nobody accepted; a person deletes what they did not attend, and their
+  delete wins) — and Teams meetings they organised (`isOnlineMeeting`)
   become or update their `calendar` entries — an event they organised that is
   not a Teams meeting is counted `not_a_meeting` and left off (D-157 item 3,
-  the owner's choice of 2026-11-18) — gone or cancelled ones are retired,
-  and an entry the person changed is left alone. **Out of office is kept
+  the owner's choice of 2026-11-18) — declined, cancelled, free, all-day and
+  gone ones are not logged or are retired, and an entry the person changed is
+  left alone. **Out of office is kept
   apart as away, never as time** (§4.107, D-157 amended, LAI-1331): each span
   read is kept, moved or brought back, and one overlapping the window that is
   no longer read is retired. Under §3.4's
   `system.calendar.sync`. **A run never overlaps another** — *Sync now* joins
-  one already running. No `activity` row, as for any time entry (§4.48)
+  one already running. **A backfill** (§6.4, LAI-1335) is the same run over
+  the last 1 to 90 days, from the start of the day that many days before
+  today to the end of tomorrow: **before yesterday it only adds** — a meeting
+  with no entry gets one, and an entry already there is never changed or
+  retired — and yesterday to tomorrow keep every rule above; it joins a
+  backfill already going that reaches as far back, else waits for a run
+  already going; a tick or *Sync now* that comes meanwhile joins it; it
+  retires only inside the window it read whole; and it writes **a person to a
+  transaction**, yielding between them, so 90 days of every member is never
+  one blocking pass. The switch turned off between two people stops it, and
+  the connection keeps what was written before, marked `stopped_partway`
+  (§4.101: a derived status, not a failure code). The
+  regular window stays yesterday to tomorrow. No `activity` row, as for any time
+  entry (§4.48)
 - **people sync** (§4.108, §4.109, D-161, LAI-1330) — every hour, **never at
   boot**, and only while *Photos and profile* is on, a §4.101 connection is
   saved and `LAIKA_SECRET` is set, under §3.4's `system.people.sync`; the app's
@@ -9200,16 +9220,17 @@ person's comments — nothing to a space without one, and nothing at all while
 *Teams posting* is off, as it ships. Teams' answer is never read. And, when an
 owner or admin sets it up and turns it on, **the organisation's Microsoft
 tenant** (D-157): an app token from `login.microsoftonline.com` and read-only
-`GET`s of members' calendars from `graph.microsoft.com`, keeping only each
-accepted invitation's or organised Teams meeting's subject — *Busy* when it is
-private — times and ids, never a join link, a body or an attendee; and, with
-*Photos and profile* on (D-161), read-only `GET`s of each active member's
-directory entry (`/users/{address}` or `/users?$filter=mail eq …` to match
-them once, `/users/{entra_oid}` after), their `/manager`, and their
-`/photos/240x240` or `/photo` and its `$value`, keeping only their
-Entra id, job title, department, account state, their manager as a Laika user
-and the photo in the store. When the operator sets the `LAIKA_MICROSOFT_*`
-variables (D-158), **the organisation's own Microsoft Entra ID tenant's token endpoint**: to exchange the code at each
+`GET`s of members' calendars from `graph.microsoft.com`, keeping only the
+subject — *Busy* when it is private — times and ids of each invitation they
+have not declined and each Teams meeting they organised, never a join link, a
+body or an attendee; and, with *Photos and profile* on (D-161), read-only
+`GET`s of each active member's directory entry (`/users/{address}` or
+`/users?$filter=mail eq …` to match them once, `/users/{entra_oid}` after),
+their `/manager`, and their `/photos/240x240` or `/photo` and its `$value`,
+keeping only their Entra id, job title, department, account state, their
+manager as a Laika user and the photo in the store. When the operator sets the
+`LAIKA_MICROSOFT_*` variables (D-158), **the organisation's own Microsoft
+Entra ID tenant's token endpoint**: to exchange the code at each
 sign-in, and to refresh a signed-in person's Microsoft token when better-auth's
 `get-access-token` or `refresh-token` is called for it — and, only with
 directory sync on, for the app's own token, beside Graph's `/users`, every 15
