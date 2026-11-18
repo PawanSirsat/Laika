@@ -4305,8 +4305,7 @@ button.org-sec-head[aria-expanded='true'] .org-sec-action {
 .org .bar-control,
 .org-github-done,
 .org-tokens-toggle,
-.org .input,
-.org select {
+.org .input {
   transition:
     background-color var(--org-fast) var(--org-ease),
     border-color var(--org-fast) var(--org-ease),
@@ -4326,7 +4325,6 @@ button.org-sec-head[aria-expanded='true'] .org-sec-action {
 }
 
 .org .input:focus-visible,
-.org select:focus-visible,
 .oh-date:focus-visible {
   outline: none;
   border-color: var(--accent);
@@ -4334,8 +4332,7 @@ button.org-sec-head[aria-expanded='true'] .org-sec-action {
 }
 
 .org button:disabled,
-.org .input:disabled,
-.org select:disabled {
+.org .input:disabled {
   cursor: not-allowed;
 }
 
@@ -5176,8 +5173,11 @@ a.bento-row:active {
   margin-bottom: var(--space-4);
 }
 
-/* Narrow: the sections become one row that scrolls above the page. */
-@media (max-width: 900px) {
+/* Below ultra (1600px): the sections become one row that scrolls above the
+   page. Beside the page the nav and its gap take ~256px, and People's table
+   needs 60rem — it would scroll sideways on every laptop width (1280 – 1513px;
+   the owner, 2026-11-18). `ultra` is the first breakpoint token above that. */
+@media (max-width: 1599px) {
   .org-hub {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-3);
