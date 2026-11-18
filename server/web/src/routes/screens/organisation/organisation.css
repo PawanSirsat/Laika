@@ -5341,7 +5341,7 @@ a.bento-row:active {
 }
 
 .org-nav .org-nav-group:has(.org-nav-heading) .org-nav-item {
-  padding: var(--space-1-5) var(--space-2);
+  padding: 0.4rem var(--space-2);
 }
 
 /* The open section: the accent's fill and a bar on the guide line — no ring. */
@@ -5428,16 +5428,11 @@ a.bento-row:active {
     gap: var(--space-1);
   }
 
-  /* In the row nothing is indented: no guide line, no bar, one item height. */
+  /* In the row nothing is indented: no guide line, no bar. */
   .org-nav .org-nav-group:has(.org-nav-heading) .org-nav-list {
     margin-left: 0;
     padding-left: 0;
     border-left: 0;
-    gap: var(--space-1);
-  }
-
-  .org-nav .org-nav-group:has(.org-nav-heading) .org-nav-item {
-    padding: var(--space-2);
   }
 
   .org-nav .org-nav-group:has(.org-nav-heading) .org-nav-item[aria-current='page']::before {
