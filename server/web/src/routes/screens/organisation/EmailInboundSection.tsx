@@ -352,9 +352,15 @@ function Ready({
         aria-label="Receiving settings"
         onSubmit={(event) => {
           event.preventDefault();
-          if (dirty && !working) onSave();
+          if (dirty && !working && settings.can_change) onSave();
         }}
       >
+        {/* Every change but turning it off is an owner's (LAI-1315 review, M2). */}
+        {!settings.can_change && (
+          <p className="org-fact-note" data-inbound-owner-note>
+            Only an owner changes these settings. You can turn Email to tasks off.
+          </p>
+        )}
         <TextInput
           label="Receiving domain"
           value={form.domain}
@@ -364,6 +370,7 @@ function Ready({
           autoComplete="off"
           appearance="code"
           placeholder={settings.example_domain}
+          disabled={!settings.can_change}
           help="The subdomain whose MX records point at Brevo. Each space gets an address on it."
           error={problem('domain')}
         />
@@ -371,14 +378,14 @@ function Ready({
           label="Require authenticated senders"
           checked={form.require_authenticated}
           // Turning it off is an owner's decision (M2); anyone may turn it on.
-          disabled={form.require_authenticated && !settings.can_allow_unauthenticated}
+          disabled={!settings.can_change}
           onChange={(on) => {
             onEdit({ require_authenticated: on });
           }}
           help={
-            settings.can_allow_unauthenticated
+            settings.can_change
               ? 'Drop mail unless the receiving server shows a DMARC, DKIM or SPF pass for the sender’s own domain. That proves the domain, not the person: anyone who can send as that domain can be written as any member there.'
-              : 'Drop mail unless the receiving server shows a DMARC, DKIM or SPF pass for the sender’s own domain. Only an owner can turn this off.'
+              : 'Drop mail unless the receiving server shows a DMARC, DKIM or SPF pass for the sender’s own domain. Only an owner can change this.'
           }
         />
         <TextInput
@@ -390,6 +397,7 @@ function Ready({
           autoComplete="off"
           appearance="code"
           optional
+          disabled={!settings.can_change}
           help={
             settings.authserv_seen.length > 0
               ? `Only this server’s verdicts count; without it every mail is dropped. Seen in recent mail: ${settings.authserv_seen.join(', ')}.`
@@ -410,7 +418,7 @@ function Ready({
           autoComplete="new-password"
           // Said before Save, not after (LAI-1315 review): with no
           // `LAIKA_SECRET` the server cannot encrypt a key, so it would refuse.
-          disabled={!settings.can_store_secrets}
+          disabled={!settings.can_store_secrets || !settings.can_change}
           help={
             !settings.can_store_secrets
               ? 'This server has no LAIKA_SECRET, so it cannot store a key. Set it and restart Laika, then paste the key here.'
@@ -424,7 +432,7 @@ function Ready({
           <Button
             type="submit"
             busy={saving}
-            disabled={!dirty || (busy !== undefined && !saving)}
+            disabled={!settings.can_change || !dirty || (busy !== undefined && !saving)}
             data-inbound-save
           >
             Save
@@ -433,7 +441,7 @@ function Ready({
             <Button
               variant="secondary"
               busy={busy === 'remove-key'}
-              disabled={working && busy !== 'remove-key'}
+              disabled={!settings.can_change || (working && busy !== 'remove-key')}
               onClick={onRemoveKey}
             >
               Remove key
@@ -496,7 +504,7 @@ function Ready({
                 variant="secondary"
                 size="sm"
                 busy={busy === 'token'}
-                disabled={working && busy !== 'token'}
+                disabled={!settings.can_change || (working && busy !== 'token')}
                 onClick={onMakeToken}
                 data-inbound-make-token
               >

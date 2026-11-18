@@ -102,11 +102,11 @@ export function inboundDirty(form: InboundForm, saved: EmailInboundSettings): bo
 export function switchBlocker(
   settings: Pick<
     EmailInboundSettings,
-    'domain' | 'token_last4' | 'can_switch_on' | 'require_authenticated' | 'authserv_id'
+    'domain' | 'token_last4' | 'can_change' | 'require_authenticated' | 'authserv_id'
   >,
 ): string | null {
   // Turning it on accepts D-155's residual risk: an owner's call (M2).
-  if (!settings.can_switch_on) return 'Only an owner can turn this on.';
+  if (!settings.can_change) return 'Only an owner can turn this on.';
   const domain = settings.domain !== null;
   const token = settings.token_last4 !== null;
   if (!domain && !token) return 'Save a receiving domain and make a webhook token first.';
@@ -123,7 +123,7 @@ export function switchBlocker(
 export function inboundBadge(
   settings: Pick<
     EmailInboundSettings,
-    'enabled' | 'domain' | 'token_last4' | 'can_switch_on' | 'require_authenticated' | 'authserv_id'
+    'enabled' | 'domain' | 'token_last4' | 'can_change' | 'require_authenticated' | 'authserv_id'
   >,
 ): {
   readonly tone: 'on' | 'off';
@@ -137,7 +137,7 @@ export function inboundBadge(
 export function switchLine(
   settings: Pick<
     EmailInboundSettings,
-    'enabled' | 'domain' | 'token_last4' | 'can_switch_on' | 'require_authenticated' | 'authserv_id'
+    'enabled' | 'domain' | 'token_last4' | 'can_change' | 'require_authenticated' | 'authserv_id'
   >,
 ): string {
   if (settings.enabled) {
@@ -161,18 +161,21 @@ export const REASON_WORDS: Readonly<Record<EmailInboundReason, string>> = {
   not_allowed: 'The sender may not write in that space',
   empty: 'Nothing to write',
   refused: 'The space refused it',
+  failed_repeatedly: 'It failed three times, and was not tried again',
 };
 
 /** What came of one mail: `Task created`, `Comment added`, or why it was dropped. */
 export function outcomeWords(row: Pick<EmailInboundRow, 'outcome' | 'reason'>): string {
   if (row.outcome === 'task_created') return 'Task created';
   if (row.outcome === 'comment_added') return 'Comment added';
+  // A fault, not a decision: Brevo delivers it again, three times at most.
+  if (row.outcome === 'failed') return 'Failed — Brevo will deliver it again';
   return row.reason === null ? 'Dropped' : `Dropped: ${REASON_WORDS[row.reason]}`;
 }
 
 /** The tone a mail's outcome is drawn in. */
 export function outcomeTone(row: Pick<EmailInboundRow, 'outcome'>): 'on' | 'off' {
-  return row.outcome === 'dropped' ? 'off' : 'on';
+  return row.outcome === 'dropped' || row.outcome === 'failed' ? 'off' : 'on';
 }
 
 /** Who sent it: the person it was matched to, else the From address as given. */

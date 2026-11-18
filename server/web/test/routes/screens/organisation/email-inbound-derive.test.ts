@@ -36,8 +36,7 @@ const UNSET: EmailInboundSettings = {
   webhook_url: 'https://ksage.kvelld.com/webhooks/email',
   own_address: 'ksage@kvelld.com',
   can_store_secrets: true,
-  can_switch_on: true,
-  can_allow_unauthenticated: true,
+  can_change: true,
   authserv_seen: [],
   example_domain: 'tasks.kvelld.com',
   updated_at: null,
@@ -137,10 +136,7 @@ void describe('the switch', () => {
   });
 
   void test('is an owner’s to turn on (M2)', () => {
-    assert.equal(
-      switchBlocker({ ...READY, can_switch_on: false }),
-      'Only an owner can turn this on.',
-    );
+    assert.equal(switchBlocker({ ...READY, can_change: false }), 'Only an owner can turn this on.');
   });
 
   void test('the badge and the line beside the switch follow it', () => {
@@ -165,6 +161,7 @@ void describe('each mail, in words', () => {
     'not_allowed',
     'empty',
     'refused',
+    'failed_repeatedly',
   ];
 
   void test('every reason has its own words, and no code shows through', () => {

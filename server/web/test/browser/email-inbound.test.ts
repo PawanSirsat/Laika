@@ -97,8 +97,7 @@ const UNSET = {
   webhook_url: 'https://ksage.kvelld.com/webhooks/email',
   own_address: 'ksage@kvelld.com',
   can_store_secrets: true,
-  can_switch_on: true,
-  can_allow_unauthenticated: true,
+  can_change: true,
   authserv_seen: [] as string[],
   example_domain: 'tasks.kvelld.com',
   updated_at: null,
@@ -509,26 +508,76 @@ void describe('Organisation → Integrations: the Email to tasks card', () => {
     }
   });
 
-  void test('an admin: the switch is an owner’s to turn on, and so is authentication off (M2)', async () => {
-    const server = inboundServer({
-      ...READY,
-      can_switch_on: false,
-      can_allow_unauthenticated: false,
-    });
+  void test('an admin: every setting is an owner’s, and the one thing they may do is turn it off (M2)', async () => {
+    const server = inboundServer({ ...READY, can_change: false });
     const h = await integrations(orgStub(server.settings));
     try {
-      assert.equal(
-        await card(h).getByRole('switch', { name: 'Email to tasks on' }).isDisabled(),
-        true,
-      );
+      const toggle = card(h).getByRole('switch', { name: 'Email to tasks on' });
+      assert.equal(await toggle.isDisabled(), true);
       assert.equal(
         await card(h).locator('[data-inbound-step]').innerText(),
         'Only an owner can turn this on.',
       );
+      assert.match(
+        await card(h).locator('[data-inbound-owner-note]').innerText(),
+        /^Only an owner changes these settings\. You can turn Email to tasks off\.$/,
+      );
       const require = card(h).getByRole('checkbox', { name: 'Require authenticated senders' });
       assert.equal(await require.isChecked(), true);
       assert.equal(await require.isDisabled(), true);
-      assert.match(await card(h).innerText(), /Only an owner can turn this off\./);
+      assert.match(await card(h).innerText(), /Only an owner can change this\./);
+      assert.equal(
+        await card(h).getByLabel('Receiving domain', { exact: true }).isDisabled(),
+        true,
+      );
+      assert.equal(
+        await card(h)
+          .getByLabel(/Receiving server/)
+          .isDisabled(),
+        true,
+      );
+      assert.equal(
+        await card(h)
+          .getByLabel(/Brevo API key/)
+          .isDisabled(),
+        true,
+      );
+      assert.equal(
+        await card(h).getByRole('button', { name: 'Make a new token' }).isDisabled(),
+        true,
+      );
+      assert.equal(server.puts.length + server.tokens.length, 0);
+    } finally {
+      await h.close();
+    }
+
+    // On, the switch is theirs to turn off.
+    const on = inboundServer({ ...READY, enabled: true, can_change: false });
+    const h2 = await integrations(orgStub(on.settings));
+    try {
+      const toggle = card(h2).getByRole('switch', { name: 'Email to tasks on' });
+      assert.equal(await toggle.isDisabled(), false);
+      await toggle.click();
+      await until(async () => (await toggle.getAttribute('aria-checked')) === 'false');
+      assert.deepEqual(on.puts.at(-1)?.body, { enabled: false });
+    } finally {
+      await h2.close();
+    }
+  });
+
+  void test('a mail that failed, and one given up on after three, are on the card in words', async () => {
+    const server = inboundServer({
+      ...READY,
+      recent: [
+        row({ outcome: 'failed', reason: null, from_address: 'ada@kvelld.com' }),
+        row({ reason: 'failed_repeatedly', from_address: 'bo@kvelld.com' }),
+      ],
+    });
+    const h = await integrations(orgStub(server.settings));
+    try {
+      const text = await card(h).innerText();
+      assert.match(text, /Failed — Brevo will deliver it again/);
+      assert.match(text, /Dropped: It failed three times, and was not tried again/);
     } finally {
       await h.close();
     }

@@ -19,7 +19,7 @@ import { fieldErrors } from './setup.ts';
  * draw one.
  */
 
-export type EmailInboundOutcome = 'task_created' | 'comment_added' | 'dropped';
+export type EmailInboundOutcome = 'task_created' | 'comment_added' | 'dropped' | 'failed';
 
 /** Why a mail was dropped (D-155). It is never answered, so this card is the one place it is said. */
 export type EmailInboundReason =
@@ -32,7 +32,8 @@ export type EmailInboundReason =
   | 'unknown_sender'
   | 'not_allowed'
   | 'empty'
-  | 'refused';
+  | 'refused'
+  | 'failed_repeatedly';
 
 /** Who someone is, on the card. */
 export interface InboundPerson {
@@ -75,7 +76,7 @@ export interface EmailInboundSettings {
   readonly domain: string | null;
   /** Drop a mail without a DMARC, DKIM or SPF pass for its From domain. */
   readonly require_authenticated: boolean;
-  /** The receiving server whose `Authentication-Results` count; null reads the topmost. */
+  /** The receiving server whose first `Authentication-Results` is believed; null believes nothing. */
   readonly authserv_id: string | null;
   /** The webhook token's last four characters; null until one is made. */
   readonly token_last4: string | null;
@@ -87,9 +88,11 @@ export interface EmailInboundSettings {
   readonly own_address: string;
   /** Whether this server can store an API key (it has `LAIKA_SECRET`). */
   readonly can_store_secrets: boolean;
-  /** Owners only (LAI-1315 review, M2): turning it on, and authentication off. */
-  readonly can_switch_on: boolean;
-  readonly can_allow_unauthenticated: boolean;
+  /**
+   * Whether the caller may change anything but turning it off (LAI-1315
+   * review, M2): an owner. An admin may turn it off and read the rest.
+   */
+  readonly can_change: boolean;
   /** The receiving servers recent mail named, newest first: what to name from. */
   readonly authserv_seen: readonly string[];
   readonly example_domain: string;
