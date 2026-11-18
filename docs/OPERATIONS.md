@@ -274,6 +274,96 @@ Flip *Email on* off. Anything still queued is recorded `email_off` at the next
 tick and never sent. *Clear* forgets the key and the settings and turns the
 switch off with them.
 
+## Email to tasks: turning it on
+
+*Email to tasks* ships **off** (D-155, SPEC §10.3). Until an owner turns it on,
+every mail Brevo delivers is recorded as dropped `switch_off`, and nothing is
+written. When it is on, a member's mail to a space's address becomes a task,
+written as that member, and a reply in its thread becomes a comment. **Turn it
+on only on the owner's word**, after the DNS and Brevo steps below exist.
+
+It writes **as the person the mail says it is from**, so it accepts a mail only
+when the receiving server proved the sender's domain sent it: a DMARC pass, or
+an aligned DKIM or SPF pass. Leave *Require authenticated senders* on.
+
+### 1. The receiving subdomain (DNS — Hemanth)
+
+Pick a subdomain that is not the one Laika sends from, for example
+`tasks.kvelld.com`, and point its mail at Brevo:
+
+| Record | Type | Priority | Value |
+| --- | --- | --- | --- |
+| `tasks.kvelld.com` | MX | 10 | `inbound1.sendinblue.com.` |
+| `tasks.kvelld.com` | MX | 20 | `inbound2.sendinblue.com.` |
+
+The domain must also be verified in Brevo. DNS can take hours to propagate,
+so do this first.
+
+### 2. The card
+
+On **Organisation › Integrations › Email to tasks**, signed in as an owner or
+admin:
+
+1. Enter the **receiving domain** and save.
+2. Press **Make token**. The token is shown **once**: copy it now. Making
+   another later replaces it, and Brevo must then be given the new one.
+3. Copy the **webhook URL** the card shows, `LAIKA_PUBLIC_URL/webhooks/email`.
+   It needs `LAIKA_PUBLIC_URL` to be set.
+4. Optional, for attachments: paste a **Brevo API key** made for Laika alone.
+   It is stored encrypted; the card shows its last four characters.
+
+### 3. Brevo's inbound webhook
+
+Create the webhook with Brevo's API, using a Brevo API key. **The owner runs
+this. Never paste a key into a chat or a ticket.**
+
+```
+POST https://api.brevo.com/v3/webhooks
+api-key: <a Brevo API key>
+{
+  "type": "inbound",
+  "events": ["inboundEmailProcessed"],
+  "domain": "tasks.kvelld.com",
+  "url": "https://<LAIKA_PUBLIC_URL host>/webhooks/email",
+  "description": "Laika email to tasks",
+  "auth": { "type": "bearer", "token": "<the token from step 2>" }
+}
+```
+
+### 4. A test mail, then the switch
+
+1. Send a mail from your own address to a space's address. Space settings
+   shows each space's address, with *Copy*.
+2. The card's list shows it **dropped `switch_off`**, with the receiving
+   server's verdicts beside it, for example `inbound1.brevo.com dmarc=pass`.
+   That proves Brevo reaches Laika with the right token.
+3. Optional, recommended: put that server name into **Receiving server**, so
+   that only its `Authentication-Results` count.
+4. Flip **Email to tasks on**, send the mail again, and see the task.
+
+If the list shows nothing at all, Brevo is not reaching Laika. Check the
+webhook URL and the token. A `401` in the server log as
+`webhook.received … verified: false` means a wrong token.
+
+### What is dropped, and why
+
+| reason | means |
+| --- | --- |
+| `unknown_address` | No space has that address. It was mistyped, or replaced with *New address* |
+| `unauthenticated` | The receiving server did not vouch for the sender's domain. This is what a forged From looks like |
+| `unknown_sender` | Nobody active on the board has that address |
+| `not_allowed` | The person cannot create tasks in that space |
+| `own_sender`, `auto_reply`, `spam` | The board's own mail, a machine's reply, or spam. Never written, so mail cannot loop |
+
+A dropped mail is never answered. The list keeps the sender's address, never
+the subject or the text.
+
+### Turning it off
+
+Flip *Email to tasks on* off: every mail from then on is recorded
+`switch_off`. Clearing the domain also turns it off. To cut Brevo off
+entirely, press **Make token** and do not give Brevo the new one.
+
 ---
 
 ## The frontend as its own resource, on one domain

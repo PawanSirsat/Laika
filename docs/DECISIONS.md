@@ -7797,3 +7797,117 @@ its agent pull-request Adaptive Card with approve and dismiss links (no approval
 per-person notification inbox delivered to email and Teams (no inbox). Agents' comments are not
 posted: agents comment as they go, and a channel that reads out every one is a channel everybody
 mutes.
+
+## D-155 — Email to tasks: a space's inbound address turns a member's mail into a task, and a reply into a comment, written as the sender; the switch ships off
+
+**Date:** 2026-11-18 · **Decided by:** Pawan (owner), choosing all four options from the LAI-1310
+research — *"implement everything and workable but I don't want to enable this email thing on
+ksage 2.0 right now, will do that later at one click"* — and option C is this one. The plan was
+approved by CHIEF on 2026-11-18. Recorded by the builder CHIEF dispatched for LAI-1315 (Belka).
+
+**What it changes in the SPEC.**
+- **Amends:** §1.1's *email as a primary interface* non-goal, **for inbound task creation only**.
+  The SPEC's §1.1 note says so.
+- **Adds:**
+  - §4.101 – §4.104;
+  - §3.4's `system.email.receive`;
+  - §6.4's routes and §10.3's webhook;
+  - an §11.6 retention line;
+  - the §13.4 lines.
+
+**Context.** KSage specified email-to-item and reply-to-comment (its §7.2) and never built it; its
+only trace is a reserved `source` value. People already mail work to each other; a space that can
+be mailed takes that work onto the board without anyone retyping it. Brevo, the SMTP relay D-153
+already uses, offers inbound parsing: mail to a subdomain whose MX points at Brevo is parsed and
+POSTed as JSON to a webhook, with each attachment as a download token.
+
+**Decision.**
+
+1. **One webhook, `POST /webhooks/email` (§10.3).** It is Brevo's inbound parsing, proved by a
+   bearer token Laika makes. Brevo signs nothing, so the token is the whole of the authentication.
+   - **The token** is kept only as its SHA-256. Both sides are hashed to 32 bytes before
+     `timingSafeEqual`, so a token of another length neither throws nor answers faster.
+   - **No token stored is no delivery accepted.**
+   - **The body is parsed only once the token holds**, the §10.1 ordering.
+   - **`/webhooks/*` resolves no Laika credential.** §10 always said *no user session*, and
+     Brevo's `Authorization` header is Brevo's, not a Laika token.
+   - **Limits:** its own rate-limit bucket, and a 4 MiB body on this route alone.
+2. **Each space has an address, `<slug>-<token>@<domain>`** (§4.102).
+   - **The token is matched alone**: twelve characters of base32, sixty bits. A rename keeps it
+     working.
+   - **Seeing it** is for whoever may `task.create` there.
+   - **New address** (`project.settings.edit`) replaces the token, and the old address stops at
+     once.
+   - **The domain** is an organisation setting, so the build waits on no DNS. The example is
+     `tasks.kvelld.com`, and the real subdomain is confirmed at switch-on. It must differ from the
+     sending domain.
+3. **A mail becomes a task, and a reply a comment, written as the sender.**
+   - **A task:** the subject becomes the title and Brevo's extracted text the description.
+     `created_via: 'webhook'` is the existing value, so `tasks`, `comments` and `activity` are not
+     rebuilt.
+   - **A comment:** a mail whose `In-Reply-To` or `References` names an earlier inbound mail of
+     the same space, or whose subject carries `[KEY-N]` for a task there, is a comment on that
+     task.
+   - **Its provenance** is its `email_inbound` row (§4.103).
+4. **New authority, and what it rests on.** Until now nothing in Laika acted as a person who had
+   not signed in. **Here the From header names a member, and the task or comment is written as
+   them**: their `can()`, their name in the activity.
+   - **The threat is a forged From.** A From header is a line anybody can write, so on its own it
+     proves nothing.
+   - **What it rests on is the receiving server's verdict.** The mail must carry, in the
+     `Authentication-Results` header Laika believes, a **DMARC pass for the From domain, or a
+     DKIM or SPF pass for a domain aligned with it**. That is the proof the From domain's own
+     mail servers sent it. It is required unless an owner turns it off; it ships on.
+   - **Which header is believed.** A sender can write any `Authentication-Results` header into a
+     mail; only the receiving server's own is evidence. With a receiving server named
+     (`authserv_id`), only its headers count. Without one, only the topmost counts, because the
+     receiving server adds its header above everything the mail already carried.
+   - **Every other mail is dropped and never answered.** No reply goes out that a forger could
+     learn from. Each drop is a row with one of these reasons:
+     - `switch_off`: off is off. It is how it ships, so nobody is impersonated until an owner
+       decides.
+     - `unknown_address`: mail to an address no space has. A stranger guessing addresses fills
+       nothing.
+     - `own_sender`: the board's own From address, or anything at the inbound domain. Laika's
+       own mail can never come back as a task, so there is no loop.
+     - `auto_reply`: `Auto-Submitted`, `Precedence` bulk, junk or list, an empty
+       `Return-Path`. Machines answering machines do not make work.
+     - `spam`: Brevo's score of 5 or more.
+     - `unauthenticated`: **the forged From.** No aligned pass from the believed server, so the
+       mail is not written as anyone.
+     - `unknown_sender`: no active person has the address. A deactivated person is nobody.
+     - `not_allowed`: the person's own `can()` refused, as it would have signed in.
+     - `empty`: nothing to write.
+     - `refused`: any other refusal by the write.
+   - **Why the defaults make it safe.** It ships off. It requires authentication. It needs a
+     bearer token only Brevo holds, sent to a space's unguessable address. It then grants the
+     sender exactly what they hold signed in, and nothing more. **An owner who turns
+     authentication off accepts that a forged From is written as the member it names**; the card
+     says so.
+5. **Never the mail's text in a record.** The subject and text go into the task or comment they
+   make, and nowhere else: not `email_inbound`, not a log line, not the webhook's answer.
+   - **The record keeps:** ids, the From address, the outcome, the reason, and the believed
+     server's verdict words (`mx.example dmarc=pass`).
+   - **The text** is markdown through the existing renderer, never HTML. Brevo's HTML body is
+     never used.
+6. **Attachments go to the D-150 store** (PR B, §4.104).
+   - **The queue:** each announced file is queued with its Brevo download token.
+   - **The job:** it fetches the file with the organisation's Brevo API key, which is §12
+     ciphertext under `brevo_api_key`, write-only on the card. It puts the bytes in the store as a
+     ready `attachments` row the sender uploaded, linked to the task or comment.
+   - **The cap** is the board's attachment limit.
+   - **Failures:** a failure is a reason on the row and never blocks the task.
+   - **§13.4** gains two outbound lines: Brevo's attachment API, and the store `PUT` this makes.
+7. **The switch, `org_email_inbound.enabled`, ships off.**
+   - It cannot turn on without a domain and a token.
+   - It is set under `org.email.configure`, signed in only, D-153's row. Whoever can redirect
+     where mail goes, or turn this on, decides who may be impersonated.
+   - `OrgView.email_inbound = { enabled, domain }` is readable by everyone, so a space can show its
+     address.
+   - **Turning it on is at the owner's word,** after Hemanth's MX records and Brevo's inbound
+     webhook exist. `docs/OPERATIONS.md` has the steps.
+
+**Not in this decision — follow-ups.** An acknowledgement or bounce mail, and a `Reply-To` on
+D-153's notification mail so a reply to a notification becomes a comment. Each needs Message-ID
+support in the transport and a new outbox kind, which rebuilds `email_outbox`. They are filed once
+attachments land.

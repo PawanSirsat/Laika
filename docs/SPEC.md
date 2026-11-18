@@ -84,6 +84,13 @@ no attachments and behaves as before. The bytes never pass through Laika: the
 browser uploads to the store and reads from it through short-lived URLs Laika
 signs (§13.1, §13.4).
 
+**Changed 2026-11-18 (D-155).** *Email as a primary interface* stays on this
+list **except for one direction**: a member's mail to a space's inbound address
+becomes a task, and a reply in its thread a comment, written as the sender
+(§10.3) — **off until an owner turns it on**, and only for a sender the
+receiving server authenticated. Nothing else is done by mail: no commands, no
+status changes, no reading the board by email.
+
 ---
 
 ## 2. Glossary
@@ -786,6 +793,7 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.email.prune` | §11.6: outbox rows 90 days after they were written (§4.93, D-153, LAI-1312) |
 | `system.email.notify` | §11.6: every 30 seconds, assignment and @mention mail queued and daily digests collected and sent, read from `activity` and `member_notices` (§4.97 – §4.100, D-153, LAI-1313) |
 | `system.teams.post` | §11.6: every minute, each space's Teams stand-ups, nightly digest and instant notices, and the record of posts kept 90 days (§4.94 – §4.96, D-154, LAI-1314) |
+| `system.email.receive` | §10.3: an inbound mail's space address and sender resolved — the reads made before anyone is known. **Everything it writes is the matched sender's own `can()`** (§4.101 – §4.104, D-155, LAI-1315) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
 does for §3.1 and §3.2.
@@ -4214,6 +4222,88 @@ never mailed, not even the two minutes before the job started.
 | `read_to_rowid` | its rowid — 0 before the first, which is "now, nothing behind it" |
 | `updated_at` | |
 
+### 4.101 `org_email_inbound`
+
+The organisation's *Email to tasks* settings (D-155, LAI-1315). **No row, or
+`enabled` 0, is off** — how it ships: every inbound mail is recorded in §4.103
+as dropped `switch_off`, and nothing is written. Set by an owner or admin,
+signed in (`org.email.configure`). Its own table, so `orgs` is not rebuilt.
+
+| field | notes |
+| --- | --- |
+| `org_id` | pk, FK `orgs`, cascade |
+| `enabled` | 0/1 (CHECK), default 0. 1 needs `domain` and `token_hash` (CHECK) |
+| `domain` | nullable — the receiving subdomain, lower case, 3–253 (CHECK): `tasks.kvelld.com`. It must differ from the sending domain; its MX points at Brevo |
+| `token_hash` | nullable — the SHA-256 of the webhook's bearer token, hex. **The token itself is never stored**: shown once when made, compared, never sent anywhere |
+| `token_last4` | nullable — its last four characters; set exactly when `token_hash` is (CHECK) |
+| `api_key_enc` | nullable — the Brevo API key that fetches attachments, AES-256-GCM under purpose `brevo_api_key`. Write-only: never returned, never logged |
+| `api_key_last4` | nullable — set exactly when `api_key_enc` is (CHECK) |
+| `require_authenticated` | 0/1 (CHECK), default **1** — drop a mail without an aligned DMARC, DKIM or SPF pass (D-155 item 4) |
+| `authserv_id` | nullable, 1–253 (CHECK) — the receiving server whose `Authentication-Results` count; null reads the topmost header |
+| `updated_by` | nullable, FK `users`, set null |
+| `updated_at` | |
+
+### 4.102 `project_inbound_addresses`
+
+A space's inbound address, `<slug>-<token>@<domain>` (D-155). **Only the token
+is matched**, so a rename keeps the address working; *New address* replaces the
+token and the old one stops at once. Made the first time anyone who may create
+a task in the space asks for it.
+
+| field | notes |
+| --- | --- |
+| `project_id` | pk, FK `projects`, cascade |
+| `token` | unique — exactly twelve characters of lower-case base32, sixty random bits (CHECK) |
+| `created_by` | nullable, FK `users`, set null |
+| `created_at` | |
+
+### 4.103 `email_inbound`
+
+Every inbound mail at a space's address and what became of it (D-155) — **the
+provenance of a task or comment that arrived by email**, since `created_via`
+says `webhook`. **Never the mail's subject or text**: ids, the sender's
+address, the outcome, a closed reason, and the believed server's verdicts. One
+row per mail per address, so a redelivery makes nothing twice. Kept 90 days
+(§11.6).
+
+| field | notes |
+| --- | --- |
+| `id` | pk |
+| `message_id` | 1–512 (CHECK) — the mail's `Message-ID` without brackets; a digest when it had none or one too long. Unique with `address_token` |
+| `address_token` | the space address's token, or `''` when the mail went to none |
+| `project_id` | nullable, FK `projects`, cascade |
+| `from_address` | nullable, ≤ 320 (CHECK) — the From address, lower case |
+| `user_id` | nullable, FK `users`, set null — the person it was matched to |
+| `outcome` | `task_created` \| `comment_added` \| `dropped` |
+| `reason` | nullable — exactly when `dropped` (CHECK): `switch_off` \| `unknown_address` \| `own_sender` \| `auto_reply` \| `spam` \| `unauthenticated` \| `unknown_sender` \| `not_allowed` \| `empty` \| `refused` |
+| `task_id` | nullable, FK `tasks`, set null — the task it made, or commented on |
+| `comment_id` | nullable, FK `comments`, set null |
+| `auth` | nullable, ≤ 300 (CHECK) — the believed server and its verdict words, e.g. `mx.example dmarc=pass` |
+| `attachment_count` | ≥ 0 (CHECK) — how many attachments the mail announced |
+| `received_at` | |
+
+### 4.104 `email_inbound_attachments`
+
+An inbound mail's attachment on its way to the D-150 store (D-155 item 6). Brevo
+sends a download token, not the bytes; §11.6's attachments job fetches it with
+§4.101's API key and stores it as a ready §4.92 row the sender uploaded. A
+failure is a reason here and never blocks the task.
+
+| field | notes |
+| --- | --- |
+| `id` | pk |
+| `inbound_id` | FK `email_inbound`, cascade |
+| `download_token` | nullable — Brevo's token, set exactly while `pending` (CHECK); useless without the API key |
+| `filename` | 1–255 (CHECK) |
+| `content_type` | 1–127 (CHECK) |
+| `size_bytes` | ≥ 0 (CHECK) — Brevo's estimate |
+| `state` | `pending` \| `stored` \| `failed` \| `skipped` |
+| `reason` | nullable — exactly when `failed` or `skipped` (CHECK): `too_large` \| `store_off` \| `no_api_key` \| `fetch_failed` \| `store_failed` \| `not_needed` |
+| `attachment_id` | nullable, FK `attachments`, set null — the stored file |
+| `attempts` | ≥ 0 (CHECK) |
+| `created_at` | |
+| `finished_at` | nullable |
+
 ## 5. Task lifecycle
 
 ```
@@ -4654,6 +4744,9 @@ DELETE /api/v1/org/email                     forget the settings and the key and
 POST   /api/v1/org/email/test                send one message now to the caller's address — the one send that works while the switch is off → 200 { ok, to, code, message, at } whether or not the server took it, code the SMTP reply (535) or the transport's (ETIMEDOUT); 422 reason email_not_configured or email_key_unreadable   (same; its own rate-limit bucket)
 GET    /api/v1/org/teams                     Teams posting → { posting_enabled, updated_at, updated_by: { id, name } | null, schedule: { standup_utc: ['05:30', '12:30'], digest_utc: '07:00' }, channels: [the channel, as below, for every unarchived space with one that the caller can open, by name] }   (owner, admin; session only; D-154, LAI-1314)
 PUT    /api/v1/org/teams                     body { posting_enabled } — the switch; off, nothing is posted and each post is recorded as suppressed → as GET   (owner, admin; session only)
+GET    /api/v1/org/email-inbound             the Email to tasks card → { enabled, domain, require_authenticated, authserv_id, token_last4, api_key_last4, webhook_url, own_address, example_domain, updated_at, updated_by, recent: [the 20 newest inbound mails in spaces the caller can open: { id, received_at, outcome, reason, from_address, sender, project: { slug, name } | null, task_key, comment_id, auth, attachment_count }] } — never the token, the key, or a mail's subject or text   (Configure the organisation's email: owner, admin; session only; D-155, LAI-1315)
+PUT    /api/v1/org/email-inbound             body { enabled?, domain?, require_authenticated?, authserv_id?, api_key? } — every field optional; domain null clears it and turns the switch off; api_key write-only, null removes it → as GET; 422 field enabled reason inbound_not_configured without a domain and a token; 422 naming the field   (same)
+POST   /api/v1/org/email-inbound/token       make the webhook's bearer token, replacing any before it → 201 { token, settings } — the token **said once**   (same)
 GET    /api/v1/org/holidays                  ?from=&to= (≤ 731 days) → { holidays: [{ id, day, label, source, everyone }] } by day   (every member; D-149)
 POST   /api/v1/org/holidays                  body { day, label } → 201 the holiday; 409 conflict reason holiday_exists with the live one's id   DELETE .../:id → 204; a synced one is 409 conflict reason holiday_from_clan   (owner, admin; session only)
 GET    /api/v1/org/model-prices              PUT/DELETE .../model-prices/:model — API-equivalent prices (set: owner, admin; session only; LAI-773)
@@ -4803,6 +4896,8 @@ GET    /api/v1/projects/:slug/teams          the space's Teams channel → { pos
 PUT    /api/v1/projects/:slug/teams          body { webhook_url } — set or replace the address; checked, encrypted, never answered → as GET; 422 unprocessable { field: webhook_url, reason: webhook_url_not_https | webhook_url_invalid }   (owner, admin; session only)
 DELETE /api/v1/projects/:slug/teams          the space has no channel and is told nothing (204)   (owner, admin; session only)
 POST   /api/v1/projects/:slug/teams/test     one test post to the channel, **whether posting is on or off** → the post, recorded like any other; 409 conflict reason teams_no_channel   (owner, admin; session only; its own rate-limit bucket)
+GET    /api/v1/projects/:slug/email-address  the space's inbound address → { address: '<slug>-<token>@<domain>' | null until a domain is set, enabled, can_rotate } — made the first time it is asked for   (whoever may create a task in the space; D-155, LAI-1315)
+POST   /api/v1/projects/:slug/email-address/rotate   a new token; the old address stops at once → as GET   (Edit project settings)
 POST   /api/v1/tasks/:id/finish              body { summary, checklist?, commits?, branch?, pull_request?, tests? }
                                              → review, with a round and its proof (finish_task's twin, D-082); a checklist
                                              line that is a deliverable's id or exact title marks it done (LAI-1115)
@@ -4886,7 +4981,7 @@ GET    /api/v1/projects/:slug/meeting-reviews
 GET    /api/v1/meeting-reviews/:id           one review with its full proposal set and quotes
 POST   /api/v1/meeting-reviews/:id/apply     body { accepted_proposal_ids[] }
 POST   /api/v1/meeting-reviews/:id/discard   reject the whole set without applying anything
-POST   /webhooks/github                      POST /webhooks/transcript
+POST   /webhooks/github                      POST /webhooks/transcript   POST /webhooks/email (§10.3)
 GET    /api/v1/health                        { status, version, uptime_ms, build_commit } — public
 GET    /api/v1/developer/compatibility       public: the build, the helper protocol and the Developer access switches (LAI-1043)
 ```
@@ -7200,6 +7295,61 @@ Accepted `decision` proposals append to `context_md` with the date.
 This is the one place an LLM writes to the board, and it is gated by a human.
 That gate is a product requirement, not a v1 shortcut.
 
+### 10.3 `POST /webhooks/email`
+
+Brevo's inbound parsing (D-155, LAI-1315). Mail to `*@<domain>` (§4.101), whose
+MX records point at Brevo, is parsed and posted here as `{ items: [...] }`.
+**Off until an owner turns it on.**
+
+**A bearer token, compared before the body is parsed.**
+- **The token.** `Authorization: Bearer <token>`, the one *Make token* showed
+  (§6.4). It is compared as SHA-256 digests with `timingSafeEqual`, so any
+  length gets the same plain `401`.
+- **No token made is no delivery accepted.** A bad token and a bad body both get
+  `401`; only once the token holds is the body read, and then a bad one is `422`.
+- **No Laika credential is resolved on `/webhooks/*`.** The header is Brevo's.
+- **Limits.** Its own rate-limit bucket, and a 4 MiB body (every other route
+  has 1 MiB).
+- **At most 50 mails** a delivery.
+
+**Each mail, at each space address it went to** (§4.102, matched on the token
+alone), is one §4.103 row. It is idempotent on `(message_id, address_token)`: a
+redelivery answers `duplicate` and makes nothing.
+
+**What a mail becomes**, written **as its sender** — the active person whose
+address is the From, under their own `can()`:
+- **A reply.** It becomes a **comment** on the task when `In-Reply-To` or
+  `References` names an earlier §4.103 mail of the same space, or the subject
+  carries `[KEY-N]` for a task in it.
+- **Otherwise a task.** The subject is the title (`(no subject)` when empty, at
+  most 300 characters); Brevo's extracted text, else the plain text with quoted
+  history trimmed, is the description (at most 50 000).
+- **Never HTML**, and `created_via: 'webhook'`.
+- **Announced attachments** are queued in §4.104.
+
+**Dropped, never answered**, one reason each, checked in this order:
+1. `switch_off`
+2. `unknown_address`
+3. `own_sender`: the board's own From address, or the inbound domain
+4. `auto_reply`: `Auto-Submitted` other than `no`, `Precedence` bulk, junk or
+   list, `X-Autoreply`, an empty `Return-Path`
+5. `spam`: Brevo's score of 5 or more
+6. `unauthenticated`: with `require_authenticated` on, no DMARC pass for the
+   From domain and no aligned DKIM or SPF pass, in the believed
+   `Authentication-Results` — the server named in `authserv_id`, else the
+   topmost header
+7. `unknown_sender`
+8. `empty`
+9. `not_allowed`: the sender's `can()` refused
+10. `refused`: any other refusal
+
+The answer is `200 { ok, results: [{ outcome, reason }] }` for every mail,
+dropped or not: Brevo retries what is not `2xx`, and a dropped mail must not
+come back. **No mail text is in the answer, a log line or §4.103.**
+
+**Setting it up on Brevo** is `docs/OPERATIONS.md`, *Email to tasks: turning it
+on*.
+
 ---
 
 ## 11. Stack and runtime
@@ -8471,10 +8621,12 @@ One interval-driven scheduler in the same process:
   another**; a tick joins the one going. No `activity` row. Nothing without a
   transport, and nothing mailed while the organisation's switch is off — the
   default
-- **email retention** (§4.93, §4.98) — daily **and once at boot**, under
+- **email retention** (§4.93, §4.98, §4.103) — daily **and once at boot**, under
   `system.email.prune`: outbox rows written more than 90 days ago, never a
-  `queued` or `sending` one, and closed digests 90 days after they closed,
-  with their items. No `activity` row
+  `queued` or `sending` one, closed digests 90 days after they closed, with
+  their items, and inbound mail records (§4.103, D-155) 90 days after they
+  arrived, with their attachment rows — never the tasks or comments they made.
+  No `activity` row
 - **email notify** (§4.97 – §4.100, D-153, LAI-1313) — every 30 seconds, not at
   boot, under `system.email.notify`: reads `activity` and `member_notices` past
   their keyset cursors (§4.100; two minutes re-read behind them), each read an
@@ -8645,6 +8797,14 @@ digest and notices, which carry task keys and titles, people's names and a
 person's comments — nothing to a space without one, and nothing at all while
 *Teams posting* is off, as it ships. Teams' answer is never read. Any task
 proposing otherwise is rejected at review.
+
+**Inbound email is the organisation's choice, and off as it ships** (D-155).
+With *Email to tasks* on, Brevo posts each mail sent to a space's address to
+`/webhooks/email` (§10.3). Its subject and text become the task or comment it
+makes, and are kept nowhere else; the record of it (§4.103) holds ids, the
+sender's address and the receiving server's verdict words, never the mail. Mail
+to the board goes through Brevo, which the organisation chose; nothing is
+fetched from a mailbox.
 
 **Local activity counts are inbound, the organisation's choice, and counts
 only** (D-079; D-102 amended). A developer's connected machine sends per-day
