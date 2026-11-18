@@ -204,7 +204,16 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
         const tick = await runInboundAttachments(
           db,
           deps.serverSecret ?? '',
-          { ...deps.inboundEmail, attachments: deps.attachments },
+          {
+            ...deps.inboundEmail,
+            attachments: deps.attachments,
+            // One file's surprise is logged and retried; the tick goes on (M1).
+            onFault: (cause) => {
+              deps.log.error('email.inbound_attachment_fault', {
+                error: cause instanceof Error ? cause.message : String(cause),
+              });
+            },
+          },
           now,
         );
         return { changed: tick.stored + tick.failed + tick.skipped };

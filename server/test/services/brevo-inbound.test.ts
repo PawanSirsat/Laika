@@ -84,6 +84,66 @@ describe('fetchInboundAttachment', () => {
     });
   });
 
+  it('refuses a declared length over the limit before reading a byte (F2)', async () => {
+    let pulls = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulls += 1;
+          controller.enqueue(new Uint8Array(10));
+        },
+      },
+      // No read on construction: a pull here is one the fetch asked for.
+      { highWaterMark: 0 },
+    );
+    const got = await fetchInboundAttachment(
+      KEY,
+      't',
+      100,
+      fakeBrevo(() => new Response(body, { headers: { 'content-length': '101' } })),
+    );
+    expect(got).toEqual({ kind: 'too_large' });
+    expect(pulls).toBe(0);
+  });
+
+  it('reads a body whole into one buffer: grown past its first size, or sized as declared', async () => {
+    const chunk = new Uint8Array(50_000).map((_, i) => i % 251);
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let i = 0; i < 3; i += 1) controller.enqueue(chunk.slice());
+        controller.close();
+      },
+    });
+    const grown = await fetchInboundAttachment(
+      KEY,
+      't',
+      1_000_000,
+      fakeBrevo(() => new Response(body)),
+    );
+    expect(grown.kind === 'bytes' && Buffer.from(grown.bytes)).toEqual(
+      Buffer.concat([chunk, chunk, chunk]),
+    );
+
+    const declared = await fetchInboundAttachment(
+      KEY,
+      't',
+      1_000_000,
+      fakeBrevo(() => new Response(chunk, { headers: { 'content-length': '50000' } })),
+    );
+    expect(declared.kind === 'bytes' && Buffer.from(declared.bytes)).toEqual(Buffer.from(chunk));
+  });
+
+  it('a body longer than it declared is a refusal, not a file', async () => {
+    await expect(
+      fetchInboundAttachment(
+        KEY,
+        't',
+        100,
+        fakeBrevo(() => new Response(new Uint8Array(20), { headers: { 'content-length': '10' } })),
+      ),
+    ).rejects.toMatchObject({ why: 'sent more than it declared' });
+  });
+
   it('refuses with Brevo’s status and never its words', async () => {
     const brevo = fakeBrevo(
       () =>

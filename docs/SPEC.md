@@ -4369,12 +4369,12 @@ failure is a reason here and never blocks the task.
 | --- | --- |
 | `id` | pk |
 | `inbound_id` | FK `email_inbound`, cascade |
-| `download_token` | nullable — Brevo's token, set exactly while `pending` (CHECK); useless without the API key |
+| `download_token` | nullable — Brevo's token, set exactly while `pending` (CHECK); useless without the API key. Queued only when it is one URL path segment: `A–Z a–z 0–9 _ - . =`, 1–2048, never `.` or `..` — a file with any other token is not queued |
 | `filename` | 1–255 (CHECK) |
 | `content_type` | 1–127 (CHECK) |
 | `size_bytes` | ≥ 0 (CHECK) — Brevo's estimate |
 | `state` | `pending` \| `stored` \| `failed` \| `skipped` |
-| `reason` | nullable — exactly when `failed` or `skipped` (CHECK): `too_large` \| `store_off` \| `no_api_key` \| `fetch_failed` \| `store_failed` \| `not_needed` |
+| `reason` | nullable — exactly when `failed` or `skipped` (CHECK): `too_large` \| `store_off` \| `no_api_key` \| `fetch_failed` \| `store_failed` \| `not_needed` \| `switch_off` |
 | `attachment_id` | nullable, FK `attachments`, set null — the stored file |
 | `attempts` | ≥ 0 (CHECK) |
 | `created_at` | |
@@ -8755,13 +8755,18 @@ One interval-driven scheduler in the same process:
   default
 - **inbound attachments** (§4.106, D-155 item 6, LAI-1315) — every 30 seconds,
   not at boot, under `system.email.attachments`: the ten oldest queued files
-  are fetched from Brevo with §4.103's API key (at most the board's
-  attachment limit read) and put in the D-150 store, each a ready §4.92 row
-  the mail's sender uploaded, on the task or comment the mail made, with
-  `attachment.added` as them. Skipped at once — `store_off`, `no_api_key`,
-  `too_large`, `not_needed` — when it cannot work; a fetch or store that
-  fails is tried three times, a tick apart, then `failed`. A tick still
-  running when the next comes is joined. **Never blocks the task**
+  are fetched from Brevo with §4.103's API key and put in the D-150 store,
+  each a ready §4.92 row the mail's sender uploaded, on the task or comment
+  the mail made, with `attachment.added` as them. At most the smaller of the
+  board's attachment limit and **40 MiB** is read: these bytes are held in
+  memory, where a browser's upload never passes through Laika. Skipped at
+  once, **before Brevo is asked** — `switch_off` (the organisation's switch
+  is off now), `store_off`, `no_api_key`, `too_large`, `not_needed` (nothing
+  left to put it on, a reply's comment deleted included, or a sender who may
+  no longer `attachment.create` there) — when it cannot work; a fetch or
+  store that fails, or throws anything else, is tried three times, a tick
+  apart, then `failed`. A tick still running when the next comes is joined.
+  **Never blocks the task, nor the files behind it**
 - **email retention** (§4.93, §4.98, §4.105) — daily **and once at boot**, under
   `system.email.prune`: outbox rows written more than 90 days ago, never a
   `queued` or `sending` one, closed digests 90 days after they closed, with

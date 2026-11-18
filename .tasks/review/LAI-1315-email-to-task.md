@@ -295,3 +295,29 @@ name the receiving server. It needs no migration; the queue table was in A's 008
   - It joins a tick still running, and never blocks the task.
 
 The criterion "CI green on each PR" is ticked by CHIEF after PR B's CI and review.
+
+### PR B, review round 1 (review-1315 on #381, 975006fba)
+
+- **M1.** One filename could stop the whole org's queue for good. A name cut by UTF-16 units
+  left a lone surrogate, `encodeURIComponent` threw, and the tick aborted on every run.
+  - The cut is now by code points, and the name is made well-formed (lone halves become
+    U+FFFD) before the disposition is built.
+  - `contentDisposition` itself can no longer throw on such a name, which also covers the
+    browser path.
+  - Anything unexpected that one file throws is now retried and counted like a refusal (three
+    tries, then `failed`) and reported through `onFault`, which the scheduler logs.
+- **F1.** A `DownloadToken` is queued only if it stays a single URL path segment:
+  `^(?!\.{1,2}$)[A-Za-z0-9_.=-]{1,2048}$`. This deliberately differs from the suggested
+  `[A-Za-z0-9_-]`: Brevo doesn't specify the alphabet, and the one published sample begins
+  `eyJ0eXAiOi`, a JWT, whose segments are joined by dots. Refusing `.` and `..` closes the path
+  that resolves elsewhere.
+- **F2.** The inbound path reads at most the smaller of the board's limit and 40 MiB. A
+  `Content-Length` over that limit is refused before any byte is read. The body is written into
+  one buffer: sized to the declared length when there is one, grown otherwise. OPERATIONS says
+  so next to "the upload goes through it, not through Laika".
+- **F3.** The job checks the switch again when it runs; with Email to tasks off, queued files
+  are `switch_off`. This is a new reason, so **migration 0089** rebuilds
+  `email_inbound_attachments` for its CHECK, keeping every row (migrate test added).
+- **F4.** `attachment.create` is checked before Brevo is asked; a sender removed from the space
+  has nothing fetched or stored.
+- **F5.** A reply whose comment was deleted is `not_needed` and is never moved onto the task.

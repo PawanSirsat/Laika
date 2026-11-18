@@ -1,10 +1,10 @@
 import { and, asc, eq, sql } from 'drizzle-orm';
-import { loadActor } from '../auth/resolve-actor.ts';
+import { loadActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type EmailInboundAttachmentReason } from '../db/enums.ts';
-import { emailInbound, emailInboundAttachments, orgEmailInbound } from '../db/schema.ts';
+import { comments, emailInbound, emailInboundAttachments, orgEmailInbound } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertCan, systemPrincipal } from '../policy/can.ts';
+import { assertCan, can, systemPrincipal } from '../policy/can.ts';
 import { decryptSecret } from '../secrets.ts';
 import { type AttachmentsDeps, storeServerAttachment } from './attachments.ts';
 import {
@@ -21,12 +21,14 @@ import { StoreUnavailableError } from './s3-client.ts';
  * organisation's Brevo API key and stored as the mail's sender uploaded them,
  * on the task or comment the mail made.
  *
- * **A file never blocks its task.** The task or comment was written when the
- * mail arrived; a file that cannot be fetched or stored is a reason on its row
- * (§4.104), and the task stands without it. A fetch or a store that fails is
- * tried at most three times, a tick apart; anything that cannot work — no
- * store, no key, over the limit, a sender who may no longer attach — is
- * `skipped` at once.
+ * **A file never blocks its task, nor the files behind it.** The task or
+ * comment was written when the mail arrived; a file that cannot be fetched or
+ * stored is a reason on its row (§4.104), and the task stands without it. A
+ * fetch or a store that fails — or throws anything nobody expected — is tried
+ * at most three times, a tick apart; anything that cannot work — the switch
+ * off, no store, no key, over the limit, nowhere left to put it, a sender who
+ * may no longer attach there — is `skipped` at once, **before Brevo is
+ * asked**.
  */
 
 /** How many queued files one tick takes. */
@@ -35,9 +37,21 @@ export const INBOUND_ATTACHMENT_BATCH = 10;
 /** A fetch or store that fails is tried this many times in all. */
 export const INBOUND_ATTACHMENT_ATTEMPTS = 3;
 
+/**
+ * The most one inbound file may be, whatever the board's limit (F2). A
+ * browser's upload goes straight to the store; this one is held in Laika's
+ * memory between Brevo and the store, so it has a ceiling of its own.
+ */
+export const INBOUND_ATTACHMENT_MAX_BYTES = 40 * 1024 * 1024;
+
 export interface InboundAttachmentDeps extends BrevoFetchOptions {
   /** The store; absent, or `config: null`, every queued file is `store_off`. */
   attachments?: AttachmentsDeps | undefined;
+  /**
+   * Told of anything a file threw that was not Brevo or the store refusing —
+   * the file itself is retried as if they had (M1). The scheduler logs it.
+   */
+  onFault?: ((cause: unknown) => void) | undefined;
 }
 
 /** What one tick did. */
@@ -47,6 +61,8 @@ export interface InboundAttachmentTick {
   skipped: number;
   retried: number;
 }
+
+type InboundMailRow = typeof emailInbound.$inferSelect;
 
 /** A tick already running, per database: the next one joins it, never doubles it. */
 const running = new WeakMap<Db, Promise<InboundAttachmentTick>>();
@@ -61,6 +77,25 @@ function apiKeyOf(db: Db, serverSecret: string): string | null {
     // `LAIKA_SECRET` was rotated: the card says to paste the key again.
     return null;
   }
+}
+
+/** Email to tasks is on now — not only when the mail came (F3). */
+function switchOn(db: Db): boolean {
+  return db.select({ on: orgEmailInbound.enabled }).from(orgEmailInbound).get()?.on === 1;
+}
+
+/**
+ * A reply's file goes on its comment or nowhere: a comment deleted since is
+ * not a reason to put the file on the task instead (F5).
+ */
+function commentStands(db: Db, mail: InboundMailRow): boolean {
+  if (mail.commentId === null) return mail.outcome !== 'comment_added';
+  const comment = db
+    .select({ deletedAt: comments.deletedAt })
+    .from(comments)
+    .where(eq(comments.id, mail.commentId))
+    .get();
+  return comment?.deletedAt === null;
 }
 
 export function runInboundAttachments(
@@ -97,7 +132,9 @@ async function drain(
     .all();
   if (queued.length === 0) return result;
 
+  const on = switchOn(db);
   const config = deps.attachments?.config ?? null;
+  const limit = Math.min(config?.maxBytes ?? 0, INBOUND_ATTACHMENT_MAX_BYTES);
   const apiKey = apiKeyOf(db, serverSecret);
 
   const finish = (
@@ -114,83 +151,87 @@ async function drain(
   };
   /** Another try next tick, or `failed` once the tries are spent. */
   const fault = (id: string, attempts: number, reason: EmailInboundAttachmentReason): void => {
-    if (attempts + 1 >= INBOUND_ATTACHMENT_ATTEMPTS) {
-      db.update(emailInboundAttachments)
-        .set({ attempts: attempts + 1 })
-        .where(eq(emailInboundAttachments.id, id))
-        .run();
-      finish(id, 'failed', reason);
-      return;
-    }
     db.update(emailInboundAttachments)
       .set({ attempts: attempts + 1 })
       .where(eq(emailInboundAttachments.id, id))
       .run();
+    if (attempts + 1 >= INBOUND_ATTACHMENT_ATTEMPTS) {
+      finish(id, 'failed', reason);
+      return;
+    }
     result.retried += 1;
   };
 
   for (const { file, mail } of queued) {
-    if (config === null) {
-      finish(file.id, 'skipped', 'store_off');
-      continue;
-    }
-    if (apiKey === null) {
-      finish(file.id, 'skipped', 'no_api_key');
-      continue;
-    }
-    if (file.sizeBytes > config.maxBytes) {
-      finish(file.id, 'skipped', 'too_large');
-      continue;
-    }
-    const actor = mail.userId === null ? null : loadActor(db, mail.userId);
-    if (mail.taskId === null || mail.projectId === null || actor?.isActive !== true) {
-      finish(file.id, 'skipped', 'not_needed');
-      continue;
-    }
-
-    let bytes: Uint8Array;
+    // What a throw counts as: Brevo's fault until the bytes are in hand.
+    let stage: 'fetch_failed' | 'store_failed' = 'fetch_failed';
     try {
-      const fetched = await fetchInboundAttachment(
-        apiKey,
-        file.downloadToken ?? '',
-        config.maxBytes,
-        deps,
-      );
+      if (!on) {
+        finish(file.id, 'skipped', 'switch_off');
+        continue;
+      }
+      if (config === null) {
+        finish(file.id, 'skipped', 'store_off');
+        continue;
+      }
+      if (apiKey === null) {
+        finish(file.id, 'skipped', 'no_api_key');
+        continue;
+      }
+      if (file.sizeBytes > limit) {
+        finish(file.id, 'skipped', 'too_large');
+        continue;
+      }
+      // Who to store it as, and where — asked before Brevo is, so a sender
+      // who has since left the space has nothing fetched for them (F4).
+      const actor = mail.userId === null ? null : loadActor(db, mail.userId);
+      const { projectId, taskId } = mail;
+      if (
+        projectId === null ||
+        taskId === null ||
+        actor?.isActive !== true ||
+        !commentStands(db, mail) ||
+        !can(withProject(actor, projectId), 'attachment.create', { projectId })
+      ) {
+        finish(file.id, 'skipped', 'not_needed');
+        continue;
+      }
+
+      const fetched = await fetchInboundAttachment(apiKey, file.downloadToken ?? '', limit, deps);
       if (fetched.kind === 'too_large') {
         finish(file.id, 'skipped', 'too_large');
         continue;
       }
-      bytes = fetched.bytes;
-    } catch (err) {
-      if (!(err instanceof BrevoFetchError)) throw err;
-      fault(file.id, file.attempts, 'fetch_failed');
-      continue;
-    }
-    if (bytes.length === 0) {
-      finish(file.id, 'skipped', 'not_needed');
-      continue;
-    }
+      if (fetched.bytes.length === 0) {
+        finish(file.id, 'skipped', 'not_needed');
+        continue;
+      }
 
-    try {
+      stage = 'store_failed';
       const stored = await storeServerAttachment(db, actor, deps.attachments, {
-        projectId: mail.projectId,
-        taskId: mail.taskId,
+        projectId,
+        taskId,
         commentId: mail.commentId,
         filename: file.filename,
         contentType: file.contentType,
-        bytes,
+        bytes: fetched.bytes,
       });
       finish(file.id, 'stored', null, stored.id);
     } catch (err) {
-      if (err instanceof StoreUnavailableError) {
-        fault(file.id, file.attempts, 'store_failed');
+      // `StoreUnavailableError` is an `ApiError` too: it is asked first.
+      if (err instanceof BrevoFetchError || err instanceof StoreUnavailableError) {
+        fault(file.id, file.attempts, stage);
       } else if (err instanceof ApiError && err.code === 'payload_too_large') {
         finish(file.id, 'skipped', 'too_large');
       } else if (err instanceof ApiError) {
         // The sender may no longer attach in that space: nothing to store it as.
         finish(file.id, 'skipped', 'not_needed');
       } else {
-        throw err;
+        // Anything nobody expected is tried again like a refusal, and counted
+        // the same way (M1): one file can neither stop the files behind it nor
+        // be fetched for ever.
+        deps.onFault?.(err);
+        fault(file.id, file.attempts, stage);
       }
     }
   }

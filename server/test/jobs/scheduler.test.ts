@@ -192,14 +192,15 @@ describe('the jobs §11.6 names', () => {
     expect(await off.run(NOW)).toEqual({ changed: 0 });
     expect(t.db.select().from(emailInboundAttachments).get()?.state).toBe('pending');
 
-    // With it, and no store: skipped at once, still without a fetch.
+    // With it, and Email to tasks off as it ships: skipped at once, still
+    // without a fetch.
     const on = buildJobs(
       deps({ inboundEmail: { fetchImpl: brevo }, attachments: { config: null } }),
     ).find((j) => j.name === 'email.inbound_attachments')!;
     expect(await on.run(NOW)).toEqual({ changed: 1 });
     expect(t.db.select().from(emailInboundAttachments).get()).toMatchObject({
       state: 'skipped',
-      reason: 'store_off',
+      reason: 'switch_off',
     });
     expect(fetched).toEqual([]);
   });

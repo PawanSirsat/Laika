@@ -1,16 +1,21 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
+import { loadActor, type ResolvedActor, withProject } from '../../src/auth/resolve-actor.ts';
+import { newId } from '../../src/db/ids.ts';
 import {
   activity,
   attachments,
   comments,
   emailInboundAttachments,
+  projectMemberships,
   tasks,
   users,
 } from '../../src/db/schema.ts';
+import { can } from '../../src/policy/can.ts';
+import { deleteComment } from '../../src/services/comments.ts';
 import {
   INBOUND_ATTACHMENT_ATTEMPTS,
+  INBOUND_ATTACHMENT_MAX_BYTES,
   runInboundAttachments,
 } from '../../src/services/email-inbound-attachments.ts';
 import {
@@ -62,9 +67,10 @@ const brevoFetch: typeof fetch = (input, init) => {
   return Promise.resolve(brevoAnswer(token));
 };
 
-function deps(store: 'on' | 'off' = 'on', maxBytes?: number) {
+function deps(store: 'on' | 'off' = 'on', maxBytes?: number, onFault?: (cause: unknown) => void) {
   return {
     fetchImpl: brevoFetch,
+    onFault,
     attachments:
       store === 'off'
         ? { config: null }
@@ -122,6 +128,30 @@ function queue() {
   return t.db.select().from(emailInboundAttachments).all();
 }
 
+/** A reply to the seed's first mail, with `files`, from the owner. */
+function replyWith(files: unknown[]) {
+  const to = getProjectEmailAddress(t.db, owner, 'laika', NOW).address!;
+  return receiveInboundEmail(
+    t.sqlite,
+    t.db,
+    {
+      items: [
+        {
+          MessageId: '<m2@example.test>',
+          InReplyTo: '<m1@example.test>',
+          From: { Address: 'owner@example.test' },
+          Recipients: [{ Address: to }],
+          Subject: 'Re: The trace',
+          ExtractedMarkdownMessage: 'And the log.',
+          Attachments: files,
+          Headers: { 'Authentication-Results': 'mx.b; dmarc=pass header.from=example.test' },
+        },
+      ],
+    },
+    NOW,
+  );
+}
+
 describe('stored as the sender uploaded them', () => {
   it('fetches each file once and stores it, ready, on the task — attachment.added as the sender', async () => {
     mailWith([file('dl-1'), file('dl-2', PDF.length, 'second.pdf')]);
@@ -160,26 +190,7 @@ describe('stored as the sender uploaded them', () => {
 
   it('puts a reply’s file on the comment it came with', async () => {
     mailWith([]);
-    const to = getProjectEmailAddress(t.db, owner, 'laika', NOW).address!;
-    receiveInboundEmail(
-      t.sqlite,
-      t.db,
-      {
-        items: [
-          {
-            MessageId: '<m2@example.test>',
-            InReplyTo: '<m1@example.test>',
-            From: { Address: 'owner@example.test' },
-            Recipients: [{ Address: to }],
-            Subject: 'Re: The trace',
-            ExtractedMarkdownMessage: 'And the log.',
-            Attachments: [file('dl-3', PDF.length, 'log.pdf')],
-            Headers: { 'Authentication-Results': 'mx.b; dmarc=pass header.from=example.test' },
-          },
-        ],
-      },
-      NOW,
-    );
+    replyWith([file('dl-3', PDF.length, 'log.pdf')]);
     await runInboundAttachments(t.db, SECRET, deps(), NOW);
     const comment = t.db.select().from(comments).get()!;
     expect(t.db.select().from(attachments).get()).toMatchObject({
@@ -271,6 +282,144 @@ describe('a file that cannot be stored never blocks its task', () => {
     await runInboundAttachments(t.db, SECRET, deps(), NOW);
     expect(queue()[0]).toMatchObject({ state: 'skipped', reason: 'not_needed' });
     expect(brevoCalls).toHaveLength(0);
+  });
+
+  it('not_needed: a member removed from the space since the mail has nothing fetched or stored (F4)', async () => {
+    const memberId = newId();
+    t.db
+      .insert(users)
+      .values({
+        id: memberId,
+        email: 'member@example.test',
+        name: 'Member',
+        orgRole: 'member',
+        isActive: 1,
+        createdAt: new Date(NOW),
+        updatedAt: new Date(NOW),
+      })
+      .run();
+    t.db
+      .insert(projectMemberships)
+      .values({
+        id: newId(),
+        projectId: s.projectId,
+        userId: memberId,
+        role: 'member',
+        createdAt: NOW,
+      })
+      .run();
+    mailWith([file('dl-1')], { From: { Address: 'member@example.test' } });
+    // Written as the member, who may attach there — until they leave.
+    expect(t.db.select().from(tasks).get()?.createdBy).toBe(memberId);
+    const member = () => withProject(loadActor(t.db, memberId)!, s.projectId);
+    expect(can(member(), 'attachment.create', { projectId: s.projectId })).toBe(true);
+    t.db.delete(projectMemberships).where(eq(projectMemberships.userId, memberId)).run();
+    expect(can(member(), 'attachment.create', { projectId: s.projectId })).toBe(false);
+
+    await runInboundAttachments(t.db, SECRET, deps(), NOW);
+    expect(queue()[0]).toMatchObject({ state: 'skipped', reason: 'not_needed' });
+    expect(brevoCalls).toHaveLength(0);
+    expect(t.db.select().from(attachments).all()).toHaveLength(0);
+  });
+
+  it('not_needed: a reply whose comment was deleted is not moved onto the task (F5)', async () => {
+    mailWith([]);
+    replyWith([file('dl-3', PDF.length, 'log.pdf')]);
+    const comment = t.db.select().from(comments).get()!;
+    deleteComment(t.db, owner, comment.id, NOW);
+
+    await runInboundAttachments(t.db, SECRET, deps(), NOW);
+    expect(queue()[0]).toMatchObject({ state: 'skipped', reason: 'not_needed' });
+    expect(brevoCalls).toHaveLength(0);
+    expect(t.db.select().from(attachments).all()).toHaveLength(0);
+  });
+
+  it('switch_off: Email to tasks turned off since the mail came fetches nothing (F3)', async () => {
+    mailWith([file('dl-1'), file('dl-2')]);
+    setEmailInboundSettings(t.db, owner, { enabled: false }, SECRET, '', NOW);
+    expect(await runInboundAttachments(t.db, SECRET, deps(), NOW)).toMatchObject({ skipped: 2 });
+    expect(queue().map((q) => [q.state, q.reason, q.downloadToken])).toEqual([
+      ['skipped', 'switch_off', null],
+      ['skipped', 'switch_off', null],
+    ]);
+    expect(brevoCalls).toHaveLength(0);
+  });
+
+  it('too_large past the inbound ceiling, whatever the board allows: held in memory (F2)', async () => {
+    const board = INBOUND_ATTACHMENT_MAX_BYTES * 2;
+    mailWith([file('dl-big', INBOUND_ATTACHMENT_MAX_BYTES + 1), file('dl-liar', 5)]);
+    let pulls = 0;
+    brevoAnswer = () =>
+      new Response(
+        new ReadableStream<Uint8Array>(
+          {
+            pull(controller) {
+              pulls += 1;
+              controller.enqueue(new Uint8Array(1));
+            },
+          },
+          { highWaterMark: 0 },
+        ),
+        { headers: { 'content-length': String(INBOUND_ATTACHMENT_MAX_BYTES + 1) } },
+      );
+    await runInboundAttachments(t.db, SECRET, deps('on', board), NOW);
+    expect(queue().map((q) => [q.state, q.reason])).toEqual([
+      ['skipped', 'too_large'],
+      ['skipped', 'too_large'],
+    ]);
+    // The announced one is never asked for; the one that lied is refused unread.
+    expect(brevoCalls).toEqual(['dl-liar']);
+    expect(pulls).toBe(0);
+  });
+});
+
+describe('one file never stops the others (M1)', () => {
+  it('stores a name cut nowhere near a pair, with a disposition that decodes back to it', async () => {
+    // 202 code points, 402 UTF-16 units: a cut at 255 units splits a pair.
+    const name = `ab${'\u{1F600}'.repeat(200)}`;
+    mailWith([file('dl-1', PDF.length, name)]);
+    expect(await runInboundAttachments(t.db, SECRET, deps(), NOW)).toMatchObject({ stored: 1 });
+    const stored = t.db.select().from(attachments).get()!;
+    expect(stored.filename).toBe(name);
+    const disposition = s3.objects.get(stored.storageKey)!.contentDisposition;
+    expect(/^[\x20-\x7e]+$/.test(disposition)).toBe(true);
+    expect(decodeURIComponent(/filename\*=UTF-8''(\S+)$/.exec(disposition)![1]!)).toBe(name);
+  });
+
+  it('a file that throws what nobody expected is tried three times and dropped; the next is stored', async () => {
+    mailWith([file('dl-boom', PDF.length, 'boom.pdf'), file('dl-2', PDF.length, 'fine.pdf')]);
+    t.sqlite.exec(`
+      CREATE TRIGGER boom BEFORE INSERT ON attachments WHEN NEW.filename = 'boom.pdf'
+      BEGIN SELECT RAISE(ABORT, 'a fault nobody expected'); END
+    `);
+    const faults: unknown[] = [];
+    const onFault = (cause: unknown) => faults.push(cause);
+
+    expect(await runInboundAttachments(t.db, SECRET, deps('on', undefined, onFault), NOW)).toEqual({
+      stored: 1,
+      failed: 0,
+      skipped: 0,
+      retried: 1,
+    });
+    expect(
+      t.db
+        .select()
+        .from(attachments)
+        .all()
+        .map((a) => a.filename),
+    ).toEqual(['fine.pdf']);
+    for (let i = 1; i < INBOUND_ATTACHMENT_ATTEMPTS; i += 1) {
+      await runInboundAttachments(t.db, SECRET, deps('on', undefined, onFault), NOW);
+    }
+    expect(queue().map((q) => [q.filename, q.state, q.reason, q.attempts])).toEqual([
+      ['boom.pdf', 'failed', 'store_failed', INBOUND_ATTACHMENT_ATTEMPTS],
+      ['fine.pdf', 'stored', null, 0],
+    ]);
+    expect(brevoCalls.filter((c) => c === 'dl-boom')).toHaveLength(INBOUND_ATTACHMENT_ATTEMPTS);
+    expect(faults).toHaveLength(INBOUND_ATTACHMENT_ATTEMPTS);
+    expect(faults.map((f) => (f as Error).message)).toEqual(
+      Array(INBOUND_ATTACHMENT_ATTEMPTS).fill('a fault nobody expected'),
+    );
   });
 });
 

@@ -183,9 +183,19 @@ const BAD_FILENAME = /[/\\\u0000-\u001f\u007f]/;
 /** `type/subtype`, the RFC 6838 characters, no parameters. */
 const MEDIA_TYPE = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,62}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,62}$/;
 
+/**
+ * `value` with every lone UTF-16 surrogate made U+FFFD — what
+ * `String.prototype.toWellFormed` does, which the ES2023 lib does not type. A
+ * `u` regex reads a pair as one code point, so only a lone half matches.
+ */
+function wellFormed(value: string): string {
+  return value.replace(/\p{Surrogate}/gu, '\uFFFD');
+}
+
 /** RFC 5987's `attr-char`, so `filename*` needs no quoting. */
 function rfc5987(value: string): string {
-  return encodeURIComponent(value).replace(
+  // `encodeURIComponent` throws on a lone surrogate (LAI-1315 M1).
+  return encodeURIComponent(wellFormed(value)).replace(
     /['()*]/g,
     (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
   );
@@ -865,8 +875,12 @@ export async function storeServerAttachment(
       max_bytes: config.maxBytes,
     });
   }
-  // A mail names its files freely; the store's rules are the browser's.
-  const cleaned = input.filename.replace(new RegExp(BAD_FILENAME.source, 'g'), '_').slice(0, 255);
+  // A mail names its files freely; the store's rules are the browser's. Cut by
+  // code points, never UTF-16 units: a cut through a pair leaves a lone half,
+  // which no header can carry (M1).
+  const cleaned = [...wellFormed(input.filename).replace(new RegExp(BAD_FILENAME.source, 'g'), '_')]
+    .slice(0, 255)
+    .join('');
   const filename = cleaned === '' ? 'attachment' : cleaned;
   const type = input.contentType.trim().toLowerCase();
   const contentType = MEDIA_TYPE.test(type) ? type : 'application/octet-stream';
