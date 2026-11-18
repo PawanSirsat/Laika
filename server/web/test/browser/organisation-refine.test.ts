@@ -269,10 +269,11 @@ void describe('a failed refresh keeps the last good answer', () => {
     }
   });
 
-  void test('Overview says the settings could not be read, with a Retry that works', async () => {
+  void test('General says the settings could not be read, with a Retry that works', async () => {
     let failing = true;
+    // The settings are General's, in the settings hub (LAI-1318).
     const h = await open(
-      '/organisation',
+      '/organisation?tab=general',
       OWNER({
         '/api/v1/org': () =>
           failing

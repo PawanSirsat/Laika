@@ -197,9 +197,9 @@ function calendarState(initial: unknown) {
   };
 }
 
-/** Integrations, where the calendar card is. */
+/** The Outlook calendar's own page (LAI-1318), where its card is. */
 async function integrations(stub: ApiStub, ready = '[data-section="calendar"]'): Promise<Harness> {
-  const h = await openPage('/organisation?tab=integrations', stub);
+  const h = await openPage('/organisation?tab=calendar', stub);
   await h.page.locator(ready).waitFor({ timeout: 20_000 });
   return h;
 }
@@ -499,7 +499,8 @@ void describe('Outlook calendar: the switch and syncing', () => {
 
 void describe('Outlook calendar: who sees it', () => {
   void test('a member on Integrations is shown no calendar card, and it is never asked', async () => {
-    const h = await integrations(orgStub('member'), '[data-section="prices"]');
+    // Its page says who sets it up, rather than drawing an empty card.
+    const h = await integrations(orgStub('member'), '[data-conn-refused]');
     try {
       await h.page.waitForTimeout(300);
       assert.equal(await card(h).count(), 0);

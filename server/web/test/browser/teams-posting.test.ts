@@ -304,7 +304,7 @@ void describe('Organisation → Integrations: the Teams switch', () => {
   void test('is off, turns on with one click, and lists every space with a channel', async () => {
     const on = { value: false };
     const puts: StubCall[] = [];
-    const h = await open('/organisation?tab=integrations', orgStub(on, puts));
+    const h = await open('/organisation?tab=teams', orgStub(on, puts));
     try {
       const section = h.page.locator('[data-section="teams"]');
       await section.waitFor({ timeout: 20_000 });

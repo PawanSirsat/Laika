@@ -1,5 +1,6 @@
 /**
- * Organisation → Overview names the board's build (LAI-1069, plan §J E3): the
+ * Organisation → General names the board's build (LAI-1069, plan §J E3; on
+ * General since the settings hub, LAI-1318): the
  * server version, the commit and the helper protocol from
  * `GET /developer/compatibility`, as one quiet line, to owners and admins only.
  *
@@ -65,7 +66,7 @@ void after(async () => {
 void describe('the board build line', () => {
   for (const role of ['owner', 'admin']) {
     void test(`${role}: version, commit and protocol, each the server’s`, async () => {
-      const h = await open('/organisation', stub(role));
+      const h = await open('/organisation?tab=general', stub(role));
       try {
         const line = h.page.locator(LINE);
         await line.waitFor({ timeout: 20_000 });
@@ -82,13 +83,14 @@ void describe('the board build line', () => {
 
   for (const role of ['member', 'viewer']) {
     void test(`${role}: no line, though the page has the build in hand`, async () => {
-      const h = await open('/organisation', stub(role));
+      const h = await open('/organisation?tab=general', stub(role));
       try {
-        await h.page.locator('.org-stat', { hasText: 'Members' }).waitFor({ timeout: 20_000 });
-        await h.page.locator('.org-pulse').waitFor({ timeout: 20_000 });
+        // General, loaded: the line would sit under its settings.
+        await h.page.locator('#org-name').waitFor({ timeout: 20_000 });
         // The shell reads the same answer for its own mode, so the build was
         // there to show: its absence is the role check, not a slow read.
         await until(() => h.calls.some((c) => c.path === '/api/v1/developer/compatibility'));
+        assert.ok(h.calls.some((c) => c.path === '/api/v1/developer/compatibility'));
         await new Promise((resolve) => setTimeout(resolve, 300));
         assert.equal(await h.page.locator(LINE).count(), 0);
       } finally {
@@ -98,7 +100,7 @@ void describe('the board build line', () => {
   }
 
   void test('a build that does not know its commit says so; one protocol has no range', async () => {
-    const h = await open('/organisation', stub('owner', compat(null, 2, 2)));
+    const h = await open('/organisation?tab=general', stub('owner', compat(null, 2, 2)));
     try {
       const line = h.page.locator(LINE);
       await line.waitFor({ timeout: 20_000 });
@@ -111,14 +113,15 @@ void describe('the board build line', () => {
     }
   });
 
-  void test('a failed read shows no line, and the rest of Overview stands', async () => {
-    const h = await open('/organisation', {
+  void test('a failed read shows no line, and the rest of the page stands', async () => {
+    const h = await open('/organisation?tab=general', {
       ...stub('owner'),
       '/api/v1/developer/compatibility': refuse(500, 'internal', 'boom'),
     });
     try {
-      await h.page.locator('.org-pulse').waitFor({ timeout: 20_000 });
+      await h.page.locator('#org-name').waitFor({ timeout: 20_000 });
       await until(() => h.calls.some((c) => c.path === '/api/v1/developer/compatibility'));
+      assert.ok(h.calls.some((c) => c.path === '/api/v1/developer/compatibility'));
       assert.equal(await h.page.locator(LINE).count(), 0);
     } finally {
       await h.close();
@@ -130,7 +133,7 @@ void describe('fits', () => {
   for (const width of [1440, 390]) {
     for (const theme of ['light', 'dark']) {
       void test(`${String(width)}px, ${theme}: muted and inside the page`, async () => {
-        const h = await open('/organisation', stub('owner'));
+        const h = await open('/organisation?tab=general', stub('owner'));
         try {
           await h.page.setViewportSize({ width, height: 900 });
           await setTheme(h.page, theme);

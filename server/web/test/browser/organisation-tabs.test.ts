@@ -75,7 +75,10 @@ void describe('Overview: a figure with a next step leads to it', () => {
         0,
         'Blocked links to a list that cannot show blocked work',
       );
-      // Security is offered to a reader who may list tokens, as a place.
+      // Security is offered to a reader who may list tokens, as a place — on
+      // General, in the settings hub (LAI-1318).
+      await h.page.locator('.page-tab[data-tab="general"]').click();
+      await h.page.locator('[data-security-link]').waitFor({ timeout: 10_000 });
       assert.equal(
         await h.page.locator('[data-security-link]').getAttribute('href'),
         '/organisation?tab=security',
@@ -415,7 +418,7 @@ void describe('Roles: grouped, findable, and a role explained', () => {
 
 void describe('Integrations: each card says its state', () => {
   void test('GitHub says not set up, with its steps, and fits a phone', async () => {
-    const h = await open('/organisation?tab=integrations', TABS(), {
+    const h = await open('/organisation?tab=github', TABS(), {
       before: async (page) => {
         await page.setViewportSize({ width: 390, height: 844 });
       },
@@ -427,8 +430,6 @@ void describe('Integrations: each card says its state', () => {
       assert.equal(await badge.innerText(), 'not set up');
       assert.equal(await badge.getAttribute('data-tone'), 'off');
       assert.equal(await card.locator('[data-github-steps] li').count(), 3);
-      const ai = h.page.locator('[data-section="ai"] .org-status-badge');
-      assert.equal(await ai.innerText(), 'configured');
 
       const fits = await card.evaluate((el) => {
         const box = el.getBoundingClientRect();
@@ -443,6 +444,12 @@ void describe('Integrations: each card says its state', () => {
         `the card runs off the screen by ${String(fits.right - fits.width)}`,
       );
       assert.ok(fits.scroll <= 1, `the card clips ${String(fits.scroll)}px of its own content`);
+
+      // The AI provider says its state too, on its own page (LAI-1318).
+      await h.page.locator('.page-tab[data-tab="ai"]').click();
+      const ai = h.page.locator('[data-section="ai"] .org-status-badge');
+      await ai.waitFor({ timeout: 10_000 });
+      assert.equal(await ai.innerText(), 'configured');
     } finally {
       await h.close();
     }

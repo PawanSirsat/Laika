@@ -124,7 +124,7 @@ void after(async () => {
 
 void describe('the price table, for everyone who may see the organisation', () => {
   void test('a member: every price, whose it is, its source and date — nothing to change', async () => {
-    const h = await open('/organisation?tab=integrations', {
+    const h = await open('/organisation?tab=ai', {
       ...BASE,
       '/api/v1/me': me('member'),
       '/api/v1/org/model-prices': prices(false),
@@ -161,7 +161,7 @@ void describe('the price table, for everyone who may see the organisation', () =
 
   void test('an admin: edits a price, resets the organisation’s own, and prices a model the table lacks', async () => {
     const writes: StubCall[] = [];
-    const h = await open('/organisation?tab=integrations', {
+    const h = await open('/organisation?tab=ai', {
       ...BASE,
       '/api/v1/me': me('admin'),
       '/api/v1/org/model-prices': prices(true),
@@ -242,7 +242,7 @@ void describe('the price table, for everyone who may see the organisation', () =
   });
 
   void test('light and dark at 1366 and 390: the page never scrolls sideways', async () => {
-    const h = await open('/organisation?tab=integrations', {
+    const h = await open('/organisation?tab=ai', {
       ...BASE,
       '/api/v1/me': me('owner'),
       '/api/v1/org/model-prices': prices(true),
