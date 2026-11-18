@@ -508,8 +508,17 @@ export function TimelineMobile({
                     : ICONS.drafted;
               const state =
                 block.kind === 'confirmed' ? 'confirmed' : block.needsCard ? 'needs' : 'drafted';
+              // A meeting the Outlook sync logged says so (D-157, LAI-1316).
+              const fromOutlook =
+                block.kind === 'confirmed' && entries.get(block.id)?.source === 'calendar';
               const word =
-                state === 'confirmed' ? 'Confirmed' : state === 'needs' ? 'No task yet' : 'Drafted';
+                state === 'confirmed'
+                  ? fromOutlook
+                    ? 'Confirmed, from Outlook,'
+                    : 'Confirmed'
+                  : state === 'needs'
+                    ? 'No task yet'
+                    : 'Drafted';
               const alone = place.rows === 1;
               return (
                 <button
@@ -527,6 +536,7 @@ export function TimelineMobile({
                   data-block-select={block.id}
                   data-mobile-block={block.id}
                   data-kind={block.kind}
+                  data-source={fromOutlook ? 'calendar' : undefined}
                   aria-pressed={selectedId === block.id}
                   aria-label={`${word} ${top}, ${rangeOf(block.start, block.end)}, ${duration(block.minutes)}`}
                   style={

@@ -151,7 +151,7 @@ organisation's grants for exactly these actions and no others.
 | *Deactivate people and reset access* | `user.deactivate`, `user.sign_out` (somebody else; anyone signs themselves out — LAI-981), `user.reset_password` (not for the owner — LAI-983) |
 | *Create and archive spaces* | `project.create`, `project.archive` |
 | *See and manage anyone's developer setup* | `token.list_any`, `token.revoke_any`, `developer_setup.read_any`, `agent.revoke_any`, `device.revoke_any` (not for the owner — D-133) |
-| *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set`, `org.hr.configure` (D-149), `org.email.configure` (D-153), `org.teams.configure` (D-154) |
+| *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set`, `org.hr.configure` (D-149), `org.email.configure` (D-153), `org.teams.configure` (D-154), `org.calendar.configure` (D-157) |
 
 *Invite people* and *Deactivate people and reset access* were one
 capability, *Manage people and invites*, until D-104 item 6 (LAI-985); an
@@ -273,6 +273,7 @@ be obvious because someone will be asking for it.
 | Connect the organisation's HR system | ✓ (session only) | ✓ (session only) | — | — |
 | Configure the organisation's email | ✓ (session only) | ✓ (session only) | — | — |
 | Configure Teams posting | ✓ (session only) | ✓ (session only) | — | — |
+| Connect the organisation's Outlook calendar | ✓ (session only) | ✓ (session only) | — | — |
 | Read own time settings | ✓ | ✓ | ✓ | ✓ |
 | Set own Draft my time | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Send own time drafts | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
@@ -286,6 +287,7 @@ be obvious because someone will be asking for it.
 | Set own availability | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | See availability of people in your spaces | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Read and dismiss own notices | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| Read and set own email preferences | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | View own developer setup | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Change a space's icon | ✓ | ✓ | — | — |
 
@@ -436,6 +438,14 @@ token that could set one could send them anywhere. A space's own routes also
 need the space to be one the caller can open (`project.read`), else the missing
 slug's `404`. The posting job acts as §3.4's `system.teams.post`.
 
+**"Connect the organisation's Outlook calendar" is `org.calendar.configure`**
+(D-157, LAI-1316), behind §6.4's `/org/calendar` routes: save the Entra app's
+tenant, client id and secret, the rules that send a meeting to a space and the
+switch, test whether `Calendars.Read` has been granted, sync now, disconnect.
+Session only, because the secret reads every member's calendar. **The meetings
+it logs are each member's own time** (§4.48), read and changed under
+`time_entries.*_own` like an entry they typed.
+
 **"Change a member's confirmed time" is `time_entries.write_member`** (D-143,
 LAI-1165, amending D-102 rule 4 and D-088 items 2 and 6), behind §6.4's
 `POST /people/:id/time-entries` and `PATCH`/`DELETE
@@ -493,6 +503,13 @@ addressed to the person — an adder's message among them — not to an agent
 acting for them, and marking one read is the person having seen it. The
 service reads and marks the caller's own rows only; no path names anybody
 else's.
+
+**"Read and set own email preferences" is `email_prefs.own`** (D-153,
+LAI-1313), behind §6.4's `GET` and `PUT /me/email-prefs`: whether a person is
+mailed at once when assigned or @mentioned, and whether they get the daily
+digest. Every role holds it, **session only**: whether a person hears from
+Laika is theirs to decide, not an agent's acting for them. The service reads
+and writes the caller's own row only.
 
 **"View a member's developer setup" is `developer_setup.read_any`** (D-132,
 LAI-1137), behind §6.4's `GET /people/:id/developer-setup`: a member's
@@ -786,7 +803,9 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.attachment.prune` | §11.6: hourly, uploads nobody finished and files nothing linked after 24 hours, and the stored objects of removed files (§4.92, D-150, LAI-1300) |
 | `system.email.send` | §11.6: every 30 seconds, the outbox's queued email sent — or recorded `suppressed` when the switch is off or nothing is configured (§4.93, D-153, LAI-1312) |
 | `system.email.prune` | §11.6: outbox rows 90 days after they were written (§4.93, D-153, LAI-1312) |
+| `system.email.notify` | §11.6: every 30 seconds, assignment and @mention mail queued and daily digests collected and sent, read from `activity` and `member_notices` (§4.97 – §4.100, D-153, LAI-1313) |
 | `system.teams.post` | §11.6: every minute, each space's Teams stand-ups, nightly digest and instant notices, and the record of posts kept 90 days (§4.94 – §4.96, D-154, LAI-1314) |
+| `system.calendar.sync` | §11.6: members' Outlook meetings — invitations accepted, Teams meetings organised — logged as their time, every 15 minutes while the switch is on (§4.101, §4.102, D-157, LAI-1316) |
 | `system.directory.sync` | §11.6: every enabled Member of the Microsoft directory added as a `member`, every 15 minutes and once at boot, while `LAIKA_MICROSOFT_DIRECTORY_SYNC` is on; *Sync now* runs the same code after asking the person `org.settings.edit` (D-158, LAI-1239, LAI-1317) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
@@ -2383,12 +2402,12 @@ row.
 | `tz` | IANA zone, stored per entry; the board stays UTC |
 | `started_at`, `ended_at` | nullable, together, end after start (CHECK) — a confirmed block keeps its span |
 | `minutes` | 1–1440 (CHECK); a person's live entries on one day sum to at most 1440 (`422 day_full`) |
-| `source` | `draft` \| `manual` \| `import` — an `import` came from Solidtime and is read-only here: changed in Solidtime, and taken by the next pull (LAI-788) |
-| `source_ref` | nullable — the draft it came from, or an import's own id (LAI-788); unique per `(user_id, source)` where set |
+| `source` | `draft` \| `manual` \| `import` \| `calendar` — an `import` came from Solidtime and is read-only here: changed in Solidtime, and taken by the next pull (LAI-788); a `calendar` entry is a meeting the Outlook sync logged (§4.102, D-157), `kind` `meeting`, the person's to change or delete as a typed one, and never pushed to Solidtime |
+| `source_ref` | nullable — the draft it came from, an import's own id (LAI-788), or a calendar meeting's Graph event id (D-157); unique per `(user_id, source)` where set |
 | `note` | nullable, ≤ 280 characters |
 | `kind` | nullable — what the person said it was (D-108, LAI-897; the design's eight since LAI-516): `work` \| `meeting` \| `thinking` \| `research` \| `pairing` \| `review` \| `support` \| `admin` — validated by the API on every path (no CHECK here: SQLite cannot add one without rebuilding a table that carries retention triggers; `time_timers.kind` carries it). Null on a confirmed draft, an import, and an entry nobody typed a kind for; the Timeline colours a block by it. Migration 0060 mapped the first eight: call → meeting, planning → thinking, learning → research, other → work |
-| `title` | nullable, ≤ 120 characters (CHECK) — the person's own name for it, shown where a card's key would be when there is no card |
-| `description` | nullable, ≤ 2000 characters (CHECK) — what it was, in their words; `note` stays the one line Solidtime gets when there is no title |
+| `title` | nullable, ≤ 120 characters — validated by the API on every path, no CHECK (as `kind`) — the person's own name for it, shown where a card's key would be when there is no card |
+| `description` | nullable, ≤ 2000 characters — validated by the API, no CHECK — what it was, in their words; `note` stays the one line Solidtime gets when there is no title |
 | `folder`, `branch` | nullable — a confirmed draft's work folder name and branch (§4.47, D-098 item 5), carried into the entry when the person confirms it and seen with it by owners and admins, as confirmed hours are (D-088 item 7); null for a typed or imported entry. Not part of a revision (§4.49) |
 | `revision` | integer ≥ 1, its newest revision's number |
 | `deleted_at` | nullable — a person's delete keeps the row |
@@ -4015,14 +4034,14 @@ request writes a row and returns; §11.6's `email.send` sends what is queued, so
 | field | notes |
 | --- | --- |
 | `id` | ULID |
-| `kind` | `test` \| `invite` \| `password_reset` (CHECK) |
-| `idempotency_key` | unique — one message per thing it is about: `invite:<id>`, `password_reset:<id>`, `test:<id>`. **Enqueueing the same key again writes nothing** |
+| `kind` | `test` \| `invite` \| `password_reset` \| `assignment` \| `mention` \| `digest` (CHECK) — the last three a person's notification mail (LAI-1313) |
+| `idempotency_key` | unique — one message per thing it is about: `invite:<id>`, `password_reset:<id>`, `test:<id>`, and LAI-1313's `assignment:<activity id>`, `mention:<comment id>:<user id>` and `digest:<digest id>`. **Enqueueing the same key again writes nothing** |
 | `recipient_user_id` | nullable, FK `users`, set null — the person it is for, when they have an account |
 | `to_address` | nullable — where it goes; null only when there was nobody to send to (`no_address`) |
 | `subject` | |
 | `body_enc` | nullable — §12's `email_body` ciphertext of `{text, html}`, **present only while `queued` or `sending`**: an invite or a reset carries a working link, and §13.1 stores no token in the clear. Cleared the moment the row is final; a suppressed row never has one |
 | `state` | `queued` \| `sending` \| `sent` \| `failed` \| `unconfirmed` \| `suppressed` (CHECK) |
-| `suppressed_reason` | nullable — `email_off` \| `email_not_configured` \| `no_address` \| `no_public_url` \| `too_old` \| `superseded` (CHECK), **set exactly when `suppressed`** (CHECK). `superseded`: the link it carries stopped working before it went — the invite was revoked, re-issued or accepted, or the reset link was replaced or used (LAI-1312 review) |
+| `suppressed_reason` | nullable — `email_off` \| `email_not_configured` \| `no_address` \| `no_public_url` \| `too_old` \| `superseded` \| `pref_off` \| `no_access` (CHECK), **set exactly when `suppressed`** (CHECK). `superseded`: the link it carries stopped working before it went — the invite was revoked, re-issued or accepted, or the reset link was replaced or used (LAI-1312 review) |
 | `attempts` | default 0 |
 | `next_attempt_at` | nullable — when a `queued` row is next due |
 | `send_before` | the horizon: the earlier of seven days and the link's own expiry. Past it, `too_old` |
@@ -4030,6 +4049,7 @@ request writes a row and returns; §11.6's `email.send` sends what is queued, so
 | `sent_at` | nullable — when the server accepted it |
 | `last_error` | nullable, ≤ 300 (CHECK) — the SMTP reply code or the transport's, and a short reason; never a credential |
 | `created_by` | nullable, FK `users`, set null — the inviter, or the admin who issued a reset or pressed *Send test email* |
+| `task_id` | nullable, FK `tasks`, set null — the task an `assignment` or `mention` mail is about (LAI-1313), so `email.send` can ask again whether its person may still read it; null for every other kind, and on one of those two it means the task is gone and the mail does not go |
 | `created_at`, `updated_at` | |
 
 Indexes: unique `(idempotency_key)`, `(state, next_attempt_at)` — the sender's —
@@ -4047,6 +4067,19 @@ a dropped connection once the session was underway is `unconfirmed`, **final
 and never retried**, because an email sent twice cannot be unsent. A row left
 `sending` ten minutes is `unconfirmed` too. *Send test email* writes its row
 already final, with no body. Retention: 90 days (§11.6).
+
+`pref_off` (LAI-1313): the person turned that mail off in their profile (§4.97).
+`no_access`: the person may no longer read the task's project, or is inactive —
+asked when an instant mail is written, **again by `email.send` just before an
+`assignment` or `mention` mail goes**, and again for each item before a digest
+goes. `too_old` is also what an instant mail is written as when the notify job
+first reads its activity more than an hour after it happened — the board or the
+job was down — so nobody is mailed a backlog at once; the digest still carries
+it (§4.99).
+
+Every notification mail ends by saying why it came and linking the reader's own
+profile (`/people?user=<id>`, *Change what … emails you*), where their two
+switches are (§4.97); without a public URL it names the profile instead.
 
 ### 4.94 `org_teams_settings`
 
@@ -4106,6 +4139,154 @@ a slot is claimed before it is posted, so two ticks never both post it; a
 failure leaves the index and releases it, and a suppressed slot keeps it, so a
 run is recorded once and not once a tick. Indexes `(project_id, created_at)` for
 a space's card, and `(created_at)` for retention.
+
+### 4.97 `user_email_prefs`
+
+A person's own email switches (D-153, LAI-1313). **No row is both on** — the
+defaults — so a person who never opens the section is mailed as the
+organisation intends. Nothing is mailed at all while `orgs.email_enabled` is 0.
+Read and set only by the person, signed in (§3.1 *Read and set own email
+preferences*).
+
+| field | notes |
+| --- | --- |
+| `user_id` | PK, FK `users`, cascade |
+| `instant` | 0/1 (CHECK), default 1 — mail at once when assigned a task or @mentioned |
+| `digest` | 0/1 (CHECK), default 1 — the daily digest |
+| `updated_at` | |
+
+### 4.98 `email_digests`
+
+A person's daily digest (D-153, LAI-1313). **One open per person** — KSage's
+rule, a partial unique index on `(user_id) WHERE state = 'open'`: forty things
+at once are forty items in one digest, never forty emails.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `user_id` | FK `users`, cascade |
+| `state` | `open` \| `closed` (CHECK) |
+| `opened_at` | when the first item came |
+| `closed_at` | nullable — **set exactly when `closed`** (CHECK) |
+| `outbox_id` | nullable — the `email_outbox` row it went as; null when it closed with nothing left to say. No FK: a pointer |
+
+**It goes** at the first `email.notify` run at or after 07:00 in the person's
+own zone (`user_time_settings.place`, UTC when unset), once it was opened
+before that morning: its items from the last seven days that the person may
+still read, grouped by task and worded on the server, as one message keyed
+`digest:<id>`. None left, and it closes without one. Closed digests are
+deleted 90 days after they closed, with their items (§11.6).
+
+### 4.99 `email_digest_items`
+
+What a digest will say (LAI-1313): one `activity` row or one `member_notices`
+row, **once per person** — unique by person, not by digest, so the notify
+job's re-read never puts one event in two digests.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `digest_id` | FK `email_digests`, cascade |
+| `user_id` | FK `users`, cascade |
+| `activity_id` | nullable — the activity row; append-only, so no FK |
+| `notice_id` | nullable, FK `member_notices`, cascade — **exactly one of the two** (CHECK) |
+| `occurred_at` | when it happened — the seven-day horizon and the order |
+| `created_at` | |
+
+Indexes: unique `(user_id, activity_id)` and `(user_id, notice_id)`,
+`(digest_id)`.
+
+**What is collected**, while `orgs.email_enabled` is 1 and the person's digest
+is on:
+- `task.status_changed`, `task.assigned` (to someone else), `task.updated`
+  (not a claim), `comment.added`, `attachment.added` and `task.stale_flagged`,
+  on a task the person watches (§4.18), done by someone else, that they were
+  not already mailed at once — **mailed means the mail is queued or sent**, so
+  one recorded `pref_off` or `too_old` does not count;
+- an assignment or an @mention the person was **not** mailed at once for one of
+  those two reasons, watching the task or not — instant off is "tell me in the
+  digest", not "never tell me";
+- and their member notices (§4.87).
+
+### 4.100 `email_watermarks`
+
+How far the notify job has read (LAI-1313): one row per source, `activity`
+and `member_notices`. **A keyset cursor, `(read_to, read_to_rowid)`** — the
+last row handled — and each run reads up to 2,000 rows after it in
+`(created_at, rowid)` order, so it always moves on, however many rows share one
+millisecond. **Not a time alone**: more rows at one instant than a run reads
+would hold it still for good (LAI-1313 review). **The rowid breaks the tie, not
+`id`**, because the indexes the reads ride end in it: `activity`'s read names
+the organisation and is a range on `(org_id, created_at)`, `member_notices`'
+a range on `(created_at)`, each in the index's own order — never a scan of the
+board's largest table and never a sort, every 30 seconds, email on or off. A
+VACUUM may renumber rowids, but that can only reorder the cursor's own
+millisecond, and each row there is either behind the cursor — read again below
+— or after it, read fresh. Each run also re-reads up to 2,000 rows from the two
+minutes behind the cursor, for a row written late; every effect is idempotent,
+so one seen twice changes nothing. The first run records "now", rowid 0, and
+reads nothing, and **nothing is looked behind that first cursor**: history is
+never mailed, not even the two minutes before the job started.
+
+| field | notes |
+| --- | --- |
+| `source` | PK — `activity` \| `member_notices` |
+| `read_to` | the `created_at` of the last row handled |
+| `read_to_rowid` | its rowid — 0 before the first, which is "now, nothing behind it" |
+| `updated_at` | |
+
+### 4.101 `org_calendar_source`
+
+The organisation's connection to Microsoft 365 calendars (D-157, LAI-1316) — one
+row, or none when it is not set up. Its own table, as `org_hr_source` is. Written
+only through `org.calendar.configure` and the sync.
+
+| field | notes |
+| --- | --- |
+| `org_id` | pk, FK `orgs`, cascade |
+| `tenant_id` | 1–100 (CHECK) — the Entra tenant, a GUID or a domain such as `contoso.onmicrosoft.com`, lowercase; checked before it is ever put in a URL |
+| `client_id` | 36 (CHECK) — the app's client id, a GUID, lowercase |
+| `secret_enc` | the client secret, AES-256-GCM under purpose `calendar_client_secret` (D-009's scheme); never returned, never logged. One `LAIKA_SECRET` can no longer open reads as `credentials_rejected`, naming `LAIKA_SECRET` |
+| `secret_last4` | for display |
+| `enabled` | 0/1 (CHECK), default 0 — **the switch**; the sync reads nothing while it is 0 |
+| `rules_json` | JSON, default `[]` — `[{ "kind": "title" \| "channel", "text", "project_id" }]`, at most 50, first match wins |
+| `configured_by` | nullable, FK `users`, set null |
+| `configured_at` | |
+| `last_test_at` | nullable — the last *Test connection* that got a token |
+| `last_test_roles_json` | nullable — the roles that token carried, A–Z; set and cleared with `last_test_at` (CHECK), and cleared when the credentials change |
+| `last_attempt_at` | nullable — the last sync, whatever came of it |
+| `last_success_at` | nullable |
+| `last_error_code` | nullable — `credentials_rejected` \| `not_granted` \| `unreachable` \| `bad_answer` (CHECK) |
+| `last_error` | nullable — Laika's words, never Microsoft's body |
+| `last_result_json` | nullable — the last complete sync's counts |
+| `updated_at` | |
+
+**An application, never a person's sign-in** (D-157 item 1): the sync reads each
+member's calendar as the app, once an admin has granted it `Calendars.Read`.
+Disconnecting deletes the row; the meetings already logged stay, as the people's
+time they are.
+
+### 4.102 `calendar_events`
+
+Which of a person's time entries holds which of their Outlook meetings (D-157,
+LAI-1316) — the `solidtime_entries` pattern, so a re-read can tell a changed
+meeting, a gone one, and **an entry the person has changed since**, which the sync
+never touches again.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `user_id` | FK `users`, cascade |
+| `event_id` | 1–512 (CHECK) — Graph's **immutable** id for the event, or for one occurrence of a series (`Prefer: IdType="ImmutableId"`, so a meeting moved between folders keeps it and is never logged twice); unique with `user_id` |
+| `ical_uid` | nullable — the meeting's iCalendar UID, shared by everyone invited |
+| `entry_id` | unique, FK `time_entries`, cascade — the entry it logged (`source: 'calendar'`, `source_ref` this `event_id`) |
+| `entry_revision_synced` | ≥ 1 (CHECK) — the entry's revision as the sync last wrote it; an entry past it is the person's |
+| `last_seen_at` | the last sync that read the event |
+| `created_at` | |
+
+**Nothing of the meeting is kept here but its ids**: the subject — *Busy* for a
+private, confidential or personal one — and the times are on the entry, and no join link,
+body or attendee is read or stored anywhere (D-157 item 4).
 
 ## 5. Task lifecycle
 
@@ -4501,6 +4682,7 @@ PUT    /api/v1/me/local-activity             a collector's report, look-back or 
 GET    /api/v1/me/local-activity             ?days=1–14 — what is held for the caller   DELETE → 204   (session only)
 GET    /api/v1/me/token-alerts               the caller's own budget and runaway alerts   POST .../:id/dismiss → 204   (session only; LAI-773)
 GET    /api/v1/me/notices                    ?unread=&limit=&cursor= → { data, next_cursor, unread_count }, newest first   POST .../:id/read  POST .../read-all → 204   (session only; D-134)
+GET    /api/v1/me/email-prefs                → { instant, digest } — your own email switches, both true until you change them   PUT body { instant?, digest? } (at least one) → the same   (every role; session only; D-153, LAI-1313)
 GET    /api/v1/me/plan-limit                 PUT .../plan-limit   DELETE → 204 — the developer's own forecast, an estimate   (session only; D-087)
 POST   /api/v1/otlp/v1/metrics               OpenTelemetry metrics, OTLP/HTTP JSON, from the developer's own agents (organisation's Developer insights on; LAI-773)
 GET    /api/v1/me/time-settings              PUT .../time-settings  body { draft_my_time } — the org's Time and the person's own switch   (PUT session only; LAI-787)
@@ -4546,6 +4728,11 @@ DELETE /api/v1/org/email                     forget the settings and the key and
 POST   /api/v1/org/email/test                send one message now to the caller's address — the one send that works while the switch is off → 200 { ok, to, code, message, at } whether or not the server took it, code the SMTP reply (535) or the transport's (ETIMEDOUT); 422 reason email_not_configured or email_key_unreadable   (same; its own rate-limit bucket)
 GET    /api/v1/org/teams                     Teams posting → { posting_enabled, updated_at, updated_by: { id, name } | null, schedule: { standup_utc: ['05:30', '12:30'], digest_utc: '07:00' }, channels: [the channel, as below, for every unarchived space with one that the caller can open, by name] }   (owner, admin; session only; D-154, LAI-1314)
 PUT    /api/v1/org/teams                     body { posting_enabled } — the switch; off, nothing is posted and each post is recorded as suppressed → as GET   (owner, admin; session only)
+GET    /api/v1/org/calendar                  the Outlook calendar connection → { configured, enabled, tenant_id, client_id, secret_last4, rules: [{ kind: title | channel, text, project: { id, slug, name } | null }], sync_every_minutes, last_test: { at, calendars_read, roles } | null, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, no_mailbox, mailbox_denied, mailbox_refused, meetings, not_a_meeting, created, updated, removed, unchanged, kept_edits, skipped } | null } — a mailbox Microsoft does not have (404), will not open (403) or will not look up (400) is that person skipped and counted, nothing of theirs retired; only a refused token or one without Calendars.Read fails the run   (owner, admin; session only; D-157, LAI-1316)
+PUT    /api/v1/org/calendar                  body { tenant_id, client_id, client_secret?, enabled, rules: [{ kind, text (1–120), project: slug }] (≤ 50) } — reads nothing from Microsoft; the secret may be left out once one is stored; new credentials forget the last test; turning the switch on starts a sync → the connection; 422 reasons tenant_invalid, client_invalid, secret_required, unknown_project, too_many_rules (with max); turning the switch on while the organisation's Time is off is 403 forbidden reason time_off   (owner, admin; session only)
+POST   /api/v1/org/calendar/test             asks Microsoft for a fresh app token and keeps the roles it carries — reads no calendar, works with the switch off → the connection with last_test; 409 conflict reason calendar_not_configured or secret_unreadable (`LAIKA_SECRET` can no longer open the stored secret: save it again), 422 unprocessable reason graph_credentials_refused, 503 unavailable reason graph_unreachable or graph_bad_answer   (owner, admin; session only; its own rate-limit bucket)
+POST   /api/v1/org/calendar/sync             syncs now, or joins the sync already running → the connection; 409 conflict reason calendar_off unless saved and switched on; 403 forbidden reason time_off while the organisation's Time is off   (owner, admin; session only; its own rate-limit bucket)
+DELETE /api/v1/org/calendar                  disconnect: the credentials go, logged meetings stay (204)   (owner, admin; session only)
 GET    /api/v1/org/holidays                  ?from=&to= (≤ 731 days) → { holidays: [{ id, day, label, source, everyone }] } by day   (every member; D-149)
 POST   /api/v1/org/holidays                  body { day, label } → 201 the holiday; 409 conflict reason holiday_exists with the live one's id   DELETE .../:id → 204; a synced one is 409 conflict reason holiday_from_clan   (owner, admin; session only)
 GET    /api/v1/org/sso                       how people sign in → { sign_in: email | microsoft, microsoft: { tenant_id, client_id, redirect_uri, directory_sync: { enabled, every_minutes, last_run: { at, ok, added, existing, error } | null } } | null }; microsoft null on a password board. Never the client secret, not even masked. Read only: sign-in is set by environment (§11.7), so nothing here can lock anyone out   (owner, admin — org.settings.edit; D-158, LAI-1239)
@@ -7289,7 +7476,7 @@ call MCP; agents do.
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read ; *Overview*'s Week, Month and Range (LAI-1138): `GET /time/report?members=<the reader>`, JSON and `format=csv`; *My availability* (LAI-1139): `GET/PUT /me/availability`, `POST /me/availability/away`, `DELETE /me/availability/away/:id`; *For you* (LAI-1139): `GET /me/notices`, `POST /me/notices/:id/read`, `POST /me/notices/read-all` — the rail's count on *My day* reads the same list; the **View**'s Week (LAI-1174): `GET /me/time` for each of its seven days, its Month and Year: `GET /me/time/days` (LAI-1173), a year in four reads | `propose_time_entry` | ✅ D-088, LAI-796, D-130, D-131, D-134, LAI-1174 |
 | **Tokens** *(on Developer access)* | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
-| **Organisation** *(seven tabs, LAI-796; Work since D-147)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET/DELETE /org/hr`, `POST /org/hr/connect`, `POST /org/hr/connect/verify`, `POST /org/hr/sync`, `PUT /org/hr/people`, `GET/POST /org/holidays`, `DELETE /org/holidays/:id` (D-149), `GET/PUT /org/teams` (D-154), `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites`; the *Work* tab (LAI-952, LAI-1170): `GET /tasks?fields=slim` (paged), `GET /tasks/summary`, `GET /projects/:slug/sprints`, and for its bulk bar `GET /projects/:slug/statuses`, `PATCH /tasks/:id`, `POST /tasks/:id/status`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId` — one request per task | — | ✅ |
+| **Organisation** *(seven tabs, LAI-796; Work since D-147)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET/DELETE /org/hr`, `POST /org/hr/connect`, `POST /org/hr/connect/verify`, `POST /org/hr/sync`, `PUT /org/hr/people`, `GET/POST /org/holidays`, `DELETE /org/holidays/:id` (D-149), `GET/PUT/DELETE /org/calendar`, `POST /org/calendar/test`, `POST /org/calendar/sync` (D-157), `GET/PUT /org/teams` (D-154), `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites`; the *Work* tab (LAI-952, LAI-1170): `GET /tasks?fields=slim` (paged), `GET /tasks/summary`, `GET /projects/:slug/sprints`, and for its bulk bar `GET /projects/:slug/statuses`, `PATCH /tasks/:id`, `POST /tasks/:id/status`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId` — one request per task | — | ✅ |
 | **Connect** *(Developer access's first tab, `/developer?tab=connect`; not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET /me/activity-sharing` (whether the organisation collects, so the machine prompt turns the collector on), `GET /projects` (the Projects tab), `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` (the Activity tab) | — | ✅ D-079, D-084, D-087, LAI-507 |
 | **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
@@ -7346,10 +7533,12 @@ anything missing sends the task back.
   a grid of forty-eight and a field for any one emoji, and *Remove* while an
   icon is set. A picked image is checked before it is decoded — PNG, JPEG or
   WebP, its size read from its header, at most 40 megapixels. **It then opens
-  a square frame editor**: drag (or arrow keys) to place it, zoom from the whole image fitted up to 4× (slider, wheel,
-  pinch, `+`/`-`), *Reset*, a background where the logo does not fill the
-  square — transparent, white, black or the space's colour — and a preview at
-  sidebar and settings size, and its position said in a polite live region.
+  a square frame editor**: drag (or arrow keys) to place it, zoom from the
+  whole image fitted up to 4× (slider, wheel, pinch, `+`/`-`), *Reset*, a
+  background where the logo does not fill the square — transparent, white,
+  black or the space's colour — and a preview at sidebar and settings size.
+  Its position is said in a polite live region after a key or *Reset* moves
+  it and where a drag ends, never on every pointer move.
   *Use this* crops on the client to a square of at most 512 pixels, PNG or
   WebP whichever is smaller, under the smaller of 1 MB and the board's
   attachment limit — at a lower quality or a smaller square when it must, and
@@ -8004,6 +8193,11 @@ anything missing sends the task back.
     manage anyone's developer setup* (D-132). **"N to fix"** sits on your own
     Developer access tab only; on someone else's it appears once their tab is
     opened, never read to draw the head (D-139 item 5).
+  - **Email** (D-153, LAI-1313), **on your own profile only**, below the
+    Overview: two switches, *Email me when I'm assigned or mentioned* and
+    *Send me a daily digest*, both on until changed, saved as they flip
+    (`/me/email-prefs`); and, while the organisation's email is off, one line
+    saying nothing is sent until an owner or admin turns it on.
   - **Overview** is **rows of cards that share a height**, so nothing leaves
     a hole, folding to one column on a phone, **the same for both kinds**
     (D-139 item 2): Work + This week · Projects + Agents · Activity · Review
@@ -8272,6 +8466,18 @@ One interval-driven scheduler in the same process:
   `system.hr.sync`. **A run never overlaps another** — *Sync now* joins one
   already running. No `activity` row: the connection carries its time, counts
   and last error
+- **calendar sync** (§4.101, §4.102, D-157, LAI-1316) — every 15 minutes, **never
+  at boot**, and only while the Outlook connection is saved, **its switch is
+  on** and the organisation's Time is not off: each active member's calendar
+  from the start of yesterday to the end of tomorrow in their zone, every
+  member read before one transaction writes; invitations the member accepted
+  (online or in person) and Teams meetings they organised (`isOnlineMeeting`)
+  become or update their `calendar` entries — an event they organised that is
+  not a Teams meeting is counted `not_a_meeting` and left off (D-157 item 3,
+  the owner's choice of 2026-11-18) — gone or cancelled ones are retired,
+  and an entry the person changed is left alone. Under §3.4's
+  `system.calendar.sync`. **A run never overlaps another** — *Sync now* joins
+  one already running. No `activity` row, as for any time entry (§4.48)
 - **Teams posting** (§4.94 – §4.96, D-154, LAI-1314) — every minute, not at
   boot, under §3.4's `system.teams.post`: KSage's stand-up to each space with a
   channel at **05:30 and 12:30 UTC** (11:00 and 18:00 IST), Monday to Friday by
@@ -8363,12 +8569,28 @@ One interval-driven scheduler in the same process:
   and — the switch and the settings asked again — every queued row is
   `suppressed` (`email_off`, `email_not_configured`) or up to 50 are sent, each
   outcome recorded as §4.93 says — **the switch asked again before each one**,
-  so turning email off mid-run stops it at the next message. **A run never overlaps another**; a tick joins
-  the one going. No `activity` row. Nothing without a transport, and nothing
-  mailed while the organisation's switch is off — the default
-- **email retention** (§4.93) — daily **and once at boot**, under
+  so turning email off mid-run stops it at the next message, and for an
+  `assignment` or `mention` mail **whether its person may still read the task**
+  (`no_access` if not, body gone; LAI-1313). **A run never overlaps
+  another**; a tick joins the one going. No `activity` row. Nothing without a
+  transport, and nothing mailed while the organisation's switch is off — the
+  default
+- **email retention** (§4.93, §4.98) — daily **and once at boot**, under
   `system.email.prune`: outbox rows written more than 90 days ago, never a
-  `queued` or `sending` one. No `activity` row
+  `queued` or `sending` one, and closed digests 90 days after they closed,
+  with their items. No `activity` row
+- **email notify** (§4.97 – §4.100, D-153, LAI-1313) — every 30 seconds, not at
+  boot, under `system.email.notify`: reads `activity` and `member_notices` past
+  their keyset cursors (§4.100; two minutes re-read behind them), each read an
+  index range — **also while the switch is off**, because an instant mail is
+  still written then, `email_off`, as the record D-153 keeps — writes an
+  `assignment` mail for `task.assigned` — and for `task.created` with an
+  assignee, unless it was reassigned since — and a `mention` mail for each
+  person a comment @mentions, never to the actor, each through the outbox
+  (`pref_off`, `no_access`, and `too_old` for activity first read over an hour
+  late, recorded there) and each written once — a re-read renders nothing;
+  collects digest items (§4.99); and closes every digest whose morning has come
+  (§4.98). Only writes to the outbox — `email.send` sends. No `activity` row
 - weekly vacuum
 
 Jobs are idempotent and write to `activity` only when they change something.
@@ -8529,15 +8751,21 @@ posting on, each space's Teams channel** (D-154): one `POST` of
 `{"text": …}` to that space's Power Automate webhook — its stand-ups, nightly
 digest and notices, which carry task keys and titles, people's names and a
 person's comments — nothing to a space without one, and nothing at all while
-*Teams posting* is off, as it ships. Teams' answer is never read. When the
+*Teams posting* is off, as it ships. Teams' answer is never read. And, when an
+owner or admin sets it up and turns it on, **the organisation's Microsoft
+tenant** (D-157): an app token from `login.microsoftonline.com` and read-only
+`GET`s of members' calendars from `graph.microsoft.com`, keeping only each
+accepted invitation's or organised Teams meeting's subject — *Busy* when it is
+private — times and ids, never a join link, a body or an attendee. When the
 operator sets the `LAIKA_MICROSOFT_*` variables (D-158), **the organisation's
 own Microsoft Entra ID tenant's token endpoint**: to exchange the code at each
 sign-in, and to refresh a signed-in person's Microsoft token when better-auth's
 `get-access-token` or `refresh-token` is called for it — and, only with
 directory sync on, for the app's own token, beside Graph's `/users`, every 15
-minutes (§11.6). No profile photo is fetched, nothing else of Graph's is read,
-and no signing keys are fetched: id-token sign-in is off, so nothing asks for
-them. Any task proposing otherwise is rejected at review.
+minutes (§11.6). For sign-in and directory sync, no profile photo is fetched,
+nothing else of Graph's is read, and no signing keys are fetched: id-token
+sign-in is off, so nothing asks for them. Any task proposing otherwise is
+rejected at review.
 
 **Local activity counts are inbound, the organisation's choice, and counts
 only** (D-079; D-102 amended). A developer's connected machine sends per-day

@@ -7,7 +7,9 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   clearEmailSettings,
+  getEmailPrefs,
   getEmailSettings,
+  saveEmailPrefs,
   saveEmailSettings,
   sendTestEmail,
 } from '../../src/api/email.ts';
@@ -80,6 +82,21 @@ void describe('the calls (§6.4, LAI-1312)', () => {
         ],
         ['POST', '/api/v1/org/email/test', undefined],
         ['DELETE', '/api/v1/org/email', undefined],
+      ],
+    );
+  });
+});
+
+void describe('your own switches (§6.4, LAI-1313)', () => {
+  void test('read and saved at /me/email-prefs, only what changed', async () => {
+    sent.length = 0;
+    await getEmailPrefs();
+    await saveEmailPrefs({ digest: false });
+    assert.deepEqual(
+      sent.map((s) => [s.method, s.url, s.body]),
+      [
+        ['GET', '/api/v1/me/email-prefs', undefined],
+        ['PUT', '/api/v1/me/email-prefs', { digest: false }],
       ],
     );
   });

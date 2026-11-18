@@ -60,6 +60,14 @@ void describe('splitKeyOf', () => {
     assert.equal(splitKeyOf(entry({ project: { slug: 'atlas' } as never })), 'work');
     assert.equal(splitKeyOf(entry({})), 'work');
   });
+
+  void test('an Outlook meeting splits by its kind, as Overview and the server count it (D-157)', () => {
+    assert.equal(splitKeyOf(entry({ source: 'calendar', kind: 'meeting' })), 'meeting');
+    // The person cleared the kind: theirs, so Building's, as any entry's.
+    assert.equal(splitKeyOf(entry({ source: 'calendar', kind: null })), 'work');
+    assert.equal(splitKeyOf(entry({ source: 'calendar', kind: 'pairing' })), 'pairing');
+    assert.equal(splitKeyOf(entry({ source: 'manual', kind: null })), 'work');
+  });
 });
 
 void describe('daySplit', () => {
@@ -81,6 +89,24 @@ void describe('daySplit', () => {
     );
   });
 
+  void test('Outlook meetings count as meeting time in the split by their kind (D-157)', () => {
+    const split = daySplit(
+      [
+        entry({ id: 'o', minutes: 30, source: 'calendar', kind: 'meeting' }),
+        entry({ id: 'p', minutes: 30, source: 'calendar', kind: null }),
+        entry({ id: 'w', minutes: 60, source: 'manual' }),
+      ],
+      [],
+    );
+    assert.deepEqual(
+      split.map((s) => [s.key, s.minutes]),
+      [
+        ['work', 90],
+        ['meeting', 30],
+      ],
+    );
+  });
+
   void test('nothing yields no segment', () => {
     assert.deepEqual(daySplit([], []), []);
   });
@@ -92,6 +118,8 @@ void describe('offScreen and noteOf', () => {
     assert.deepEqual(offScreen([entry({ id: 'x' }), typed, entry({ id: 'i', source: 'import' })]), [
       typed,
     ]);
+    // An Outlook meeting is not off-screen: Laika read it from the calendar (D-157).
+    assert.deepEqual(offScreen([typed, entry({ id: 'o', source: 'calendar' })]), [typed]);
     assert.equal(noteOf({ day_note: null }), '');
     assert.equal(
       noteOf({ day_note: { day: '2026-10-22', note: 'Long day', updated_at: 1 } }),

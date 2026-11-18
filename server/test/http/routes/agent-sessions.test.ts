@@ -781,6 +781,8 @@ const NOT_FENCED: Record<string, string> = {
   'PUT /api/v1/org/email': 'organisation settings (org.settings.edit), not a task',
   'DELETE /api/v1/org/email': 'organisation settings (org.settings.edit), not a task',
   'POST /api/v1/org/email/test': 'a test email to the caller, not a task',
+  'PUT /api/v1/me/email-prefs':
+    'session only (email_prefs.own); a person’s own switches, not a task',
   'PUT /api/v1/org/model-prices/:model': 'session only (org.model_prices.set)',
   'DELETE /api/v1/org/model-prices/:model': 'session only (org.model_prices.set)',
   'PUT /api/v1/org/time': 'session only (org.time.set)',
@@ -804,6 +806,11 @@ const NOT_FENCED: Record<string, string> = {
     'session only (org.teams.configure); a post to Teams, no task row changes',
   'POST /api/v1/org/holidays': 'session only (org.time.set); a holiday, not a task',
   'DELETE /api/v1/org/holidays/:id': 'session only (org.time.set); a holiday, not a task',
+  // D-157 (LAI-1316): the Outlook calendar connection, session only.
+  'PUT /api/v1/org/calendar': 'session only (org.calendar.configure)',
+  'POST /api/v1/org/calendar/test': 'session only (org.calendar.configure)',
+  'POST /api/v1/org/calendar/sync': 'session only (org.calendar.configure); time, not a task',
+  'DELETE /api/v1/org/calendar': 'session only (org.calendar.configure)',
   'POST /api/v1/otlp/v1/logs': 'telemetry, not a task',
   'POST /api/v1/otlp/v1/metrics': 'telemetry, not a task',
   'POST /api/v1/otlp/v1/traces': 'telemetry, not a task',

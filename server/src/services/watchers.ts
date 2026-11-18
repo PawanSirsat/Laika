@@ -191,6 +191,16 @@ export function watchersOfTask(db: Db, actor: ResolvedActor, taskId: string): st
   const { project } = requireTaskContext(db, taskId);
   assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
 
+  return watcherIdsOfTask(db, taskId, project.id);
+}
+
+/**
+ * The same answer with no actor to ask about — for §11.6's email job (D-153,
+ * LAI-1313), which acts as the system and mails each watcher on their own
+ * authority. **Every id it returns can read the project now**: the filter is
+ * the same `canRead` the actor's version uses, so the two cannot disagree.
+ */
+export function watcherIdsOfTask(db: Db, taskId: string, projectId: string): string[] {
   const candidates = impliedWatcherIds(db, taskId);
 
   const explicit = db
@@ -204,11 +214,15 @@ export function watchersOfTask(db: Db, actor: ResolvedActor, taskId: string): st
     else candidates.delete(row.userId);
   }
 
-  return [...candidates].filter((userId) => canRead(db, userId, project.id)).sort();
+  return [...candidates].filter((userId) => canRead(db, userId, projectId)).sort();
 }
 
-/** Can this person — on their own authority, not the caller's — read the project? */
-function canRead(db: Db, userId: string, projectId: string): boolean {
+/**
+ * Can this person — on their own authority, not the caller's — read the
+ * project? Exported for the email job (LAI-1313), which asks it of every
+ * recipient before it writes them a mail and again before a digest goes.
+ */
+export function canRead(db: Db, userId: string, projectId: string): boolean {
   const person = loadActor(db, userId);
   if (person === null) return false;
 

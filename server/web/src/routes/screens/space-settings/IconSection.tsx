@@ -113,7 +113,15 @@ export function IconSection({
       setFailure('That picture is too large to open — 25 MB at most.');
       return;
     }
-    const size = imageSize(new Uint8Array(await file.arrayBuffer()));
+    let bytes: Uint8Array;
+    try {
+      bytes = new Uint8Array(await file.arrayBuffer());
+    } catch {
+      // Moved or deleted since it was picked, or a file the browser cannot read.
+      setFailure('That file could not be read as an image.');
+      return;
+    }
+    const size = imageSize(bytes);
     if (size === null) {
       setFailure('That file could not be read as an image.');
       return;

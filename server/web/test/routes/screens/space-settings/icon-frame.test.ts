@@ -199,6 +199,20 @@ void describe('imageSize — read before decoding (LAI-1321 review)', () => {
     assert.deepEqual(imageSize(jpeg), { width: 8000, height: 4000 });
   });
 
+  void test('a malformed JPEG has no size: a zero-length segment, or one running past the end', () => {
+    // A frame header follows each, so only the bad length can stop the walk.
+    const frame = [0xff, 0xc0, 0, 17, 8, 0x0f, 0xa0, 0x1f, 0x40, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    // Zero: the walk steps onto the length bytes themselves, which are no marker.
+    assert.equal(imageSize(bytes(0xff, 0xd8, 0xff, 0xe0, 0, 0, ...frame)), null);
+    // Past the end: the walk leaves the file before any frame header.
+    assert.equal(imageSize(bytes(0xff, 0xd8, 0xff, 0xe0, 0xff, 0xf0, 'JFIF', ...frame)), null);
+    // The same frame header behind a sound segment is read, so neither null is the frame's.
+    assert.deepEqual(imageSize(bytes(0xff, 0xd8, 0xff, 0xe0, 0, 6, 'JFIF', ...frame)), {
+      width: 8000,
+      height: 4000,
+    });
+  });
+
   void test('WebP: VP8X, VP8L and VP8 headers', () => {
     const riff = (chunk: string, ...data: number[]) =>
       bytes('RIFF', 0, 0, 0, 0, 'WEBP', chunk, 0, 0, 0, 0, ...data);

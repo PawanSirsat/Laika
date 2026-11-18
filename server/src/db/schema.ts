@@ -87,6 +87,7 @@ import {
   AGENT_TIME_KINDS,
   ANALYTICS_VIEW_KINDS,
   ATTACHMENT_STATES,
+  EMAIL_DIGEST_STATES,
   EMAIL_KINDS,
   EMAIL_STATES,
   EMAIL_SUPPRESSED_REASONS,
@@ -95,6 +96,7 @@ import {
   TEAMS_POST_OUTCOMES,
   TEAMS_POST_REASONS,
   AVAILABILITY_STATUSES,
+  CALENDAR_SYNC_ERROR_CODES,
   TIME_DRAFT_SOURCES,
   TIME_DRAFT_STATES,
   TIME_ENTRY_KINDS,
@@ -1826,7 +1828,11 @@ export const emailOutbox = sqliteTable(
   {
     id: text('id').primaryKey(),
     kind: text('kind', { enum: EMAIL_KINDS }).notNull(),
-    /** One message per thing it is about: `invite:<id>`, `password_reset:<id>`, `test:<id>`. */
+    /**
+     * One message per thing it is about: `invite:<id>`, `password_reset:<id>`,
+     * `test:<id>`, and LAI-1313's `assignment:<activity id>`,
+     * `mention:<comment id>:<user id>` and `digest:<digest id>`.
+     */
     idempotencyKey: text('idempotency_key').notNull(),
     /** The person it is for, when they have an account (a reset, a test). */
     recipientUserId: text('recipient_user_id').references(() => users.id, {
@@ -1851,6 +1857,13 @@ export const emailOutbox = sqliteTable(
     lastError: text('last_error'),
     /** Who caused it — the inviter, the admin who issued a reset or pressed *Send test email*. */
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    /**
+     * The task an `assignment` or `mention` mail is about (LAI-1313), so the
+     * sender can ask again, just before it goes, whether the person may still
+     * read it. Null for every other kind; null on one of those two means the
+     * task is gone, and the mail does not go.
+     */
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
     createdAt,
     updatedAt,
   },
@@ -2000,6 +2013,230 @@ export const teamsPosts = sqliteTable(
     ),
     check('teams_posts_title_check', sql.raw('length(title) BETWEEN 1 AND 300')),
     check('teams_posts_attempt_check', sql.raw('attempt >= 1')),
+  ],
+);
+
+// -------------------------------------------------- §4.97 user_email_prefs
+
+/**
+ * A person's own email switches (§4.97, D-153, LAI-1313): instant mail on
+ * assignment and @mention, and the daily digest. **No row is both on** — the
+ * defaults — so a person who never opens the section is mailed as the org
+ * intends, and one who turns something off has a row that says so. Nothing is
+ * mailed at all while the organisation's switch is off.
+ */
+export const userEmailPrefs = sqliteTable(
+  'user_email_prefs',
+  {
+    userId: text('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    instant: integer('instant').notNull().default(1),
+    digest: integer('digest').notNull().default(1),
+    updatedAt,
+  },
+  () => [
+    check('user_email_prefs_instant_check', sql.raw('instant IN (0, 1)')),
+    check('user_email_prefs_digest_check', sql.raw('digest IN (0, 1)')),
+  ],
+);
+
+// ----------------------------------------------------- §4.98 email_digests
+
+/**
+ * A person's daily digest (§4.98, D-153, LAI-1313). **One open per person**,
+ * KSage's rule and a partial unique index: forty things happening at once are
+ * forty items in one digest, never forty emails — a rule easy to break by
+ * accident belongs in the schema. Closed when it is sent, or found empty.
+ */
+export const emailDigests = sqliteTable(
+  'email_digests',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    state: text('state', { enum: EMAIL_DIGEST_STATES }).notNull(),
+    openedAt: integer('opened_at').notNull(),
+    closedAt: integer('closed_at'),
+    /** The outbox row it went as; null while open, or when it closed empty. No FK: a pointer, not ownership. */
+    outboxId: text('outbox_id'),
+  },
+  (t) => [
+    uniqueIndex('email_digests_one_open_per_person').on(t.userId).where(sql.raw("state = 'open'")),
+    index('email_digests_state_idx').on(t.state, t.openedAt),
+    check('email_digests_state_check', oneOf('state', EMAIL_DIGEST_STATES)),
+    check('email_digests_closed_check', sql.raw("(state = 'closed') = (closed_at IS NOT NULL)")),
+  ],
+);
+
+// ------------------------------------------------ §4.99 email_digest_items
+
+/**
+ * What one person's digest will say (§4.99, LAI-1313): an `activity` row or a
+ * `member_notices` row, **once per person** — unique by person, not by digest,
+ * so the notify job's overlap re-read never puts one event in two digests.
+ */
+export const emailDigestItems = sqliteTable(
+  'email_digest_items',
+  {
+    id: text('id').primaryKey(),
+    digestId: text('digest_id')
+      .notNull()
+      .references(() => emailDigests.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The `activity` row; append-only, so no FK is needed to keep it. */
+    activityId: text('activity_id'),
+    noticeId: text('notice_id').references(() => memberNotices.id, { onDelete: 'cascade' }),
+    /** When the thing happened, for the 7-day horizon and the digest's order. */
+    occurredAt: integer('occurred_at').notNull(),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('email_digest_items_activity_unique').on(t.userId, t.activityId),
+    uniqueIndex('email_digest_items_notice_unique').on(t.userId, t.noticeId),
+    index('email_digest_items_digest_idx').on(t.digestId),
+    check(
+      'email_digest_items_one_source_check',
+      sql.raw('(activity_id IS NULL) <> (notice_id IS NULL)'),
+    ),
+  ],
+);
+
+// -------------------------------------------------- §4.100 email_watermarks
+
+/**
+ * How far the notify job has read (§4.100, LAI-1313): one row per source,
+ * `activity` and `member_notices`, holding the last row it handled as a keyset
+ * cursor, `(read_to, read_to_rowid)` — that row's `created_at`, and its rowid
+ * to break a tie inside one millisecond. **Not a time alone**: more rows
+ * sharing one millisecond than a run reads would hold a time-only cursor still
+ * for ever (CHIEF's LAI-1313 review). **The rowid, not `id`**: the indexes the
+ * reads ride — `(org_id, created_at)` on `activity`, `(created_at)` on
+ * `member_notices` — end in the rowid, so the order is the index's and nothing
+ * is sorted; an `id` tiebreak made SQLite sort. A VACUUM may renumber rowids,
+ * but only the cursor's own millisecond could be reordered by it, and each row
+ * there is either behind the cursor — read again by the look-behind — or after
+ * it, read fresh; every effect is idempotent, so one seen twice changes
+ * nothing. Each run also re-reads the two minutes behind the cursor for rows
+ * written late — except while the cursor is still the first run's "now", with
+ * no row behind it (rowid 0).
+ */
+export const emailWatermarks = sqliteTable('email_watermarks', {
+  source: text('source').primaryKey(),
+  readTo: integer('read_to').notNull(),
+  readToRowid: integer('read_to_rowid').notNull(),
+  updatedAt,
+});
+
+// ----------------------------------------------- §4.101 org_calendar_source
+
+/**
+ * The organisation's Outlook calendar connection (§4.101, D-157, LAI-1316): an
+ * Entra app's tenant, client id and client secret, with which the sync reads
+ * each member's meetings through Microsoft Graph as the application — never
+ * as a person — once an admin has granted it `Calendars.Read`. **No row is
+ * not configured.** `enabled` is the switch, and it starts off: nothing is
+ * read until an owner or admin turns it on, and *Test connection* works
+ * before then.
+ *
+ * The secret is §12's ciphertext under its own purpose
+ * (`calendar_client_secret`), with its last four characters to show; it is
+ * written, never served. `rules_json` maps a meeting to a space — a keyword
+ * in its subject, or the Teams channel it is in — as
+ * `[{"kind","text","project_id"}]`, first match wins. `last_test_roles_json`
+ * is the roles the last test's token carried, which says whether the grant
+ * has been made.
+ *
+ * Its own table rather than columns on `orgs`, as `org_hr_source` is.
+ */
+export const orgCalendarSource = sqliteTable(
+  'org_calendar_source',
+  {
+    orgId: text('org_id')
+      .primaryKey()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    /** The Entra tenant: a GUID, or a domain such as `contoso.onmicrosoft.com`. */
+    tenantId: text('tenant_id').notNull(),
+    /** The app's client (application) id, a GUID. */
+    clientId: text('client_id').notNull(),
+    /** §12 ciphertext. Never logged, never served, never in `activity`. */
+    secretEnc: text('secret_enc').notNull(),
+    secretLast4: text('secret_last4').notNull(),
+    /** The switch: 0 until an owner or admin turns it on. */
+    enabled: integer('enabled').notNull().default(0),
+    /** `[{"kind":"title"|"channel","text":"…","project_id":"…"}]`, at most 50. */
+    rulesJson: text('rules_json').notNull().default('[]'),
+    configuredBy: text('configured_by').references(() => users.id, { onDelete: 'set null' }),
+    configuredAt: integer('configured_at').notNull(),
+    /** When *Test connection* last got a token, and the roles it carried, A–Z. */
+    lastTestAt: integer('last_test_at'),
+    lastTestRolesJson: text('last_test_roles_json'),
+    lastAttemptAt: integer('last_attempt_at'),
+    lastSuccessAt: integer('last_success_at'),
+    lastErrorCode: text('last_error_code', { enum: CALENDAR_SYNC_ERROR_CODES }),
+    /** Laika's own words for the failure — never Microsoft's response text. */
+    lastError: text('last_error'),
+    /** The last complete sync's counts, as `CalendarSyncResultView`. */
+    lastResultJson: text('last_result_json'),
+    updatedAt,
+  },
+  (t) => [
+    index('org_calendar_source_configured_by_idx').on(t.configuredBy),
+    check('org_calendar_source_enabled_check', sql.raw('enabled IN (0, 1)')),
+    check(
+      'org_calendar_source_last_error_code_check',
+      oneOfOrNull('last_error_code', CALENDAR_SYNC_ERROR_CODES),
+    ),
+    // A test has both its time and its roles, or neither.
+    check(
+      'org_calendar_source_test_check',
+      sql.raw('(last_test_at IS NULL) = (last_test_roles_json IS NULL)'),
+    ),
+    check('org_calendar_source_tenant_check', sql.raw('length(tenant_id) BETWEEN 1 AND 100')),
+    check('org_calendar_source_client_check', sql.raw('length(client_id) = 36')),
+  ],
+);
+
+// --------------------------------------------------- §4.102 calendar_events
+
+/**
+ * A meeting the calendar sync logged (§4.102, D-157, LAI-1316): which of a
+ * person's time entries holds which of their Outlook events, by Graph's
+ * event id, and **the entry's revision as the sync last wrote it**. An entry
+ * whose revision has moved past `entry_revision_synced` was changed by its
+ * person, and the sync never touches it again — the `solidtime_entries`
+ * pattern. Nothing of the meeting is kept here but its ids: the subject and
+ * the times are on the entry, and no link, body or attendee is stored
+ * anywhere.
+ */
+export const calendarEvents = sqliteTable(
+  'calendar_events',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Graph's id for the event, or for one occurrence of a series. */
+    eventId: text('event_id').notNull(),
+    /** The iCalendar UID Outlook gives the meeting, shared by everyone invited. */
+    icalUid: text('ical_uid'),
+    entryId: text('entry_id')
+      .notNull()
+      .references(() => timeEntries.id, { onDelete: 'cascade' }),
+    /** The entry's revision as the sync last wrote it. */
+    entryRevisionSynced: integer('entry_revision_synced').notNull(),
+    /** The last sync that read the event. */
+    lastSeenAt: integer('last_seen_at').notNull(),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('calendar_events_user_event_unique').on(t.userId, t.eventId),
+    uniqueIndex('calendar_events_entry_id_unique').on(t.entryId),
+    check('calendar_events_revision_check', sql.raw('entry_revision_synced >= 1')),
+    check('calendar_events_event_id_check', sql.raw('length(event_id) BETWEEN 1 AND 512')),
   ],
 );
 
@@ -4692,6 +4929,7 @@ export type UserAvailability = typeof userAvailability.$inferSelect;
 export type UserAwayPeriod = typeof userAwayPeriods.$inferSelect;
 export type MemberNotice = typeof memberNotices.$inferSelect;
 export type OrgHrSource = typeof orgHrSource.$inferSelect;
+export type OrgCalendarSource = typeof orgCalendarSource.$inferSelect;
 export type HrPerson = typeof hrPeople.$inferSelect;
 export type OrgHoliday = typeof orgHolidays.$inferSelect;
 export type LeaveDay = typeof leaveDays.$inferSelect;

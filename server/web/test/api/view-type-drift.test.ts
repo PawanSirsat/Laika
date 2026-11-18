@@ -1081,6 +1081,13 @@ const PAIRS: readonly Pair[] = [
     client: 'EmailDispatch',
     clientFile: 'email.ts',
   },
+  // D-153 (LAI-1313): a person's own switches.
+  {
+    server: 'EmailPrefsView',
+    serverFile: 'services/email-prefs.ts',
+    client: 'EmailPrefs',
+    clientFile: 'email.ts',
+  },
   // Organisation → Security's Sign-in card (LAI-1239).
   {
     server: 'SsoSettingsView',
@@ -1117,6 +1124,39 @@ const PAIRS: readonly Pair[] = [
     serverFile: 'services/hr-sync.ts',
     client: 'HrSyncResult',
     clientFile: 'hr.ts',
+  },
+  // The Outlook calendar connection (D-157, LAI-1316): the card's view and
+  // each named shape inside it, so a rule's space, the last test and the
+  // last sync are compared field by field, not read as the parent's.
+  {
+    server: 'CalendarSourceView',
+    serverFile: 'services/calendar-source.ts',
+    client: 'CalendarSource',
+    clientFile: 'calendar.ts',
+  },
+  {
+    server: 'CalendarRuleView',
+    serverFile: 'services/calendar-source.ts',
+    client: 'CalendarRule',
+    clientFile: 'calendar.ts',
+  },
+  {
+    server: 'CalendarTestView',
+    serverFile: 'services/calendar-source.ts',
+    client: 'CalendarTest',
+    clientFile: 'calendar.ts',
+  },
+  {
+    server: 'CalendarSyncErrorView',
+    serverFile: 'services/calendar-source.ts',
+    client: 'CalendarSyncError',
+    clientFile: 'calendar.ts',
+  },
+  {
+    server: 'CalendarSyncResultView',
+    serverFile: 'services/calendar-sync.ts',
+    client: 'CalendarSyncResult',
+    clientFile: 'calendar.ts',
   },
   {
     server: 'HolidayView',

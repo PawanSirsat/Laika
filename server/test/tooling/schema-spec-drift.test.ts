@@ -601,6 +601,8 @@ describe('the parser itself', () => {
       'agent_time_buckets',
       'agent_time_days',
       'board_activity_days',
+      // LAI-1313: one row per source the email job reads, keyed by its name.
+      'email_watermarks',
       'github_checks',
       'github_commits',
       'github_pull_requests',
@@ -608,6 +610,8 @@ describe('the parser itself', () => {
       // found again by it at every sync, as Solidtime's members are.
       'hr_people',
       'local_activity_days',
+      // LAI-1316: one row per organisation, keyed by `org_id`, as the HR connection.
+      'org_calendar_source',
       // LAI-1181: one row per organisation, keyed by `org_id`, as its Time setting.
       'org_hr_source',
       'org_model_prices',
@@ -638,6 +642,8 @@ describe('the parser itself', () => {
       'token_usage_zones',
       // LAI-1130: one row per person, keyed by `user_id`, as their time settings.
       'user_availability',
+      // LAI-1313: one row per person, keyed by `user_id`, as their availability.
+      'user_email_prefs',
       'user_time_settings',
     ]);
   });

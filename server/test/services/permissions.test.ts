@@ -173,12 +173,15 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'availability.set_own': 'YYYY',
   'availability.read': 'YYYY',
   'notices.own': 'YYYY',
+  'email_prefs.own': 'YYYY',
   // D-149 (LAI-1181): the HR connection, under *Change organisation settings*.
   'org.hr.configure': 'YYNN',
   // D-153 (LAI-1312 review): outbound email, under the same grant.
   'org.email.configure': 'YYNN',
   // D-154 (LAI-1314): Teams posting, under the same grant.
   'org.teams.configure': 'YYNN',
+  // D-157 (LAI-1316): the Outlook calendar connection, under the same grant.
+  'org.calendar.configure': 'YYNN',
   'developer_setup.read_own': 'YYYY',
   // D-152 (LAI-1311): a space's icon, owners and admins.
   'project.icon.write': 'YYNN',
@@ -429,6 +432,8 @@ describe('the catalogue follows the organisation’s grants', () => {
     expect(cells(view, 'org.email.configure')).toBe('YNNN');
     // D-154 (LAI-1314): and Teams posting.
     expect(cells(view, 'org.teams.configure')).toBe('YNNN');
+    // D-157 (LAI-1316): so is the Outlook calendar connection.
+    expect(cells(view, 'org.calendar.configure')).toBe('YNNN');
     // Grantable since LAI-985: *Create and archive spaces*, *Manage anyone's tokens*.
     expect(cells(view, 'project.create')).toBe('YNNN');
     expect(cells(view, 'token.revoke_any')).toBe('YNNN');
