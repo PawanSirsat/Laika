@@ -40,6 +40,9 @@ It uploads files to a task with captions, and posts a comment that links them. E
 - [ ] **The auto-pickup launcher's `workRequestPrompt`** (`cli/src/agent-launcher.ts:1010`) gets one line on outputs.
 - [ ] **The repo block goes to revision 3** in `cli/src/project-check.ts`, matching LAI-1352's web copy, with a 7th rule *"Show the result"*.
 - [ ] **Tests:** against a local board with a fake store, the happy path uploads 3 files and posts one comment. Secret refusals cover a password CSV and an xlsx containing a token. The first test fails if the command is missing.
+- [ ] **The parent and child rule** (owner, 2026-11-19; LAI-1360 has the server side): a new feature with several parts gets one parent task, with each part as a child task. Work on an existing feature becomes a new child of its parent. A genuinely small one-off may stand alone. The main outputs go on the parent, a child's own outputs on the child.
+  It goes into the `laika-show-your-work` skill, the launcher's `workRequestPrompt` and repo block revision 3 (`cli/src/project-check.ts`), worded as in LAI-1352.
+- [ ] **Testing (owner):** once `laika attach` works against a local board, also attach the command's own output (a terminal screenshot or the `--json` result) to the parent card LAIKA-1153 on Ksage through the existing REST upload. That's the first real use.
 
 ## Notes / context
 

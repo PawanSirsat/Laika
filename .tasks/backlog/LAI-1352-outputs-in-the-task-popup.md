@@ -40,6 +40,9 @@ The web half of D-162. The owner chose (2026-11-19) a folded **Outputs** strip *
   - the source guards (loading-sweep, board-bands, structure mirror, tokens) are green;
   - any new component CSS is in `screen-styles.ts`.
 - [ ] **SPEC §11.4** describes the Outputs strip and viewer, and fixes the drift where it says thumbnails already exist.
+- [ ] **The parent and child rule** (owner, 2026-11-19; LAI-1360 has the server side): a new feature with several parts gets one parent task, with each part as a child task. Work on an existing feature becomes a new child of its parent. A genuinely small one-off may stand alone. The main outputs go on the parent, a child's own outputs on the child.
+  It goes into repo block revision 3 (`connect-copy.ts` `projectBlock`) and every Developer access prompt that tells an agent how to work (the Project setup prompt, the machine prompt in `connect-agents.ts`, and the Tools and Activity setup copy).
+- [ ] **Testing (owner):** attach this task's own screenshots to the parent card LAIKA-1153 on Ksage: the Outputs strip and viewer at 1440 and 390, in light and dark. Upload them through the existing REST API (agent tokens may already use it; see LAI-1302's notes). The parent then shows how the feature looks.
 
 ## Notes / context
 
