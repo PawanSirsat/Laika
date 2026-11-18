@@ -30,7 +30,11 @@ import {
   until,
   type ApiStub,
   type StubCall,
+  openSectionsByDefault,
 } from './harness.ts';
+
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+openSectionsByDefault('github');
 
 const NOW = Date.now();
 const HOUR = 3_600_000;

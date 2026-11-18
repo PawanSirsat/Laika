@@ -54,12 +54,29 @@ void describe('the tabs are the owner’s grouping', () => {
     );
   });
 
-  void test('Organisation is Overview, Work, People, Roles & permissions, Integrations, Security, Activity', () => {
-    // Work second, after Overview (D-147, LAI-1170), and ungated as its
-    // sidebar entry was.
+  void test('Organisation is a settings hub: Overview, then Workspace, People & access, Connections, Records', () => {
+    // LAI-1318: one focused page per job, grouped down the side. Work stays,
+    // under Records, ungated as its sidebar entry was.
     assert.deepEqual(
-      ORGANISATION_TABS.map((t) => t.label),
-      ['Overview', 'Work', 'People', 'Roles & permissions', 'Integrations', 'Security', 'Activity'],
+      ORGANISATION_TABS.map((t) => `${t.group ?? '-'}/${t.id}`),
+      [
+        '-/overview',
+        'Workspace/general',
+        'Workspace/time',
+        'Workspace/spaces',
+        'People & access/people',
+        'People & access/roles',
+        'People & access/security',
+        'Connections/integrations',
+        'Connections/github',
+        'Connections/hr',
+        'Connections/email',
+        'Connections/teams',
+        'Connections/calendar',
+        'Connections/ai',
+        'Records/work',
+        'Records/activity',
+      ],
     );
     assert.equal(ORGANISATION_TABS.find((t) => t.id === 'work')?.requires, undefined);
   });

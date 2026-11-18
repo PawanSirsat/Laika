@@ -16,7 +16,10 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub, setTheme } from './harness.ts';
+import { closeBrowser, open, type ApiStub, setTheme, openSectionsByDefault } from './harness.ts';
+
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+openSectionsByDefault('grants', 'perm-org', 'perm-project');
 
 const user = (id: string, name: string, org_role: string) => ({
   id,
@@ -239,7 +242,7 @@ void describe('roles are changed where they always were', () => {
     const h = await open('/organisation?tab=roles', stub('owner'));
     try {
       await ready(h);
-      const people = h.page.locator('#perm-org').locator('..').locator('a.org-head-action');
+      const people = h.page.locator('[data-acc="perm-org"] a.org-head-action');
       assert.equal(await people.innerText(), 'Change someone’s role');
       assert.equal(await people.getAttribute('href'), '/organisation?tab=people');
 

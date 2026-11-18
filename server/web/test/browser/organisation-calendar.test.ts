@@ -23,7 +23,11 @@ import {
   type ApiStub,
   type Harness,
   type StubCall,
+  openSectionsByDefault,
 } from './harness.ts';
+
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+openSectionsByDefault('calendar');
 
 const MINUTE = 60_000;
 const TENANT = '5abd4f6b-f235-4d86-a90c-08f2e5f56fbb';
