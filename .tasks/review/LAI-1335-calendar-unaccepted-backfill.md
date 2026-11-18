@@ -66,3 +66,9 @@ Scope: area `server` and, named, `server/web/`'s Organisation calendar card
   Organisation endpoints and §13.4's Microsoft sentence; and `services/microsoft-graph.ts`'s
   page cap, twenty pages of a hundred per week a read spans, so a 92-day read is not refused at
   twenty pages.
+- **Review round 1 (review-1316, CHIEF 2026-11-18), no must-fix; F1, F2, F4, F5 done:** a
+  backfill joins one already running that reaches as far back (`backfill_running` served, the
+  card waits and asks again); before yesterday it only adds (`kept_older`); 90 days tied to
+  SQLite's bound variables by a test; a stop part-way is `last_error` `stopped_partway` with
+  the counts so far, by migration 0091 (rebuilds `org_calendar_source`; LAI-1330's branch also
+  carries a 0091 — whichever merges second renumbers). SPEC §4.101, §6.4, §11.6.
