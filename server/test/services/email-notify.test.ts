@@ -4,6 +4,8 @@ import { appendActivity } from '../../src/db/activity.ts';
 import { newId } from '../../src/db/ids.ts';
 import {
   activity,
+  agentProjectGrants,
+  agents,
   emailDigestItems,
   emailDigests,
   emailOutbox,
@@ -11,6 +13,7 @@ import {
   memberNotices,
   orgs,
   projects,
+  tokens,
   users,
 } from '../../src/db/schema.ts';
 import { runEmailOutbox } from '../../src/services/email-outbox.ts';
@@ -523,6 +526,125 @@ describe('the daily digest', () => {
   });
 });
 
+describe('an agent acting for its owner (LAI-1341)', () => {
+  beforeEach(emailOn);
+
+  /**
+   * A token of Ada's, as her agent holds one. With a display name it is a
+   * registered agent's (§4.73), the row carrying `agent_id`; without, a token
+   * no agent was registered for — it still acts as `agent`.
+   */
+  async function adasAgent(displayName?: string): Promise<string> {
+    const minted = await call(owner, 'POST', '/tokens', { name: 'Ada’s agent', scope: 'full' });
+    const { token, secret } = (await ok(minted, 201)) as { token: { id: string }; secret: string };
+    if (displayName !== undefined) {
+      const agentId = newId();
+      h.db
+        .insert(agents)
+        .values({
+          id: agentId,
+          orgId: h.db.select().from(orgs).get()!.id,
+          ownerUserId: ownerId,
+          displayName,
+          harness: 'claude-code',
+          createdAt: Date.now(),
+        })
+        .run();
+      h.db.update(tokens).set({ agentId }).where(eq(tokens.id, token.id)).run();
+      // A registered agent works only where its owner granted it (§4.74).
+      h.db
+        .insert(agentProjectGrants)
+        .values({
+          agentId,
+          projectId: h.db.select().from(projects).get()!.id,
+          scope: 'full',
+          createdAt: Date.now(),
+        })
+        .run();
+    }
+    return secret;
+  }
+
+  function asAgent(secret: string, method: string, path: string, body?: unknown) {
+    return Promise.resolve(
+      h.app.request(`/api/v1${path}`, {
+        method,
+        headers: jsonHeaders({ Authorization: `Bearer ${secret}` }),
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      }),
+    );
+  }
+
+  it('mails the owner when their own agent assigns them, and names the agent, not the owner', async () => {
+    const agent = await adasAgent('Claude Code');
+    await ok(await asAgent(agent, 'PATCH', `/tasks/${taskId}`, { assignee_id: ownerId }));
+    expect(notify().instant).toBe(1);
+    await drain();
+    expect(mail.sent).toHaveLength(1);
+    expect(mail.sent[0]?.message).toMatchObject({
+      to: 'ada@example.test',
+      subject: "Claude Code (Ada's agent) assigned you LAI-1: Do the thing",
+    });
+  });
+
+  it('mails the owner when their own agent @mentions them — a token no agent was registered for reads as theirs', async () => {
+    const agent = await adasAgent();
+    await ok(
+      await asAgent(agent, 'POST', `/tasks/${taskId}/comments`, {
+        body_md: '@ada can you review?',
+      }),
+      201,
+    );
+    notify();
+    await drain();
+    expect(mail.sent.map((s) => [s.message.to, s.message.subject])).toEqual([
+      ['ada@example.test', "Ada's agent mentioned you on LAI-1: Do the thing"],
+    ]);
+  });
+
+  it('still tells nobody what they did in person', async () => {
+    await assign(ownerId);
+    await ok(await call(owner, 'POST', `/tasks/${taskId}/comments`, { body_md: '@ada note' }), 201);
+    notify();
+    expect(outbox()).toEqual([]);
+  });
+
+  it('words the agent as its owner’s in everyone’s digest — the owner’s own included', async () => {
+    const grace = await join('grace');
+    await assign(grace.id); // grace watches it as its assignee
+    await ok(
+      await call(owner, 'POST', `/tasks/${taskId}/comments`, { body_md: 'Over to you' }),
+      201,
+    );
+    notify(); // and Ada as a commenter
+    const agent = await adasAgent('Claude Code');
+    await ok(await asAgent(agent, 'POST', `/tasks/${taskId}/status`, { status: 'in_progress' }));
+    notify();
+    const moved = h.db
+      .select()
+      .from(activity)
+      .where(and(eq(activity.type, 'task.status_changed'), eq(activity.actorKind, 'agent')))
+      .get()!;
+    for (const person of [grace.id, ownerId]) {
+      expect(
+        itemsOf(person).map((i) => i.activityId),
+        person,
+      ).toContain(moved.id);
+    }
+
+    const morning = nextMorning(openDigestOf(grace.id)!.openedAt);
+    notify(morning);
+    await runEmailOutbox(h.db, TEST_SECRET, { transport: mail.transport, now: () => morning });
+    for (const to of ['grace@example.test', 'ada@example.test']) {
+      const text = mail.sent.find(
+        (s) => s.message.to === to && s.message.subject.startsWith('Your Ksage digest'),
+      )?.message.text;
+      expect(text, to).toContain("Claude Code (Ada's agent) moved it to In progress");
+      expect(text, to).not.toMatch(/^ {2}- Ada moved/m);
+    }
+  });
+});
+
 describe('a burst bigger than one run reads', () => {
   beforeEach(emailOn);
 
@@ -763,19 +885,23 @@ describe('the small pieces', () => {
     const run = {
       name: (id: string | null) => (id === null ? 'Laika' : id === 'a' ? 'Ada' : 'Bob'),
     };
-    expect(describeActivity(run, 'task.status_changed', 'a', { to_status_name: 'Done' })).toBe(
+    // The actor arrives already named — a person, or an agent as its owner's.
+    expect(describeActivity(run, 'task.status_changed', 'Ada', { to_status_name: 'Done' })).toBe(
       'Ada moved it to Done',
     );
-    expect(describeActivity(run, 'task.assigned', 'a', { to: 'b' })).toBe('Ada assigned it to Bob');
-    expect(describeActivity(run, 'task.assigned', 'a', { to: null })).toBe('Ada unassigned it');
-    expect(describeActivity(run, 'task.updated', 'a', { changed: ['title', 'due_on'] })).toBe(
+    expect(describeActivity(run, 'task.assigned', 'Ada', { to: 'b' })).toBe(
+      'Ada assigned it to Bob',
+    );
+    expect(describeActivity(run, 'task.assigned', 'Ada', { to: null })).toBe('Ada unassigned it');
+    expect(describeActivity(run, 'task.updated', 'Ada', { changed: ['title', 'due_on'] })).toBe(
       'Ada changed its title, due date',
     );
-    expect(describeActivity(run, 'task.updated', 'a', { field: 'claim' })).toBeNull();
-    expect(describeActivity(run, 'attachment.added', 'a', { filename: 'plan.pdf' })).toBe(
+    expect(describeActivity(run, 'task.updated', 'Ada', { field: 'claim' })).toBeNull();
+    expect(describeActivity(run, 'attachment.added', 'Ada', { filename: 'plan.pdf' })).toBe(
       'Ada attached plan.pdf',
     );
-    expect(describeActivity(run, 'task.stale_flagged', null, {})).toMatch(/^Flagged stale/);
-    expect(describeActivity(run, 'heartbeat.session', 'a', {})).toBeNull();
+    expect(describeActivity(run, 'comment.added', "Ada's agent", {})).toBe("Ada's agent commented");
+    expect(describeActivity(run, 'task.stale_flagged', 'Laika', {})).toMatch(/^Flagged stale/);
+    expect(describeActivity(run, 'heartbeat.session', 'Ada', {})).toBeNull();
   });
 });
