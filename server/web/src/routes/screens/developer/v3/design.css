@@ -1009,8 +1009,9 @@
     padding: var(--space-4) 0.9375rem 3.75rem;
   }
 
-  /* The four tabs and the link fit a phone, as the design's four do: tighter
-     tabs, and Advanced as *⋯* — still named *Advanced* to a screen reader. */
+  /* The five tabs and the link fit a phone (LAI-1096; Activity since
+     LAI-1327): tighter tabs, and Advanced as *⋯* — still named *Advanced* to
+     a screen reader. */
   .dx-tabrow {
     gap: 0;
   }
@@ -1020,7 +1021,24 @@
   }
 
   .dx-tabrow .page-tab {
-    padding: 0 0.4375rem;
+    padding: 0 var(--space-1-5);
+  }
+
+  /* *Project setup* reads *Setup* here, and is still *Project setup* to a
+     screen reader: `.visually-hidden`'s rule, as Advanced's word below. */
+  .dx-tabrow .page-tab-long {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .dx-tabrow .page-tab-short {
+    display: inline;
   }
 
   .dx-tab-secondary {

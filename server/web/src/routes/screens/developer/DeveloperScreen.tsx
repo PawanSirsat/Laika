@@ -1,21 +1,16 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useState, type MouseEvent } from 'react';
 import { EmbeddedScreen, ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { PageTabs } from '../../../components/PageTabs.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import { useGates } from '../../../api/permissions.ts';
 import type { DeveloperAccessMode } from '../../../api/developer-compat.ts';
-import {
-  ADVANCED_ACTIVITY_SECTION,
-  isV3OnlyTab,
-  splitTabs,
-  tabHref,
-  type PageTab,
-} from '../../page-tabs.ts';
+import { isV3OnlyTab, splitTabs, tabHref, type PageTab } from '../../page-tabs.ts';
 import { ConnectScreen } from '../connect/ConnectScreen.tsx';
 import { ShareActivity } from '../connect/ShareActivity.tsx';
 import { TokensScreen } from '../tokens/TokensScreen.tsx';
 import { AgentsTab } from './AgentsTab.tsx';
 import { ProjectsTab } from './ProjectsTab.tsx';
+import { ActivityTab } from './v3/ActivityTab.tsx';
 import { AdvancedTab } from './v3/AdvancedTab.tsx';
 import { DeviceRoster } from './v3/DeviceRoster.tsx';
 import { OverviewTab } from './v3/OverviewTab.tsx';
@@ -82,25 +77,20 @@ export interface DeveloperScreenProps {
  * - **`preview`** keeps it, Connect still the default, and adds Overview,
  *   Devices and Advanced after the classic tabs, each marked *Preview*, with
  *   a banner on Connect pointing at them and one on each saying it is one.
- * - **`v3`** is Overview · Project setup · Devices · Tools, Overview first,
- *   then *Advanced* as a quieter link at the end of the row (LAI-1096), in
- *   the owner's design (LAI-1078, LAI-1080) — its eyebrow *Developer access*
- *   over the title *Connect your work to Laika*. The old tab ids are aliases
- *   (`developerAlias`), applied before this renders; *Activity* is the
- *   second card on Advanced, and `?section=activity` scrolls to it.
+ * - **`v3`** is Overview · Activity · Project setup · Devices · Tools,
+ *   Overview first, then *Advanced* as a quieter link at the end of the row
+ *   (LAI-1096), in the owner's design (LAI-1078, LAI-1080) — its eyebrow
+ *   *Developer access* over the title *Connect your work to Laika*. The old
+ *   tab ids are aliases (`developerAlias`), applied before this renders.
  *
- * `projects` and `activity` are one id in every mode, so they render the same
- * content everywhere: Project setup re-hosts Projects, Activity moves as is.
- * Devices and Tools re-host Agents, one read for both (`DeviceRoster`),
- * each row one line with its details in a side panel (LAI-1080). Advanced is
- * the reader's personal credentials only (LAI-1058, `v3/AdvancedTab.tsx`);
- * in `v3` Activity says *Once per device* and points at Project setup, its
- * rules, scope and history unchanged.
- *
- * Advanced is **two flat sections, one after the other and never one inside
- * the other** (LAI-1100 #11): the credentials card, which `AdvancedTab` draws
- * itself, and the activity card, compact — what explains either is a closed
- * fold inside it.
+ * `projects` and `activity` are one id in every mode. Project setup re-hosts
+ * Projects. **Activity is V3's own checklist** (LAI-1327, `v3/ActivityTab.tsx`):
+ * the organisation's switch, a device, a tool, the command and the first data,
+ * each live — classic and preview keep their *Share local activity* panel.
+ * Devices and Tools re-host Agents, one read for both (`DeviceRoster`), each
+ * row one line with its details in a side panel (LAI-1080). Advanced is the
+ * reader's personal credentials only (LAI-1058, LAI-1327,
+ * `v3/AdvancedTab.tsx`), one card.
  */
 export function DeveloperScreen({
   mode,
@@ -207,6 +197,7 @@ export function DeveloperScreen({
       {current === 'overview' && (
         <OverviewTab
           onNavigate={onNavigate}
+          readOnly={me?.org_role === 'viewer'}
           {...(preview ? { projectsHref: PREVIEW_SETUP_HREF } : {})}
         />
       )}
@@ -223,15 +214,6 @@ export function DeveloperScreen({
       {current === 'advanced' && (
         <div className="dx dev-advanced-page">
           <AdvancedTab me={me} onNavigate={onNavigate} />
-          {mode === 'v3' && (
-            <ActivityCard
-              v3
-              compact
-              canSetInsights={gates.org('org.developer_insights.set')}
-              origin={origin}
-              focus={params.get('section') === ADVANCED_ACTIVITY_SECTION}
-            />
-          )}
         </div>
       )}
       {current === 'connect' && (
@@ -257,16 +239,23 @@ export function DeveloperScreen({
             <ProjectsTab origin={origin} />
           </div>
         ))}
-      {current === 'activity' && (
-        <div className="dev-body">
-          <ActivityCard
-            v3={mode === 'v3'}
-            canSetInsights={gates.org('org.developer_insights.set')}
+      {current === 'activity' &&
+        (mode === 'v3' ? (
+          <ActivityTab
             origin={origin}
-            focus={false}
+            canSetInsights={gates.org('org.developer_insights.set')}
+            insightsSettled={gates.settled}
+            readOnly={me?.org_role === 'viewer'}
+            onNavigate={onNavigate}
           />
-        </div>
-      )}
+        ) : (
+          <div className="dev-body">
+            <ActivityCard
+              canSetInsights={gates.org('org.developer_insights.set')}
+              origin={origin}
+            />
+          </div>
+        ))}
       {current === 'tokens' && (
         <div className="dev-body">
           <div className="dev-card dev-tokens">
@@ -321,56 +310,26 @@ function SecondaryTab({
 }
 
 /**
- * *Share local activity* (D-079, D-102 amended): its own tab in classic and
- * preview, and Advanced's second card in `v3` (LAI-1078), where an address
- * naming it (`?section=activity`, which the old `?tab=activity` becomes)
- * scrolls it into view and puts focus on its title. On Advanced it is
- * `compact` (LAI-1100 #11); the classic tab is not.
+ * *Share local activity* (D-079, D-102 amended): the classic and preview
+ * Activity tab, drawn as it always was. V3's Activity tab is a checklist of
+ * its own (LAI-1327).
  */
 function ActivityCard({
-  v3,
-  compact = false,
   canSetInsights,
   origin,
-  focus,
 }: {
-  readonly v3: boolean;
-  readonly compact?: boolean;
   readonly canSetInsights: boolean;
   readonly origin: string;
-  readonly focus: boolean;
 }) {
-  const titleRef = useRef<HTMLHeadingElement | null>(null);
-  useEffect(() => {
-    if (!focus) return;
-    titleRef.current?.scrollIntoView({ block: 'start' });
-    titleRef.current?.focus({ preventScroll: true });
-  }, [focus]);
   return (
-    <section
-      className="dev-card dev-sharing"
-      aria-labelledby="dev-sharing-title"
-      id={v3 ? ADVANCED_ACTIVITY_SECTION : undefined}
-    >
+    <section className="dev-card dev-sharing" aria-labelledby="dev-sharing-title">
       <div className="dev-card-head">
-        <h2
-          className="dev-card-title"
-          id="dev-sharing-title"
-          ref={titleRef}
-          tabIndex={v3 ? -1 : undefined}
-        >
+        <h2 className="dev-card-title" id="dev-sharing-title">
           Share local activity
         </h2>
-        <span className="conn-chip conn-chip-scope">
-          {v3 ? 'Once per device' : 'Once per machine'}
-        </span>
+        <span className="conn-chip conn-chip-scope">Once per machine</span>
       </div>
-      <ShareActivity
-        canSetInsights={canSetInsights}
-        origin={origin}
-        {...(v3 ? { setupTabName: 'Project setup' } : {})}
-        compact={compact}
-      />
+      <ShareActivity canSetInsights={canSetInsights} origin={origin} />
     </section>
   );
 }

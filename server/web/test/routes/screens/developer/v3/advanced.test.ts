@@ -6,10 +6,12 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { TokenView } from '../../../../../src/api/tokens.ts';
 import {
+  credentialGroups,
   DEFAULT_EXPIRY,
   EXPIRY_CHOICES,
   expiresAtFor,
   isLegacyToolToken,
+  legacyToolName,
   upgradeHref,
 } from '../../../../../src/routes/screens/developer/v3/advanced.ts';
 import {
@@ -140,12 +142,65 @@ void describe('links into Developer access from outside it (plan §B.7)', () => 
     }
   });
 
-  void test('the activity link is the Activity tab in classic and preview, Advanced’s card in v3', () => {
-    for (const mode of ['classic', 'preview'] as const) {
-      assert.equal(land(mode, DEVELOPER_ACTIVITY_HREF).get('tab'), 'activity', mode);
+  void test('the activity link is the Activity tab in every mode — v3’s own since LAI-1327', () => {
+    for (const mode of ['classic', 'preview', 'v3'] as const) {
+      const at = land(mode, DEVELOPER_ACTIVITY_HREF);
+      assert.equal(at.get('tab'), 'activity', mode);
+      assert.equal(at.has('section'), false, mode);
     }
-    const v3 = land('v3', DEVELOPER_ACTIVITY_HREF);
-    assert.equal(v3.get('tab'), 'advanced');
-    assert.equal(v3.get('section'), 'activity');
+  });
+});
+
+void describe('the list, grouped as Advanced draws it (LAI-1327)', () => {
+  const script = token({ id: 'a', name: 'nightly-export' });
+  const legacy = token({
+    id: 'b',
+    name: 'old-laptop',
+    last_mcp_at: NOW - DAY,
+    last_client: 'claude-code',
+  });
+  const revoked = token({ id: 'c', name: 'gone', revoked_at: NOW - DAY });
+  const expired = token({ id: 'd', name: 'lapsed', expires_at: NOW - 1 });
+  const revokedLegacy = token({
+    id: 'e',
+    name: 'old-desktop',
+    last_mcp_at: NOW - 2 * DAY,
+    last_client: 'codex',
+    revoked_at: NOW - DAY,
+  });
+  const later = token({ id: 'f', name: 'deploy', expires_at: NOW + DAY });
+
+  void test('in use and not a tool’s; a tool’s; and revoked or expired — each once, in the server’s order', () => {
+    const groups = credentialGroups([script, legacy, revoked, expired, revokedLegacy, later], NOW);
+    assert.deepEqual(
+      groups.active.map((t) => t.id),
+      ['a', 'f'],
+    );
+    assert.deepEqual(
+      groups.legacy.map((t) => t.id),
+      ['b'],
+    );
+    // A tool's token that was revoked is retired, not legacy: it works nowhere.
+    assert.deepEqual(
+      groups.retired.map((t) => t.id),
+      ['c', 'd', 'e'],
+    );
+  });
+
+  void test('expiring at this very moment is expired', () => {
+    const now = token({ id: 'g', expires_at: NOW });
+    assert.deepEqual(
+      credentialGroups([now], NOW).retired.map((t) => t.id),
+      ['g'],
+    );
+  });
+
+  void test('names the tool by its product name, by what it called itself, or as a coding tool', () => {
+    assert.equal(legacyToolName(legacy), 'Claude Code');
+    assert.equal(
+      legacyToolName(token({ last_mcp_at: NOW, last_client_name: 'Zed Preview' })),
+      'Zed Preview',
+    );
+    assert.equal(legacyToolName(token({ last_mcp_at: NOW })), 'a coding tool');
   });
 });

@@ -1,7 +1,13 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { newId } from '../../../src/db/ids.ts';
-import { analyticsViews, orgs, timeDrafts, users } from '../../../src/db/schema.ts';
+import {
+  analyticsViews,
+  localActivityDays,
+  orgs,
+  timeDrafts,
+  users,
+} from '../../../src/db/schema.ts';
 import {
   type AuthHarness,
   authHarness,
@@ -189,16 +195,29 @@ const dayPath = (id: string) => `/api/v1/people/${id}/time?day=${DAY}&tz=UTC`;
 
 describe('GET /people/:id/time and /people/:id/local-activity', () => {
   it("answers an owner and an admin with exactly the person's own /me answers", async () => {
+    // A report from Bea's machine, so her own answer has a last_received_at.
+    const reported = Date.parse(`${DAY}T17:00:00Z`);
+    h.db
+      .insert(localActivityDays)
+      .values({ userId: bea.id, day: DAY, collectorId: 'c', tz: 'UTC', updatedAt: reported })
+      .run();
     const ownDay = await ok(await req(`/api/v1/me/time?day=${DAY}&tz=UTC`, {}, bea.cookie));
-    const ownLocal = await ok(await req('/api/v1/me/local-activity', {}, bea.cookie));
+    const ownLocal = (await ok(await req('/api/v1/me/local-activity', {}, bea.cookie))) as Record<
+      string,
+      unknown
+    >;
     expect((ownDay as { drafts: unknown[] }).drafts).toHaveLength(1);
     expect((ownDay as { breaks: unknown[] }).breaks).toHaveLength(1);
+    expect(ownLocal.last_received_at).toBe(reported);
+    const { last_received_at: _theirsAlone, ...shared } = ownLocal;
 
     for (const who of [ownerCookie, admin.cookie]) {
       expect(await ok(await req(dayPath(bea.id), {}, who))).toEqual(ownDay);
-      expect(await ok(await req(`/api/v1/people/${bea.id}/local-activity`, {}, who))).toEqual(
-        ownLocal,
-      );
+      // Hers, less when her machine last reported (LAI-1327 review 1): to
+      // anyone else that is close to when she was last at her desk.
+      const theirs = await ok(await req(`/api/v1/people/${bea.id}/local-activity`, {}, who));
+      expect(theirs).toEqual(shared);
+      expect(theirs).not.toHaveProperty('last_received_at');
     }
   });
 
