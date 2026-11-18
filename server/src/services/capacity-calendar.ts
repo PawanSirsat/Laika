@@ -12,7 +12,7 @@ import { addDays, dayIn } from './calendar-days.ts';
  */
 
 /** An Outlook out-of-office span covering now: the last day of it, in the person's own zone. */
-export interface OutlookAwayView {
+export interface OutlookAwaySpan {
   until: string;
 }
 
@@ -40,8 +40,8 @@ export function outlookAwayFor(
   db: Db,
   userIds: readonly string[],
   now: number,
-): Map<string, OutlookAwayView> {
-  const out = new Map<string, OutlookAwayView>();
+): Map<string, OutlookAwaySpan> {
+  const out = new Map<string, OutlookAwaySpan>();
   if (userIds.length === 0) return out;
   const zones = zonesFor(db, userIds);
   for (const span of db
