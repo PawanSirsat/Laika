@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "faed5c11-0071-4e41-8539-85fc0102afc2",
+  "id": "cbc47527-0dd7-4a00-a417-28d287284a7e",
   "prevId": "83989cd4-8c18-47da-80d1-c4ae28b1cb71",
   "tables": {
     "accounts": {
@@ -1787,6 +1787,111 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "calendar_events": {
+      "name": "calendar_events",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ical_uid": {
+          "name": "ical_uid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "entry_id": {
+          "name": "entry_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entry_revision_synced": {
+          "name": "entry_revision_synced",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "calendar_events_user_event_unique": {
+          "name": "calendar_events_user_event_unique",
+          "columns": ["user_id", "event_id"],
+          "isUnique": true
+        },
+        "calendar_events_entry_id_unique": {
+          "name": "calendar_events_entry_id_unique",
+          "columns": ["entry_id"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "calendar_events_user_id_users_id_fk": {
+          "name": "calendar_events_user_id_users_id_fk",
+          "tableFrom": "calendar_events",
+          "tableTo": "users",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "calendar_events_entry_id_time_entries_id_fk": {
+          "name": "calendar_events_entry_id_time_entries_id_fk",
+          "tableFrom": "calendar_events",
+          "tableTo": "time_entries",
+          "columnsFrom": ["entry_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "calendar_events_revision_check": {
+          "name": "calendar_events_revision_check",
+          "value": "entry_revision_synced >= 1"
+        },
+        "calendar_events_event_id_check": {
+          "name": "calendar_events_event_id_check",
+          "value": "length(event_id) BETWEEN 1 AND 512"
+        }
+      }
+    },
     "capacity_pings": {
       "name": "capacity_pings",
       "columns": {
@@ -2858,368 +2963,6 @@
         "email_digests_closed_check": {
           "name": "email_digests_closed_check",
           "value": "(state = 'closed') = (closed_at IS NOT NULL)"
-        }
-      }
-    },
-    "email_inbound": {
-      "name": "email_inbound",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "message_id": {
-          "name": "message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "address_token": {
-          "name": "address_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "from_address": {
-          "name": "from_address",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "task_id": {
-          "name": "task_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "comment_id": {
-          "name": "comment_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "auth": {
-          "name": "auth",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "attachment_count": {
-          "name": "attachment_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "received_at": {
-          "name": "received_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "email_inbound_message_unique": {
-          "name": "email_inbound_message_unique",
-          "columns": ["message_id", "address_token"],
-          "isUnique": true
-        },
-        "email_inbound_project_received_idx": {
-          "name": "email_inbound_project_received_idx",
-          "columns": ["project_id", "received_at"],
-          "isUnique": false
-        },
-        "email_inbound_received_at_idx": {
-          "name": "email_inbound_received_at_idx",
-          "columns": ["received_at"],
-          "isUnique": false
-        },
-        "email_inbound_user_id_idx": {
-          "name": "email_inbound_user_id_idx",
-          "columns": ["user_id"],
-          "isUnique": false
-        },
-        "email_inbound_task_id_idx": {
-          "name": "email_inbound_task_id_idx",
-          "columns": ["task_id"],
-          "isUnique": false
-        },
-        "email_inbound_comment_id_idx": {
-          "name": "email_inbound_comment_id_idx",
-          "columns": ["comment_id"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "email_inbound_project_id_projects_id_fk": {
-          "name": "email_inbound_project_id_projects_id_fk",
-          "tableFrom": "email_inbound",
-          "tableTo": "projects",
-          "columnsFrom": ["project_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "email_inbound_user_id_users_id_fk": {
-          "name": "email_inbound_user_id_users_id_fk",
-          "tableFrom": "email_inbound",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "email_inbound_task_id_tasks_id_fk": {
-          "name": "email_inbound_task_id_tasks_id_fk",
-          "tableFrom": "email_inbound",
-          "tableTo": "tasks",
-          "columnsFrom": ["task_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "email_inbound_comment_id_comments_id_fk": {
-          "name": "email_inbound_comment_id_comments_id_fk",
-          "tableFrom": "email_inbound",
-          "tableTo": "comments",
-          "columnsFrom": ["comment_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "email_inbound_outcome_check": {
-          "name": "email_inbound_outcome_check",
-          "value": "outcome IN ('task_created', 'comment_added', 'dropped')"
-        },
-        "email_inbound_reason_check": {
-          "name": "email_inbound_reason_check",
-          "value": "reason IS NULL OR reason IN ('switch_off', 'unknown_address', 'own_sender', 'auto_reply', 'spam', 'unauthenticated', 'unknown_sender', 'not_allowed', 'empty', 'refused')"
-        },
-        "email_inbound_reason_needed_check": {
-          "name": "email_inbound_reason_needed_check",
-          "value": "(outcome = 'dropped') = (reason IS NOT NULL)"
-        },
-        "email_inbound_message_id_check": {
-          "name": "email_inbound_message_id_check",
-          "value": "length(message_id) BETWEEN 1 AND 512"
-        },
-        "email_inbound_from_check": {
-          "name": "email_inbound_from_check",
-          "value": "from_address IS NULL OR length(from_address) <= 320"
-        },
-        "email_inbound_auth_check": {
-          "name": "email_inbound_auth_check",
-          "value": "auth IS NULL OR length(auth) <= 300"
-        },
-        "email_inbound_attachments_check": {
-          "name": "email_inbound_attachments_check",
-          "value": "attachment_count >= 0"
-        }
-      }
-    },
-    "email_inbound_attachments": {
-      "name": "email_inbound_attachments",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "inbound_id": {
-          "name": "inbound_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "download_token": {
-          "name": "download_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "filename": {
-          "name": "filename",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "content_type": {
-          "name": "content_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "size_bytes": {
-          "name": "size_bytes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "attachment_id": {
-          "name": "attachment_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "finished_at": {
-          "name": "finished_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "email_inbound_attachments_inbound_idx": {
-          "name": "email_inbound_attachments_inbound_idx",
-          "columns": ["inbound_id"],
-          "isUnique": false
-        },
-        "email_inbound_attachments_state_idx": {
-          "name": "email_inbound_attachments_state_idx",
-          "columns": ["state", "created_at"],
-          "isUnique": false
-        },
-        "email_inbound_attachments_attachment_idx": {
-          "name": "email_inbound_attachments_attachment_idx",
-          "columns": ["attachment_id"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "email_inbound_attachments_inbound_id_email_inbound_id_fk": {
-          "name": "email_inbound_attachments_inbound_id_email_inbound_id_fk",
-          "tableFrom": "email_inbound_attachments",
-          "tableTo": "email_inbound",
-          "columnsFrom": ["inbound_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "email_inbound_attachments_attachment_id_attachments_id_fk": {
-          "name": "email_inbound_attachments_attachment_id_attachments_id_fk",
-          "tableFrom": "email_inbound_attachments",
-          "tableTo": "attachments",
-          "columnsFrom": ["attachment_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "email_inbound_attachments_state_check": {
-          "name": "email_inbound_attachments_state_check",
-          "value": "state IN ('pending', 'stored', 'failed', 'skipped')"
-        },
-        "email_inbound_attachments_reason_check": {
-          "name": "email_inbound_attachments_reason_check",
-          "value": "reason IS NULL OR reason IN ('too_large', 'store_off', 'no_api_key', 'fetch_failed', 'store_failed', 'not_needed')"
-        },
-        "email_inbound_attachments_reason_needed_check": {
-          "name": "email_inbound_attachments_reason_needed_check",
-          "value": "(state IN ('failed', 'skipped')) = (reason IS NOT NULL)"
-        },
-        "email_inbound_attachments_pending_check": {
-          "name": "email_inbound_attachments_pending_check",
-          "value": "(state = 'pending') = (download_token IS NOT NULL)"
-        },
-        "email_inbound_attachments_filename_check": {
-          "name": "email_inbound_attachments_filename_check",
-          "value": "length(filename) BETWEEN 1 AND 255"
-        },
-        "email_inbound_attachments_content_type_check": {
-          "name": "email_inbound_attachments_content_type_check",
-          "value": "length(content_type) BETWEEN 1 AND 127"
-        },
-        "email_inbound_attachments_size_check": {
-          "name": "email_inbound_attachments_size_check",
-          "value": "size_bytes >= 0"
-        },
-        "email_inbound_attachments_attempts_check": {
-          "name": "email_inbound_attachments_attempts_check",
-          "value": "attempts >= 0"
         }
       }
     },
@@ -5089,13 +4832,41 @@
         }
       }
     },
-    "org_email_inbound": {
-      "name": "org_email_inbound",
+    "org_calendar_source": {
+      "name": "org_calendar_source",
       "columns": {
         "org_id": {
           "name": "org_id",
           "type": "text",
           "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "secret_enc": {
+          "name": "secret_enc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "secret_last4": {
+          "name": "secret_last4",
+          "type": "text",
+          "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
@@ -5107,58 +4878,72 @@
           "autoincrement": false,
           "default": 0
         },
-        "domain": {
-          "name": "domain",
+        "rules_json": {
+          "name": "rules_json",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "token_hash": {
-          "name": "token_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "token_last4": {
-          "name": "token_last4",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "api_key_enc": {
-          "name": "api_key_enc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "api_key_last4": {
-          "name": "api_key_last4",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "require_authenticated": {
-          "name": "require_authenticated",
-          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "default": 1
+          "default": "'[]'"
         },
-        "authserv_id": {
-          "name": "authserv_id",
+        "configured_by": {
+          "name": "configured_by",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "updated_by": {
-          "name": "updated_by",
+        "configured_at": {
+          "name": "configured_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_test_at": {
+          "name": "last_test_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_test_roles_json": {
+          "name": "last_test_roles_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_attempt_at": {
+          "name": "last_attempt_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_success_at": {
+          "name": "last_success_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_error_code": {
+          "name": "last_error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_result_json": {
+          "name": "last_result_json",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -5173,27 +4958,27 @@
         }
       },
       "indexes": {
-        "org_email_inbound_updated_by_idx": {
-          "name": "org_email_inbound_updated_by_idx",
-          "columns": ["updated_by"],
+        "org_calendar_source_configured_by_idx": {
+          "name": "org_calendar_source_configured_by_idx",
+          "columns": ["configured_by"],
           "isUnique": false
         }
       },
       "foreignKeys": {
-        "org_email_inbound_org_id_orgs_id_fk": {
-          "name": "org_email_inbound_org_id_orgs_id_fk",
-          "tableFrom": "org_email_inbound",
+        "org_calendar_source_org_id_orgs_id_fk": {
+          "name": "org_calendar_source_org_id_orgs_id_fk",
+          "tableFrom": "org_calendar_source",
           "tableTo": "orgs",
           "columnsFrom": ["org_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "org_email_inbound_updated_by_users_id_fk": {
-          "name": "org_email_inbound_updated_by_users_id_fk",
-          "tableFrom": "org_email_inbound",
+        "org_calendar_source_configured_by_users_id_fk": {
+          "name": "org_calendar_source_configured_by_users_id_fk",
+          "tableFrom": "org_calendar_source",
           "tableTo": "users",
-          "columnsFrom": ["updated_by"],
+          "columnsFrom": ["configured_by"],
           "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
@@ -5202,33 +4987,25 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {
-        "org_email_inbound_enabled_check": {
-          "name": "org_email_inbound_enabled_check",
+        "org_calendar_source_enabled_check": {
+          "name": "org_calendar_source_enabled_check",
           "value": "enabled IN (0, 1)"
         },
-        "org_email_inbound_require_authenticated_check": {
-          "name": "org_email_inbound_require_authenticated_check",
-          "value": "require_authenticated IN (0, 1)"
+        "org_calendar_source_last_error_code_check": {
+          "name": "org_calendar_source_last_error_code_check",
+          "value": "last_error_code IS NULL OR last_error_code IN ('credentials_rejected', 'not_granted', 'unreachable', 'bad_answer')"
         },
-        "org_email_inbound_domain_check": {
-          "name": "org_email_inbound_domain_check",
-          "value": "domain IS NULL OR length(domain) BETWEEN 3 AND 253"
+        "org_calendar_source_test_check": {
+          "name": "org_calendar_source_test_check",
+          "value": "(last_test_at IS NULL) = (last_test_roles_json IS NULL)"
         },
-        "org_email_inbound_token_check": {
-          "name": "org_email_inbound_token_check",
-          "value": "(token_hash IS NULL) = (token_last4 IS NULL)"
+        "org_calendar_source_tenant_check": {
+          "name": "org_calendar_source_tenant_check",
+          "value": "length(tenant_id) BETWEEN 1 AND 100"
         },
-        "org_email_inbound_api_key_check": {
-          "name": "org_email_inbound_api_key_check",
-          "value": "(api_key_enc IS NULL) = (api_key_last4 IS NULL)"
-        },
-        "org_email_inbound_authserv_check": {
-          "name": "org_email_inbound_authserv_check",
-          "value": "authserv_id IS NULL OR length(authserv_id) BETWEEN 1 AND 253"
-        },
-        "org_email_inbound_on_check": {
-          "name": "org_email_inbound_on_check",
-          "value": "enabled = 0 OR (domain IS NOT NULL AND token_hash IS NOT NULL)"
+        "org_calendar_source_client_check": {
+          "name": "org_calendar_source_client_check",
+          "value": "length(client_id) = 36"
         }
       }
     },
@@ -6412,79 +6189,6 @@
         "project_handoff_policies_offer_ttl_check": {
           "name": "project_handoff_policies_offer_ttl_check",
           "value": "offer_ttl_minutes BETWEEN 5 AND 1440"
-        }
-      }
-    },
-    "project_inbound_addresses": {
-      "name": "project_inbound_addresses",
-      "columns": {
-        "project_id": {
-          "name": "project_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "token": {
-          "name": "token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "project_inbound_addresses_token_unique": {
-          "name": "project_inbound_addresses_token_unique",
-          "columns": ["token"],
-          "isUnique": true
-        },
-        "project_inbound_addresses_created_by_idx": {
-          "name": "project_inbound_addresses_created_by_idx",
-          "columns": ["created_by"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "project_inbound_addresses_project_id_projects_id_fk": {
-          "name": "project_inbound_addresses_project_id_projects_id_fk",
-          "tableFrom": "project_inbound_addresses",
-          "tableTo": "projects",
-          "columnsFrom": ["project_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_inbound_addresses_created_by_users_id_fk": {
-          "name": "project_inbound_addresses_created_by_users_id_fk",
-          "tableFrom": "project_inbound_addresses",
-          "tableTo": "users",
-          "columnsFrom": ["created_by"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "project_inbound_addresses_token_check": {
-          "name": "project_inbound_addresses_token_check",
-          "value": "length(token) = 12 AND token NOT GLOB '*[^a-z2-7]*'"
         }
       }
     },
@@ -10344,7 +10048,7 @@
       "checkConstraints": {
         "time_entries_source_check": {
           "name": "time_entries_source_check",
-          "value": "source IN ('draft', 'manual', 'import')"
+          "value": "source IN ('draft', 'manual', 'import', 'calendar')"
         },
         "time_entries_minutes_check": {
           "name": "time_entries_minutes_check",

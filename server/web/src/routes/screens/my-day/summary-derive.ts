@@ -22,7 +22,13 @@ export interface SplitSegment {
   readonly pct: number;
 }
 
-/** What a block is for the split: its kind, else Building's — a draft has none yet. */
+/**
+ * What a block is for the split: its kind, else Building's — a draft has none
+ * yet. **By kind alone**, as Overview's Meetings figure and the server's
+ * summary count it: a meeting the Outlook sync logged (D-157) is `meeting`
+ * because the sync set that kind, and one whose kind the person cleared is
+ * theirs to call what they like (LAI-1316 review F11).
+ */
 export function splitKeyOf(block: TimeEntry | TimeDraft): SplitKey {
   return ('kind' in block ? block.kind : null) ?? 'work';
 }

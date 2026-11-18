@@ -119,6 +119,9 @@ export const ORG_ACTIONS = [
   // D-154 (LAI-1314): turn Teams posting on or off, and set, clear and test a
   // space's Teams channel.
   'org.teams.configure',
+  // D-157 (LAI-1316): the Outlook calendar connection — its app credentials,
+  // mapping rules and switch, a test of the grant, sync now, disconnect.
+  'org.calendar.configure',
 ] as const;
 
 /** SPEC §3.2 — gated by project role, with org owner/admin holding implicit lead. */
@@ -234,6 +237,9 @@ export const SYSTEM_ACTIONS = [
   // written as the sender (D-155, LAI-1315) — nobody yet, so nobody is the
   // actor until the sender is matched.
   'system.email.receive',
+  // §11.6: members' Outlook meetings logged as their time every 15 minutes,
+  // while the switch is on (D-157, LAI-1316).
+  'system.calendar.sync',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];
@@ -468,6 +474,10 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // stand-up, title and comment to an address of its own choosing, and one
   // that could turn posting on would speak for the organisation.
   'org.teams.configure',
+  // **The calendar connection holds an app secret that reads every member's
+  // calendar** (D-157, LAI-1316): an agent's token must neither set it, nor
+  // turn the sync on, nor send a meeting's time to a space.
+  'org.calendar.configure',
 ]);
 
 /**

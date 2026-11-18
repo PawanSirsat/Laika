@@ -151,6 +151,12 @@ export const INBOUND_EMAIL_PATH = '/webhooks/email';
 /** A space's Teams test post (D-154, LAI-1314): `/projects/:slug/teams/test`. */
 export const TEAMS_TEST_PATH = /^\/api\/v1\/projects\/[^/]+\/teams\/test$/;
 
+/** The calls to Microsoft a person makes (D-157, LAI-1316): test the connection, sync now. */
+export const CALENDAR_CALL_PATHS: ReadonlySet<string> = new Set([
+  '/api/v1/org/calendar/test',
+  '/api/v1/org/calendar/sync',
+]);
+
 export function classify(
   path: string,
   credential: RequestCredential | null,
@@ -213,6 +219,11 @@ export function classify(
   // Inbound email (LAI-1315): one anonymous sender, so one bucket of its own.
   if (path === INBOUND_EMAIL_PATH && method === 'POST') {
     return { key: 'inbound-email', policy: LIMITS.inboundEmail };
+  }
+
+  // The Outlook calendar (LAI-1316): each of these calls Microsoft, the same way.
+  if (CALENDAR_CALL_PATHS.has(path) && method === 'POST') {
+    return { key: `calendar:${who}`, policy: LIMITS.calendar };
   }
 
   // OpenTelemetry has its own budget (LAI-773), per token as reports are.

@@ -642,10 +642,11 @@ export type TimeDraftState = (typeof TIME_DRAFT_STATES)[number];
 
 /**
  * §4.48's `source` (D-088 item 2, LAI-787): what a confirmed entry came
- * from — a draft the person confirmed, one they typed, or one imported from
- * the billing record (LAI-788).
+ * from — a draft the person confirmed, one they typed, one imported from
+ * the billing record (LAI-788), or a meeting read from their Outlook
+ * calendar (D-157, LAI-1316).
  */
-export const TIME_ENTRY_SOURCES = ['draft', 'manual', 'import'] as const;
+export const TIME_ENTRY_SOURCES = ['draft', 'manual', 'import', 'calendar'] as const;
 export type TimeEntrySource = (typeof TIME_ENTRY_SOURCES)[number];
 
 /**
@@ -725,6 +726,28 @@ export type LeavePart = (typeof LEAVE_PARTS)[number];
  */
 export const LEAVE_STATUSES = ['approved', 'pending'] as const;
 export type LeaveStatus = (typeof LEAVE_STATUSES)[number];
+
+/**
+ * `org_calendar_source`'s `last_error_code` (D-157, LAI-1316): why the last
+ * calendar sync changed nothing. Microsoft refused the tenant, client id or
+ * secret (or the stored secret could not be read — saving it again is the
+ * remedy either way); the app has not been granted `Calendars.Read`; Microsoft
+ * could not be reached; or it answered something Laika could not read.
+ */
+export const CALENDAR_SYNC_ERROR_CODES = [
+  'credentials_rejected',
+  'not_granted',
+  'unreachable',
+  'bad_answer',
+] as const;
+export type CalendarSyncErrorCode = (typeof CALENDAR_SYNC_ERROR_CODES)[number];
+
+/**
+ * A calendar mapping rule's `kind` (D-157, LAI-1316): a keyword in the
+ * meeting's subject, or the Teams channel a channel meeting is in.
+ */
+export const CALENDAR_RULE_KINDS = ['title', 'channel'] as const;
+export type CalendarRuleKind = (typeof CALENDAR_RULE_KINDS)[number];
 
 /**
  * `attachments`' `state` (§4.92, D-150, LAI-1300): asked for and not yet

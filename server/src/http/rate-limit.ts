@@ -111,6 +111,12 @@ export const LIMITS = {
    * enough for a mailing that arrives at once.
    */
   inboundEmail: { perMinute: 120, burst: 60 },
+  /**
+   * Testing the Outlook calendar connection and syncing it now (D-157,
+   * LAI-1316): each calls Microsoft, so 6 a minute per person on its own
+   * bucket, as the HR system's.
+   */
+  calendar: { perMinute: 6 },
 } as const satisfies Record<string, LimitPolicy>;
 
 export type LimitName = keyof typeof LIMITS;

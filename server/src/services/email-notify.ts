@@ -6,6 +6,7 @@ import { newId } from '../db/ids.ts';
 import { requireOrgId } from '../db/orgs.ts';
 import {
   activity,
+  agents,
   commentMentions,
   comments,
   emailDigestItems,
@@ -195,6 +196,8 @@ export function activityReads(db: Db, orgId: string, mark: NotifyMark, now: numb
     taskId: activity.taskId,
     projectId: activity.projectId,
     actorId: activity.actorId,
+    actorKind: activity.actorKind,
+    agentId: activity.agentId,
     payloadJson: activity.payloadJson,
     createdAt: activity.createdAt,
     rowid: ROWID,
@@ -311,6 +314,7 @@ class Run {
   private readonly prefs = new Map<string, { instant: boolean; digest: boolean }>();
   private readonly watchers = new Map<string, string[]>();
   private readonly reads = new Map<string, boolean>();
+  private readonly agents = new Map<string, string | null>();
   readonly switchOn: boolean;
   readonly brand: { product: string; orgName: string };
 
@@ -344,6 +348,30 @@ class Run {
   name(id: string | null): string {
     if (id === null) return 'Laika';
     return this.person(id)?.name ?? 'Someone';
+  }
+
+  /**
+   * Who did it, as a mail says it (LAI-1341, the owner's decision): a person
+   * by their name, and **an agent as its owner's, never as its owner** —
+   * `Ada's agent`, or `<the agent's display name> (Ada's agent)` when the row
+   * names a registered agent. A token acts as its owner, so `actor_id` is the
+   * owner either way; `actor_kind` is what tells the two apart.
+   */
+  actorName(row: { actorId: string | null; actorKind: string; agentId: string | null }): string {
+    if (row.actorKind !== 'agent') return this.name(row.actorId);
+    const owner = `${this.name(row.actorId)}'s agent`;
+    if (row.agentId === null) return owner;
+    let display = this.agents.get(row.agentId);
+    if (display === undefined) {
+      display =
+        this.db
+          .select({ displayName: agents.displayName })
+          .from(agents)
+          .where(eq(agents.id, row.agentId))
+          .get()?.displayName ?? null;
+      this.agents.set(row.agentId, display);
+    }
+    return display === null ? owner : `${display} (${owner})`;
   }
 
   /** The person's own switches (§4.97): both on with no row. */
@@ -391,6 +419,8 @@ class Run {
       taskId: string | null;
       projectId: string | null;
       actorId: string | null;
+      actorKind: string;
+      agentId: string | null;
       payloadJson: string;
       createdAt: number;
     },
@@ -408,6 +438,11 @@ class Run {
     const told = new Set<string>();
     const owed = new Set<string>();
     const tooOld = this.now - row.createdAt > INSTANT_LOOKBACK_MS;
+    // Nobody is told what they did themselves — **in person**. What their
+    // agent did on their behalf they are told, as their agent's (LAI-1341).
+    const ownDoing = (userId: string): boolean =>
+      row.actorKind !== 'agent' && userId === row.actorId;
+    const actorName = this.actorName(row);
     const settle = (userId: string, sent: Instant): void => {
       if (sent.inserted) result.instant += 1;
       if (sent.queued) told.add(userId);
@@ -425,13 +460,13 @@ class Run {
           : assigneeChangedSince(this.db, task.id)
             ? null
             : task.assigneeId;
-      if (to !== null && to !== row.actorId) {
+      if (to !== null && !ownDoing(to)) {
         settle(
           to,
           this.instant('assignment', `assignment:${row.id}`, to, task, tooOld, (brand) =>
             assignmentEmail({
               brand,
-              actorName: this.name(row.actorId),
+              actorName,
               task: task.ref,
               prefsUrl: this.prefsUrl(to),
             }),
@@ -454,7 +489,7 @@ class Run {
             .from(commentMentions)
             .where(eq(commentMentions.commentId, commentId))
             .all()) {
-            if (userId === row.actorId) continue;
+            if (ownDoing(userId)) continue;
             settle(
               userId,
               this.instant(
@@ -466,7 +501,7 @@ class Run {
                 (brand) =>
                   mentionEmail({
                     brand,
-                    actorName: this.name(row.actorId),
+                    actorName,
                     task: task.ref,
                     excerpt: excerpt(comment.bodyMd),
                     prefsUrl: this.prefsUrl(userId),
@@ -483,7 +518,7 @@ class Run {
       DIGEST_VERBS.has(row.type) && !(row.type === 'task.updated' && payload.field === 'claim');
     const readers = new Set([...(news ? this.watchersOf(task) : []), ...owed]);
     for (const userId of readers) {
-      if (userId === row.actorId || told.has(userId)) continue;
+      if (ownDoing(userId) || told.has(userId)) continue;
       if (this.collect(userId, { activityId: row.id }, row.createdAt)) result.collected += 1;
     }
   }
@@ -783,7 +818,7 @@ function digestContent(
       const task = run.task(row.taskId);
       if (task === null || !run.canRead(userId, task.projectId)) continue;
       const payload = asRecord(readPayload(row));
-      const line = describe(namer, row.type, row.actorId, payload, {
+      const line = describe(namer, row.type, run.actorName(row), payload, {
         assigned: task.assigneeId === userId,
         mentioned: mentions(db, stringOf(payload.comment_id), userId),
       });
@@ -828,15 +863,18 @@ export interface DigestReader {
   mentioned: boolean;
 }
 
-/** One activity row in a sentence, or null for one not worth a line. */
+/**
+ * One activity row in a sentence, or null for one not worth a line. `who` is
+ * the actor as {@link Run.actorName} says it; `run.name` names anybody else
+ * the row mentions — the reader as "you".
+ */
 export function describe(
   run: { name: (id: string | null) => string },
   type: string,
-  actorId: string | null,
+  who: string,
   payload: Record<string, unknown>,
   reader: DigestReader = { assigned: false, mentioned: false },
 ): string | null {
-  const who = run.name(actorId);
   switch (type) {
     case 'task.created':
       return reader.assigned ? `${who} created it and assigned it to you` : `${who} created it`;

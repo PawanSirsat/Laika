@@ -232,6 +232,10 @@ export function draftTarget(draft: TimeDraft): {
  * Whether the person changes this entry here (LAI-788 review round 1): not
  * one that came from Solidtime, which is the record for it — it is changed
  * there, and the next `laika time pull` brings the change here.
+ *
+ * A meeting the Outlook sync logged (D-157, LAI-1316) **is** the person's to
+ * change or delete, like one they typed: Laika is its record, and the first
+ * change they make keeps every later sync off it.
  */
 export function canChange(entry: Pick<TimeEntry, 'source'>): boolean {
   return entry.source !== 'import';

@@ -20,6 +20,8 @@ const SOURCES: Readonly<Record<TimeEntry['source'], string>> = {
   draft: 'From draft',
   manual: 'You added',
   import: 'Solidtime',
+  // D-157 (LAI-1316): a meeting the Outlook sync logged for the person.
+  calendar: 'From Outlook',
 };
 
 /**

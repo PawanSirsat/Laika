@@ -223,20 +223,25 @@ function WeekColumn({
         const item = labelOf(view, b);
         const detail = boxDetail(b.minutes);
         return (
-          <Tooltip key={b.id} content={`${item.name} · ${duration(b.minutes)}`} lazy>
+          <Tooltip
+            key={b.id}
+            content={`${item.name} · ${duration(b.minutes)}${item.outlook ? ' · From Outlook' : ''}`}
+            lazy
+          >
             <button
               type="button"
               className="span-week-block"
               data-kind={b.kind}
               data-needs-card={b.needsCard ? '' : undefined}
               data-meeting={item.meeting ? '' : undefined}
+              data-source={item.outlook ? 'calendar' : undefined}
               style={{
                 ['--b-top' as string]: pct(box.top),
                 ['--b-height' as string]: pct(box.height),
                 ['--b-left' as string]: pct(box.row / box.rows),
                 ['--b-width' as string]: pct(1 / box.rows),
               }}
-              aria-label={`${item.name}, ${duration(b.minutes)}, ${b.kind === 'confirmed' ? 'confirmed' : 'to review'}. Open ${dayLong(view.day)}`}
+              aria-label={`${item.name}, ${duration(b.minutes)}, ${b.kind === 'confirmed' ? (item.outlook ? 'confirmed, from Outlook' : 'confirmed') : 'to review'}. Open ${dayLong(view.day)}`}
               onClick={() => {
                 onOpenBlock(view.day, {
                   kind: b.kind === 'confirmed' ? 'entry' : 'draft',
@@ -262,11 +267,14 @@ function WeekColumn({
   );
 }
 
-/** What a block is called: its task's key and title, else what the person typed. */
+/**
+ * What a block is called: its task's key and title, else what the person
+ * typed — and whether the Outlook sync logged it (D-157, LAI-1316).
+ */
 function labelOf(
   view: MyDay,
   b: LaneBlock,
-): { key: string | undefined; name: string; meeting: boolean } {
+): { key: string | undefined; name: string; meeting: boolean; outlook: boolean } {
   if (b.kind === 'confirmed') {
     const e = view.entries.find((x) => x.id === b.id);
     const key = e?.task?.key;
@@ -274,6 +282,7 @@ function labelOf(
       key,
       name: e?.task?.title ?? e?.title ?? (e?.kind === 'meeting' ? 'Meeting' : 'No task'),
       meeting: e?.kind === 'meeting',
+      outlook: e?.source === 'calendar',
     };
   }
   const d = view.drafts.find((x) => x.id === b.id);
@@ -283,5 +292,6 @@ function labelOf(
     name:
       d?.task?.title ?? (b.needsCard ? 'No task yet' : d?.general === true ? 'General' : 'Drafted'),
     meeting: false,
+    outlook: false,
   };
 }
