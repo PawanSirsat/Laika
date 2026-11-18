@@ -33,7 +33,6 @@ import { PEOPLE_ANALYTICS } from '../../../api/people-analytics.ts';
 import { useGates } from '../../../api/permissions.ts';
 import { readsSharedRow, useSharedRow } from './profile-availability.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { SCREEN_COPY } from '../screen-copy.ts';
@@ -68,6 +67,8 @@ import {
   rovingTabIndex,
 } from '../../../components/tabs/TabStrip.tsx';
 import './profile.css';
+import { PersonFacts } from '../../../components/person-facts/PersonFacts.tsx';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { EmailPrefsCard } from './EmailPrefsCard.tsx';
 
 export interface ProfileScreenProps {
@@ -664,18 +665,24 @@ function ProfileHead({
   const { theme } = useTheme();
   const { user } = profile;
   const ink = avatarColor(user.id, theme);
-  // The ring is the avatar's own colour, set off by a band of the card's.
-  const avatar: CSSProperties = {
-    background: ink.background,
-    color: ink.foreground,
+  // The ring is the avatar's own colour, set off by a band of the card's —
+  // around their synced photo too (D-161).
+  const ring: CSSProperties = {
     boxShadow: `0 0 0 3px var(--bg-card), 0 0 0 5px ${ink.background}`,
   };
 
   return (
     <section className="prof-head" aria-labelledby="prof-name">
       <div className="prof-head-main">
-        <span className="prof-avatar" style={avatar} aria-hidden="true">
-          {initials(user.name)}
+        <span className="prof-avatar-ring" style={ring}>
+          <Avatar
+            name={user.name}
+            userId={user.id}
+            theme={theme}
+            size={60}
+            label={null}
+            className="prof-avatar"
+          />
         </span>
         <div className="prof-who">
           <div className="prof-name-row">
@@ -703,6 +710,7 @@ function ProfileHead({
             <span className="prof-meta-email">{user.email}</span>
             <span>Member since {monthYear(user.created_at)}</span>
           </p>
+          <PersonFacts userId={user.id} className="prof-facts" />
           <AvailabilityLine seen={availability} setBy={own ? 'you' : firstName(user.name)} />
         </div>
         <div className="prof-head-actions">{actions}</div>

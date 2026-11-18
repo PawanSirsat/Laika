@@ -331,6 +331,29 @@ const COMPATIBILITY_PATH = '/api/v1/developer/compatibility';
 const ME_PATH = '/api/v1/me';
 
 /**
+ * Microsoft's directory as Laika keeps it (D-161, LAI-1330): every avatar
+ * asks for it once a session, so a test that does not name it is a board
+ * whose people sync never ran — nobody's photo, title or manager.
+ */
+const DIRECTORY_PATH = '/api/v1/people/directory';
+export const NO_DIRECTORY = { people: {} };
+
+/** The Microsoft 365 card's people sync, both switches off and never run. */
+const PEOPLE_SYNC_PATH = '/api/v1/org/people-sync';
+export const PEOPLE_SYNC_OFF = {
+  connected: false,
+  profile_enabled: false,
+  leavers_enabled: false,
+  photos_stored: false,
+  sync_every_minutes: 60,
+  last_attempt_at: null,
+  last_success_at: null,
+  last_error: null,
+  last_result: null,
+  leavers: null,
+};
+
+/**
  * The task list and one task (LAI-795). **The list is answered as the server
  * answers it**: asked `fields=slim`, the stub leaves out `description_md` and
  * `acceptance_md`, so a fixture written in full still reaches the app as the
@@ -738,6 +761,16 @@ function serve(
         if (chosen === undefined && req.method === 'GET' && path === COMPATIBILITY_PATH) {
           res.writeHead(200, { 'content-type': 'application/json' });
           res.end(JSON.stringify(DEFAULT_COMPATIBILITY));
+          return;
+        }
+
+        if (
+          chosen === undefined &&
+          req.method === 'GET' &&
+          (path === DIRECTORY_PATH || path === PEOPLE_SYNC_PATH)
+        ) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(path === DIRECTORY_PATH ? NO_DIRECTORY : PEOPLE_SYNC_OFF));
           return;
         }
 

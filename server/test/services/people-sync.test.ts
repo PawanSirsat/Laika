@@ -432,6 +432,21 @@ describe('leavers', () => {
     expect(row(guest)).toBeUndefined();
   });
 
+  it('a miss counts only with an Entra id on the row: the review asks for one itself', async () => {
+    switches(true, true);
+    const guest = person('Guest', 'guest@elsewhere.test');
+    entra('owner@example.test');
+    crowd(10);
+    // A row with a first miss and no Entra id — what no sync writes, but the
+    // review must not be the place that trusts that.
+    t.db
+      .insert(userDirectory)
+      .values({ userId: guest, missingSince: NOW - 2 * HOUR, updatedAt: NOW })
+      .run();
+    expect((await synced()).leavers.state).toBe('none');
+    expect(active(guest)).toBe(true);
+  });
+
   it('never deactivates an owner, and says why', async () => {
     switches(true, true);
     entra('owner@example.test', { accountEnabled: false });

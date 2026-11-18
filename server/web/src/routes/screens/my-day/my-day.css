@@ -1980,16 +1980,9 @@ p.inspector-length {
   min-width: 0;
 }
 
+/* The shared Avatar at 24, solid (D-161). */
 .myday-looked-avatar {
   flex: none;
-  display: inline-grid;
-  place-items: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: var(--radius-round);
-  color: var(--on-accent);
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
 }
 
 .myday-looked-who {

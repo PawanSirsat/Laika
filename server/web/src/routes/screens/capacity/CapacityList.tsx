@@ -2,9 +2,9 @@ import { ScrollCue } from '../../../components/ScrollCue.tsx';
 import { asAgentClient } from '../../../api/agent-clients.ts';
 import type { CapacityEntry } from '../../../api/presence.ts';
 import { PersonLink } from '../../../components/PersonLink.tsx';
-import { avatarColor } from '../../../theme/avatar-color.ts';
+import { PersonFacts } from '../../../components/person-facts/PersonFacts.tsx';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import type { Theme } from '../../../theme/theme.ts';
-import { initials } from '../../../theme/initials.ts';
 import { count, HOVER, LoadBadges, ROLE_LABEL, SpaceChip } from './CapacityCard.tsx';
 import { barSegments, loadIn, runningAgents, statusText, workloadIn } from './capacity-derive.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
@@ -82,7 +82,6 @@ export function CapacityList({ people, now, theme, space, scale }: CapacityListP
         </thead>
         <tbody>
           {people.map((person) => {
-            const ink = avatarColor(person.user_id, theme);
             const status = statusText(person, now);
             const ring = person.status ?? 'off';
             const work = workloadIn(person, space);
@@ -103,12 +102,14 @@ export function CapacityList({ people, now, theme, space, scale }: CapacityListP
               <tr key={person.user_id} className="cap-row" data-status={person.status ?? 'off'}>
                 <td className="cap-list-person">
                   <span className={`cap-avatar-wrap cap-ring-${ring}`} aria-hidden="true">
-                    <span
-                      className="cap-avatar cap-avatar-sm"
-                      style={{ background: ink.background, color: ink.foreground }}
-                    >
-                      {initials(person.name)}
-                    </span>
+                    <Avatar
+                      name={person.name}
+                      userId={person.user_id}
+                      theme={theme}
+                      size={28}
+                      label={null}
+                      className="cap-avatar"
+                    />
                     {person.status !== null && (
                       <span className={`cap-dot cap-dot-${person.status}`} />
                     )}
@@ -140,6 +141,7 @@ export function CapacityList({ people, now, theme, space, scale }: CapacityListP
                         <span className={`cap-status cap-status-${ring}`}>{status.text}</span>
                       </Tooltip>
                     </span>
+                    <PersonFacts userId={person.user_id} className="cap-facts" />
                   </span>
                 </td>
                 <td>

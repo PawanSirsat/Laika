@@ -17,11 +17,11 @@ import type { CapacityView } from '../../../api/presence.ts';
 import type { Project } from '../../../api/projects.ts';
 import type { OpenTasksChoice } from '../../../api/offboarding.ts';
 import { updateUser, type OrgUser } from '../../../api/users.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
-import { initials } from '../../../theme/initials.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { ConfirmDialog } from '../../../components/ConfirmDialog.tsx';
+import { PersonFacts } from '../../../components/person-facts/PersonFacts.tsx';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { ScrollRegion } from './ScrollRegion.tsx';
 import {
   SORT_LABELS,
@@ -719,7 +719,6 @@ export function PeopleTab({
               </div>
 
               {shown.map((person) => {
-                const ink = avatarColor(person.id, theme);
                 const entry = entries.get(person.id);
                 const seen = lastActive(entry, capacity?.enabled, person.is_active, now);
                 const signedIn = lastSignIn(person.last_seen_at, now);
@@ -762,13 +761,14 @@ export function PeopleTab({
                     </span>
                     <span role="cell" className="org-people-person">
                       <span className="org-avatar-wrap">
-                        <span
+                        <Avatar
+                          name={person.name}
+                          userId={person.id}
+                          theme={theme}
+                          size={28}
+                          label={null}
                           className="org-avatar"
-                          style={{ background: ink.background, color: ink.foreground }}
-                          aria-hidden="true"
-                        >
-                          {initials(person.name)}
-                        </span>
+                        />
                         {online && (
                           <span className="org-presence-dot" title="Active now" data-online />
                         )}
@@ -790,6 +790,7 @@ export function PeopleTab({
                           )}
                         </span>
                         <span className="org-person-email">{person.email}</span>
+                        <PersonFacts userId={person.id} className="org-person-facts" />
                       </span>
                     </span>
                     <span role="cell" className="org-people-role">

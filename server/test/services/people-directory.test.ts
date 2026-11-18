@@ -91,8 +91,15 @@ describe('the directory', () => {
           job_title: 'Director',
           department: 'Leadership',
           manager_id: null,
+          manager_name: null,
         },
-        [ada]: { photo_v: null, job_title: 'Engineer', department: null, manager_id: s.userId },
+        [ada]: {
+          photo_v: null,
+          job_title: 'Engineer',
+          department: null,
+          manager_id: s.userId,
+          manager_name: 'Owner',
+        },
       },
     });
   });

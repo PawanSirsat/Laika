@@ -392,6 +392,40 @@ entirely, press **Make token** and do not give Brevo the new one.
 
 ---
 
+## Microsoft 365 people: turning it on
+
+*Photos and profile* and *Leavers* (D-161, SPEC §11.6) ship **off**, on the
+Microsoft 365 card under Organisation → Integrations. They read Microsoft
+through the calendar's connection, so the app's tenant, client id and secret
+are saved there first. Nothing here needs a migration step or an environment
+variable, and a board with no file store (`LAIKA_S3_*`) still reads titles and
+managers; it only keeps no photos.
+
+1. **Grant `User.Read.All`** (an application permission) to the Entra app,
+   with admin consent. *Test connection* on the card lists it among the
+   token's permissions once it is granted; without it each run fails
+   `not_granted` and reads nobody.
+2. **Turn on *Photos and profile*.** It starts a run at once, then every
+   hour. Check the counts under *People*: everyone found who should be, and the
+   photos fetched. A second run fetches no photo whose Microsoft tag is
+   unchanged.
+3. **Read the dry run before *Leavers*.** While *Leavers* is off, every run
+   lists who it *would* deactivate, and why — an account turned off in
+   Microsoft, or someone it has not had for over an hour. Only someone it had
+   before counts as gone; an owner and the last admin are never taken.
+4. **Turn on *Leavers* last**, after at least one run whose list is right and
+   whose breaker did not trip. Turning it on needs *Deactivate people* as well
+   as the connection's own grant. More than 3 leavers, or more than a tenth of
+   the members, in one run deactivates nobody and lists them as *held* — on a
+   board of fewer than ten members that is every leaver, by design.
+
+Each deactivation is the one People does by hand: tokens revoked, sessions
+ended, spaces left, open tasks unassigned, written in the history by the
+system with `via: microsoft_directory`. Reactivating someone is done by hand on
+People, as ever — **but while Microsoft still says they have left, the next run
+deactivates them again.** Fix the account in Microsoft first, or turn *Leavers*
+off for as long as they should stay.
+
 ## The frontend as its own resource, on one domain
 
 The default image serves the API and the SPA together. To run the frontend as

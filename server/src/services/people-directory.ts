@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type UserPhotoType } from '../db/enums.ts';
-import { userDirectory } from '../db/schema.ts';
+import { userDirectory, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { type AttachmentsDeps, storeFor } from './attachments.ts';
@@ -36,6 +36,8 @@ export interface PersonDirectoryView {
   department: string | null;
   /** Their manager's Laika user id, when the directory names one who is a user. */
   manager_id: string | null;
+  /** That manager's name, so "Reports to" needs no second read. */
+  manager_name: string | null;
 }
 
 /** `GET /api/v1/people/directory`: every synced person, by user id. */
@@ -51,6 +53,13 @@ export function getPeopleDirectory(
 ): PeopleDirectoryView {
   assertCan(actor, 'member_list.read');
   const stored = (deps?.config ?? null) !== null;
+  const names = new Map(
+    db
+      .select({ id: users.id, name: users.name })
+      .from(users)
+      .all()
+      .map((u) => [u.id, u.name]),
+  );
   const people: Record<string, PersonDirectoryView> = {};
   for (const row of db.select().from(userDirectory).all()) {
     people[row.userId] = {
@@ -58,6 +67,7 @@ export function getPeopleDirectory(
       job_title: row.jobTitle,
       department: row.department,
       manager_id: row.managerUserId,
+      manager_name: row.managerUserId === null ? null : (names.get(row.managerUserId) ?? null),
     };
   }
   return { people };

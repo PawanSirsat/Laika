@@ -101,6 +101,8 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
   ['api/errors.ts', 'covered by test/api.test.ts — the envelope and the wrapper are one subject'],
   ['api/me.ts', 'a single typed GET; asserted through the client in api.test.ts'],
   ['api/use-session.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
+  // D-161 (LAI-1330): the directory's two hooks; the store they read is tested.
+  ['api/use-person-directory.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   [
     'components/use-dismiss.ts',
     'a React hook on document listeners — no renderer in this package (CONVENTIONS §4); task-drawer-host.test.ts and filter-popover.test.ts drive it in a browser',

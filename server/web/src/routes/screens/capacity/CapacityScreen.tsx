@@ -8,6 +8,7 @@ import {
 } from '../../../api/presence.ts';
 import { isProject, listProjects } from '../../../api/projects.ts';
 import { timeLabel } from '../../../api/time-label.ts';
+import { useReportsOf } from '../../../api/use-person-directory.ts';
 import { usePolled } from '../../../api/use-polled.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
@@ -16,6 +17,7 @@ import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { FilterBar, Segmented } from '../../../components/kpi/FilterBar.tsx';
 import { KpiRow, KpiTile } from '../../../components/kpi/KpiRow.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
+import { useShell } from '../../../components/shell/shell-context.ts';
 import { StaleNotice } from '../../../components/StaleNotice.tsx';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { InfoTip } from '../profile/InfoTip.tsx';
@@ -167,7 +169,10 @@ export function CapacityScreen({
   const now = polled.readAt ?? 0;
 
   const [own, setOwn] = useState<CapacityParams>(CAPACITY_DEFAULTS);
-  const { query, filter, space, sort } = params ?? own;
+  const { query, filter, space, sort, team } = params ?? own;
+  // The reader's own reports, by Microsoft's directory (D-161): "My team".
+  const { me } = useShell();
+  const reports = useReportsOf(me?.id);
   const update = (next: Partial<CapacityParams>): void => {
     if (onParams === undefined) setOwn((was) => ({ ...was, ...next }));
     else onParams(next);
@@ -254,7 +259,10 @@ export function CapacityScreen({
   const searching = query.trim() !== '';
   const shown = sortPeople(
     everyone.filter(
-      (person) => matchesQuery(person, query) && passesFilter(person, effectiveFilter, space),
+      (person) =>
+        matchesQuery(person, query) &&
+        passesFilter(person, effectiveFilter, space) &&
+        (!team || reports.has(person.user_id)),
     ),
     effectiveSort,
     space,
@@ -480,6 +488,20 @@ export function CapacityScreen({
                     setSpace(value === '' ? null : value);
                   }}
                 />
+                {(reports.size > 0 || team) && (
+                  <Dropdown<'everyone' | 'team'>
+                    className="cap-dropdown"
+                    aria-label="People"
+                    value={team ? 'team' : 'everyone'}
+                    options={[
+                      { value: 'everyone', label: 'Everyone' },
+                      { value: 'team', label: `My team (${String(reports.size)})` },
+                    ]}
+                    onChange={(value) => {
+                      update({ team: value === 'team' });
+                    }}
+                  />
+                )}
                 <Dropdown<CapacitySort>
                   className="cap-dropdown"
                   aria-label="Sort"
@@ -489,12 +511,12 @@ export function CapacityScreen({
                   )}
                   onChange={setSort}
                 />
-                {(effectiveFilter !== 'all' || space !== null || searching) && (
+                {(effectiveFilter !== 'all' || space !== null || searching || team) && (
                   <button
                     type="button"
                     className="cap-clear"
                     onClick={() => {
-                      update({ query: '', filter: 'all', space: null });
+                      update({ query: '', filter: 'all', space: null, team: false });
                     }}
                   >
                     Clear filters

@@ -20,6 +20,7 @@ import { IconButton } from '../../../components/forms/IconButton.tsx';
 import { PasswordInput } from '../../../components/forms/PasswordInput.tsx';
 import { TextInput } from '../../../components/forms/TextInput.tsx';
 import { Switch } from '../../../components/Switch.tsx';
+import { PeopleSyncPanel } from './PeopleSyncPanel.tsx';
 import {
   blankRule,
   countsLine,
@@ -54,8 +55,10 @@ const RULE_KINDS: readonly DropdownOption<CalendarRuleKind>[] = [
 ];
 
 /**
- * The organisation's Outlook calendar (D-157, LAI-1316), a card on
- * Organisation → Integrations after the HR system: an owner or admin saves
+ * The organisation's Microsoft 365 connection, a card on Organisation →
+ * Integrations after the HR system — its Outlook calendar (D-157, LAI-1316)
+ * and, through the same app, its people (D-161, LAI-1330, `PeopleSyncPanel`),
+ * each with its own switch: an owner or admin saves
  * the Microsoft Entra app's tenant, client id and secret, tests whether
  * Microsoft grants it `Calendars.Read`, says which meetings go to which
  * space, and turns the switch on. Shown only to a holder of
@@ -118,7 +121,7 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
     return (
       <section className="org-card org-cal" aria-labelledby="org-cal" data-section="calendar">
         <header className="org-card-head">
-          <h2 id="org-cal">Outlook calendar</h2>
+          <h2 id="org-cal">Microsoft 365</h2>
         </header>
         <p className="org-fact-error" role="alert">
           The calendar connection could not be read. {readFailed}
@@ -185,8 +188,8 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
 
   const disconnect = (): void => {
     void confirm({
-      title: 'Disconnect Outlook?',
-      body: 'Laika forgets the tenant, client ID and secret, and stops reading calendars. Meetings already logged stay on people’s days as their time.',
+      title: 'Disconnect Microsoft 365?',
+      body: 'Laika forgets the tenant, client ID and secret, and stops reading calendars and people. Meetings already logged stay on people’s days as their time, and photos and titles already synced stay until someone changes them.',
       confirmLabel: 'Disconnect',
       danger: true,
     }).then((yes) => {
@@ -227,7 +230,7 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
       data-calendar-status={statusWord(view)}
     >
       <header className="org-card-head">
-        <h2 id="org-cal">Outlook calendar</h2>
+        <h2 id="org-cal">Microsoft 365</h2>
         <span className="org-count" data-configured={view.configured}>
           {statusWord(view)}
         </span>
@@ -247,7 +250,7 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
       <div className="org-hr-body">
         <span className="org-cal-switch" data-calendar-switch>
           <span className="org-cal-switch-label" id="org-cal-switch-label">
-            Log meetings automatically
+            Calendar
           </span>
           <Switch
             checked={view.enabled}
@@ -267,9 +270,11 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
           </span>
         </span>
 
+        <PeopleSyncPanel connected={view.configured} now={now} />
+
         <form
           className="org-hr-form org-cal-form"
-          aria-label="Outlook calendar settings"
+          aria-label="Microsoft 365 settings"
           noValidate
           onSubmit={(event) => {
             event.preventDefault();

@@ -16,8 +16,7 @@ import {
   type Member,
   type TaskSummary,
 } from '../../../api/tasks.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import type { Theme } from '../../../theme/theme.ts';
 import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
@@ -180,9 +179,7 @@ export function TaskMeta({
 }: TaskMetaProps) {
   const now = Date.now();
   const assignee = task.assignee_id === null ? undefined : members.get(task.assignee_id);
-  const ink = task.assignee_id === null ? undefined : avatarColor(task.assignee_id, theme);
   const reporter = members.get(task.created_by);
-  const reporterInk = avatarColor(task.created_by, theme);
 
   const [detailsOpen, setDetailsOpen] = useState(() => readOpen('details', true));
   const [devOpen, setDevOpen] = useState(() => readOpen('development', true));
@@ -351,15 +348,14 @@ export function TaskMeta({
                     label={`${assignee.name}’s profile`}
                     onlyLink
                   >
-                    <span
+                    <Avatar
+                      name={assignee.name}
+                      userId={task.assignee_id}
+                      theme={theme}
+                      size={28}
+                      label={null}
                       className="meta-avatar"
-                      aria-hidden="true"
-                      {...(ink === undefined
-                        ? {}
-                        : { style: { background: ink.background, color: ink.foreground } })}
-                    >
-                      {initials(assignee.name)}
-                    </span>
+                    />
                   </PersonLink>
                 ) : (
                   <span className="meta-avatar meta-avatar-empty" aria-hidden="true">
@@ -501,13 +497,14 @@ export function TaskMeta({
                 Reporter
               </p>
               <div className="meta-value meta-person">
-                <span
+                <Avatar
+                  name={reporter?.name ?? '?'}
+                  userId={task.created_by}
+                  theme={theme}
+                  size={28}
+                  label={null}
                   className="meta-avatar"
-                  aria-hidden="true"
-                  style={{ background: reporterInk.background, color: reporterInk.foreground }}
-                >
-                  {initials(reporter?.name ?? '?')}
-                </span>
+                />
                 {/* `created_by`, which is what Jira's Reporter is: who filed it. */}
                 <span className="meta-reporter">
                   {reporter?.name ?? 'Someone no longer on this project'}

@@ -151,16 +151,9 @@
   margin-left: 0;
 }
 
+/* The shared Avatar at 28, solid (D-161): its own size, disc and initials. */
 .myday-bar-avatar {
   flex: none;
-  width: 1.875rem;
-  height: 1.875rem;
-  border-radius: var(--radius-round);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
 }
 
 /* Who looked opens under the bar's right edge, 280px (the design's `looked`). */
