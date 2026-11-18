@@ -5,8 +5,9 @@ area: server
 assignee: chief
 priority: p2
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-18T11:34:25Z
+finished: 2026-11-18T12:09:18Z
 ---
 
 ## Goal
@@ -36,12 +37,14 @@ Scope: area `server` and, named, `server/web/`'s Capacity screen and its API mir
 
 ## Acceptance criteria
 
-- [ ] OOF events are stored, retired and revived; an OOF event never becomes a time entry.
-- [ ] The meeting-hours sum is per person's week (Monday to Sunday, their zone), tested across
+- [x] OOF events are stored, retired and revived; an OOF event never becomes a time entry.
+- [x] The meeting-hours sum is per person's week (Monday to Sunday, their zone), tested across
       a zone boundary and a week boundary.
-- [ ] Capacity's view carries both, with the drift pair; browser tests show both on Capacity.
-- [ ] Screenshots at 1440 and 390, light and dark.
+- [x] Capacity's view carries both, with the drift pair; browser tests show both on Capacity.
+- [x] Screenshots at 1440 and 390, light and dark.
 - [ ] CI is green on the PR; an independent review.
+      *(Builder: CI is read on the PR after this commit, and the review is independent — both
+      CHIEF's to tick.)*
 
 ## Notes
 
