@@ -44,6 +44,12 @@ import {
 } from './activity-time.ts';
 import { usageRoots, usageStep, type UsageOutcome } from './activity-usage.ts';
 import { readSettings } from './config.ts';
+import {
+  pairCredentials,
+  unpairedLines,
+  type CredentialSource,
+  type PairedCredential,
+} from './credential-pair.ts';
 import { readEnvFile } from './whoami.ts';
 
 /**
@@ -106,14 +112,28 @@ export interface Credentials {
 }
 
 /**
- * The same order `laika whoami` reads them in: the environment, then
- * `laika init`'s `~/.claude/settings.json`, then `~/.laika/env`. A detached
- * sync started by a hook inherits whatever the agent had.
+ * The person's own board and token, in the order `laika whoami` reads them:
+ * the environment, then `laika init`'s `~/.claude/settings.json`, then
+ * `~/.laika/env`. A detached sync started by a hook inherits whatever the
+ * agent had.
+ *
+ * **As a pair** ({@link pairCredentials}, LAI-1343): the first board named,
+ * and a token only from a source naming that same board — never the
+ * environment's `LAIKA_URL` with another file's token for another board.
  */
 export function findCredentials(
   home: string,
   env: Readonly<Record<string, string | undefined>>,
 ): Credentials | undefined {
+  const paired = pairCredentials(personalSources(home, env));
+  return paired?.token === undefined ? undefined : { url: paired.url, token: paired.token };
+}
+
+/** The three places a person's board and token are kept, in {@link findCredentials}' order. */
+export function personalSources(
+  home: string,
+  env: Readonly<Record<string, string | undefined>>,
+): CredentialSource[] {
   let settings: Record<string, string> | undefined;
   try {
     settings = readSettings(join(home, '.claude', 'settings.json')).env;
@@ -121,16 +141,11 @@ export function findCredentials(
     settings = undefined;
   }
   const installed = readEnvFile(join(home, '.laika', 'env'));
-  const pick = (key: string): string | undefined => {
-    for (const value of [env[key], settings?.[key], installed[key]]) {
-      if (typeof value === 'string' && value.trim() !== '') return value.trim();
-    }
-    return undefined;
-  };
-  const url = pick('LAIKA_URL');
-  const token = pick('LAIKA_TOKEN');
-  if (url === undefined || token === undefined) return undefined;
-  return { url: normaliseUrl(url), token };
+  return [
+    { from: 'the environment', url: env.LAIKA_URL, token: env.LAIKA_TOKEN },
+    { from: '~/.claude/settings.json', url: settings?.LAIKA_URL, token: settings?.LAIKA_TOKEN },
+    { from: '~/.laika/env', url: installed.LAIKA_URL, token: installed.LAIKA_TOKEN },
+  ];
 }
 
 /**
@@ -196,19 +211,43 @@ export function activityCredentials(
   home: string,
   env: Readonly<Record<string, string | undefined>>,
 ): (Credentials & { readonly via: CredentialVia }) | undefined {
-  const personal = findCredentials(home, env);
-  if (personal === undefined) {
-    const machine = machineCredentials(home);
+  const named = pairCredentials(personalSources(home, env));
+  if (named?.token === undefined) {
+    // A board named with no token of the person's (LAI-1343 review): only
+    // this machine's own credential **for that board** — never another
+    // board's tool file, which would turn activity on somewhere else.
+    const machine = machineCredentials(home, named?.url);
     return machine === undefined
       ? undefined
       : { url: machine.url, token: machine.token, via: machine.harness };
   }
+  const personal = { url: named.url, token: named.token };
   const machine = machineCredentials(home, personal.url);
   const fromEnvironment = env.LAIKA_TOKEN?.trim() === personal.token;
   if (machine !== undefined && (machine.token === personal.token || fromEnvironment)) {
     return { url: machine.url, token: machine.token, via: machine.harness };
   }
   return { ...personal, via: 'personal' };
+}
+
+/**
+ * What `on` and `otel` say when {@link activityCredentials} finds nothing:
+ * when a board is named here with no token, why — another place holds one for
+ * another board, or a token with no URL (LAI-1343 review) — else
+ * {@link NOT_CONNECTED}.
+ */
+export function notConnectedLines(
+  home: string,
+  env: Readonly<Record<string, string | undefined>>,
+): readonly string[] {
+  const sources = personalSources(home, env);
+  const named: PairedCredential | undefined = pairCredentials(sources);
+  if (named === undefined || named.token !== undefined) return NOT_CONNECTED;
+  const tools: CredentialSource[] = MACHINE_CREDENTIAL_ORDER.map((harness) => {
+    const saved = readCredential(home, harness, {});
+    return { from: `~/.laika/agents/${harness}.json`, url: saved?.url, token: saved?.token };
+  });
+  return unpairedLines(named, [...sources, ...tools]) ?? NOT_CONNECTED;
 }
 
 /** What `on` and `otel` say when this machine has no way to reach a board (LAI-1325). */

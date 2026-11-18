@@ -212,6 +212,12 @@ void describe('laika agent, against a real board', () => {
     );
     assert.equal(refused.code, 1);
     assert.match(refused.out, /not a registered agent’s/);
+    // Piped, there was no prompt naming the board: it says where the token
+    // goes before sending it, and never the token (LAI-1343 review).
+    const checking = refused.out.indexOf(`laika agent login: checking the token with ${board.url}`);
+    assert.ok(checking >= 0, refused.out);
+    assert.ok(checking < refused.out.indexOf('not a registered agent’s'), refused.out);
+    assert.ok(!refused.out.includes(seeded.personalToken), 'the token was printed');
     assert.throws(() => statSync(join(home, '.laika', 'agents', 'codex.json')), /ENOENT/);
 
     const saved = cli(

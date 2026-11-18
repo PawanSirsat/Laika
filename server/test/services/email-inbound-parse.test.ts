@@ -152,6 +152,27 @@ describe('readInboundMail', () => {
     });
   });
 
+  it('takes only a token that stays one path segment of Brevo’s URL (F1)', () => {
+    const tokens = (...list: unknown[]) =>
+      readInboundMail(
+        item({ Attachments: list.map((t) => ({ Name: 'f.pdf', DownloadToken: t })) }),
+      )!.attachments.map((a) => a.downloadToken);
+    // A JWT, which is what the one published sample looks like, and base64url.
+    const jwt = 'eyJ0eXAiOiJKV1QifQ.eyJmIjoiYS5wbmcifQ.c2ln-_';
+    expect(tokens(jwt, 'abc', 'a..b', 'YWJj=', 'x'.repeat(2048))).toEqual([
+      jwt,
+      'abc',
+      'a..b',
+      'YWJj=',
+      'x'.repeat(2048),
+    ]);
+    // The two dot segments resolve elsewhere; `/`, `%`, `?` and the rest are not
+    // Brevo's alphabet and are dropped rather than encoded.
+    expect(
+      tokens('..', '.', 'a/b', '%2e%2e', 'a?b', 'a b', 'tok/../evil', 'x'.repeat(2049), 7),
+    ).toEqual([]);
+  });
+
   it('reads both payload shapes Brevo sends (F1): plain-address lists and a top-level SpamScore', () => {
     const mail = readInboundMail(
       item({ Recipients: [ADDRESS, 'not an address'], Spam: undefined, SpamScore: 6.5 }),

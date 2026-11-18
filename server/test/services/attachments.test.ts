@@ -63,6 +63,14 @@ describe('contentDisposition — RFC 6266, ASCII on the wire', () => {
     expect(spaced).toBe(`attachment; filename="a b.png"; filename*=UTF-8''a%20%20b.png`);
     expect(spaced).not.toContain('  ');
   });
+
+  it('carries a name with a lone surrogate as U+FFFD rather than throwing (LAI-1315 M1)', () => {
+    expect(contentDisposition('attachment', 'a\uD83D.png')).toBe(
+      `attachment; filename="a_.png"; filename*=UTF-8''a%EF%BF%BD.png`,
+    );
+    // A pair is one character, and is kept.
+    expect(contentDisposition('attachment', '😀')).toContain(`UTF-8''%F0%9F%98%80`);
+  });
 });
 
 describe('parseAttachmentRefs', () => {

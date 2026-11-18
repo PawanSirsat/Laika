@@ -50,7 +50,7 @@ import {
   activityCredentials,
   credentialsFor,
   getSharing,
-  NOT_CONNECTED,
+  notConnectedLines,
   currentSharing,
   previewSnapshot,
   putActivity,
@@ -73,6 +73,7 @@ import {
   type UsageOutcome,
 } from './activity-usage.ts';
 import { buildDraft, primarySessions, timeDraftBody, type Block } from './activity-time.ts';
+import { normaliseUrl } from './api.ts';
 import { ask as askConsole, askSecret as askSecretConsole, closePrompt } from './prompt.ts';
 import { folderCommand, TIME_FOLDER_USAGE } from './time-folders.ts';
 import { solidtimeCommand, TIME_SOLIDTIME_USAGE } from './time-solidtime.ts';
@@ -289,7 +290,7 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
   // The person's own token, else this machine's own connection (LAI-1325).
   const creds = activityCredentials(io.home, io.env);
   if (creds === undefined) {
-    for (const line of NOT_CONNECTED) io.err(line);
+    for (const line of notConnectedLines(io.home, io.env)) io.err(line);
     return 1;
   }
 
@@ -430,7 +431,28 @@ function otel(io: ActivityIo): number {
   const board =
     readState(activityPaths(io.home))?.board ?? activityCredentials(io.home, io.env)?.url;
   if (board === undefined) {
-    for (const line of NOT_CONNECTED) io.err(line);
+    for (const line of notConnectedLines(io.home, io.env)) io.err(line);
+    return 1;
+  }
+  // `$LAIKA_TOKEN` expands in this shell: when the shell names another board,
+  // that token is the other board's, and these lines would send it here
+  // (LAI-1343). Nothing goes to stdout, so `eval "$(laika activity otel)"`
+  // sets nothing.
+  const shellBoard = io.env.LAIKA_URL?.trim() ?? '';
+  const shellToken = io.env.LAIKA_TOKEN?.trim() ?? '';
+  // A token with no LAIKA_URL beside it names no board, so it is not known to
+  // be this one's either (LAI-1343 review).
+  const wrong =
+    shellBoard !== '' && normaliseUrl(shellBoard) !== board
+      ? `This shell's LAIKA_URL is ${normaliseUrl(shellBoard)}, but these lines are for ${board}: its $LAIKA_TOKEN would go to the wrong board. Nothing printed.`
+      : shellBoard === '' && shellToken !== ''
+        ? `This shell has LAIKA_TOKEN but no LAIKA_URL naming its board, and these lines would send it to ${board}. Nothing printed.`
+        : undefined;
+  if (wrong !== undefined) {
+    io.err(wrong);
+    io.err(
+      `Run it where LAIKA_URL is ${board}, or use \`laika activity on\`, which writes no token anywhere.`,
+    );
     return 1;
   }
   for (const line of otelVariables(board)) io.out(line);

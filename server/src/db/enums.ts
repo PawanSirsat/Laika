@@ -878,8 +878,11 @@ export const EMAIL_INBOUND_ATTACHMENT_REASONS = [
   'fetch_failed',
   // The store refused or did not answer the upload.
   'store_failed',
-  // The mail itself was dropped, or wrote nothing to attach to.
+  // The mail itself was dropped, or wrote nothing to attach to — or what it
+  // wrote, or the sender's right to attach there, is gone.
   'not_needed',
+  // Email to tasks was turned off before the file was fetched (F3).
+  'switch_off',
 ] as const;
 export type EmailInboundAttachmentReason = (typeof EMAIL_INBOUND_ATTACHMENT_REASONS)[number];
 

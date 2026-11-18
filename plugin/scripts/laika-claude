@@ -47,13 +47,33 @@ PLUGIN_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 CONFIG="${LAIKA_CONFIG:-$HOME/.laika/env}"
 
+# The board and its token as a pair, never mixed (LAI-1343). The file is
+# sourced over the environment, so a file holding only one of the two would
+# leave the other from the shell — a token sent to a board its own source did
+# not name. So: the file's pair when it holds both, else the environment's
+# pair when that holds both, else neither. The scratch names are unset before
+# they are assigned, so one already exported cannot carry the token on.
+unset _laika_env_url _laika_env_token
+PERSONAL_FROM="$CONFIG"
+_laika_env_url="${LAIKA_URL:-}"
+_laika_env_token="${LAIKA_TOKEN:-}"
+unset LAIKA_URL LAIKA_TOKEN
 if [ -r "$CONFIG" ]; then
   # shellcheck disable=SC1090
   . "$CONFIG"
 fi
+if [ -z "${LAIKA_URL:-}" ] || [ -z "${LAIKA_TOKEN:-}" ]; then
+  unset LAIKA_URL LAIKA_TOKEN
+  if [ -n "$_laika_env_url" ] && [ -n "$_laika_env_token" ]; then
+    LAIKA_URL="$_laika_env_url"
+    LAIKA_TOKEN="$_laika_env_token"
+    PERSONAL_FROM="the environment"
+  fi
+fi
+unset _laika_env_url _laika_env_token
 
 AGENT_CREDENTIAL="$HOME/.laika/agents/claude-code.json"
-IDENTITY="your personal token ($CONFIG)"
+IDENTITY="your personal token ($PERSONAL_FROM)"
 if [ -r "$AGENT_CREDENTIAL" ] && grep -q '"source": "tool-add"' "$AGENT_CREDENTIAL"; then
   # Read, never sourced: the file is JSON that `laika tool add` writes, one key a line.
   AGENT_URL="$(sed -n 's/^ *"url": *"\([^"]*\)".*/\1/p' "$AGENT_CREDENTIAL")"
@@ -61,7 +81,7 @@ if [ -r "$AGENT_CREDENTIAL" ] && grep -q '"source": "tool-add"' "$AGENT_CREDENTI
   if [ -n "$AGENT_URL" ] && [ -n "$AGENT_TOKEN" ]; then
     # Two boards on one machine is legal but rarely meant: say which one wins.
     if [ -n "${LAIKA_URL:-}" ] && [ "${LAIKA_URL%/}" != "${AGENT_URL%/}" ]; then
-      echo "laika-claude: warning — Claude Code's credential is for $AGENT_URL, but $CONFIG names $LAIKA_URL; using $AGENT_URL." >&2
+      echo "laika-claude: warning — Claude Code's credential is for $AGENT_URL, but $PERSONAL_FROM names $LAIKA_URL; using $AGENT_URL." >&2
     fi
     LAIKA_URL="$AGENT_URL"
     LAIKA_TOKEN="$AGENT_TOKEN"

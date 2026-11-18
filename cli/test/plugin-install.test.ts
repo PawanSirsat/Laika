@@ -493,3 +493,69 @@ void describe("laika-claude and Claude Code's own credential (plan §L2)", () =>
     assert.match(result.err, /acting as your personal token/);
   });
 });
+
+/**
+ * The board and its token as a pair (LAI-1343). `~/.laika/env` is sourced over
+ * the environment, so a file holding one of the two used to leave the other
+ * from the shell: a token sent to a board its own source did not name.
+ */
+void describe('laika-claude takes the board and its token from one place', () => {
+  function launchWith(
+    sb: Sandbox,
+    file: string | undefined,
+    shell: Readonly<Record<string, string>>,
+  ): { code: number; out: string; err: string } {
+    mkdirSync(join(sb.home, '.laika'), { recursive: true });
+    if (file !== undefined) writeFileSync(join(sb.home, '.laika', 'env'), file);
+    writeFileSync(join(sb.fakeBin, 'claude'), '#!/bin/sh\necho "AS: $LAIKA_URL $LAIKA_TOKEN"\n');
+    chmodSync(join(sb.fakeBin, 'claude'), 0o755);
+    const result = spawnSync(join(sb.checkoutScripts, 'laika-claude'), [], {
+      env: { ...sb.env, ...shell },
+      encoding: 'utf8',
+    });
+    return { code: result.status ?? -1, out: result.stdout, err: result.stderr };
+  }
+
+  void test("a file with a token and no board never sends it to the shell's board", () => {
+    const sb = sandbox();
+    const result = launchWith(sb, 'LAIKA_TOKEN="file-token"\n', {
+      LAIKA_URL: 'http://shell.test',
+    });
+    assert.equal(result.code, 1, result.out + result.err);
+    assert.equal(result.out, '', 'Claude Code was started');
+    assert.match(result.err, /not configured yet/);
+  });
+
+  void test("a file with a board and no token never takes the shell's token: the shell's pair is used", () => {
+    const sb = sandbox();
+    const result = launchWith(sb, 'LAIKA_URL="http://file.test"\n', {
+      LAIKA_URL: 'http://shell.test',
+      LAIKA_TOKEN: 'shell-token',
+    });
+    assert.equal(result.code, 0, result.out + result.err);
+    assert.equal(result.out.trim(), 'AS: http://shell.test shell-token');
+    assert.match(
+      result.err,
+      /acting as your personal token \(the environment\) on http:\/\/shell\.test/,
+    );
+  });
+
+  void test("the shell's board alone, beside the file's pair for another board: the file's pair", () => {
+    const sb = sandbox();
+    const result = launchWith(sb, 'LAIKA_URL="http://c.test"\nLAIKA_TOKEN="c-token"\n', {
+      LAIKA_URL: 'http://b.test',
+    });
+    assert.equal(result.code, 0, result.out + result.err);
+    assert.equal(result.out.trim(), 'AS: http://c.test c-token');
+  });
+
+  void test('CONTROL: no file, a pair in the shell, as before', () => {
+    const sb = sandbox();
+    const result = launchWith(sb, undefined, {
+      LAIKA_URL: 'http://shell.test',
+      LAIKA_TOKEN: 'shell-token',
+    });
+    assert.equal(result.code, 0, result.out + result.err);
+    assert.equal(result.out.trim(), 'AS: http://shell.test shell-token');
+  });
+});

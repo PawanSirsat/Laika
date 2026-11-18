@@ -145,6 +145,11 @@ in it should have.
 Put the S3 API (port 3900) behind your TLS proxy at its own name, for example
 `https://files.example.com`. **Let the proxy pass bodies as large as
 `LAIKA_ATTACHMENT_MAX_BYTES`** — the upload goes through it, not through Laika.
+**The one exception is a mailed file** (*Email to tasks*, D-155): Brevo hands
+its bytes to the server, which holds each one in memory on its way to the store.
+That path takes at most the smaller of `LAIKA_ATTACHMENT_MAX_BYTES` and
+**40 MiB** a file, one file at a time; anything bigger is recorded
+`too_large` and never fetched.
 
 ### 2. Let the board's origin upload: `PutBucketCors`
 

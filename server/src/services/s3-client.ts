@@ -241,15 +241,21 @@ export function signedHeaders(
 
 /**
  * The store could not be reached, or would not answer (§6.3's `unavailable`).
- * Its own words never come with it.
+ * Its own words never come with it. `storeStatus` is what it answered, or
+ * null when it never did — `status` is Laika's own answer, 503.
  */
 export class StoreUnavailableError extends ApiError {
-  constructor(why: string) {
+  // A field, not a parameter property: the concurrency tests' workers load
+  // this file with Node's type stripping, which has no parameter properties.
+  readonly storeStatus: number | null;
+
+  constructor(why: string, storeStatus: number | null = null) {
     super('unavailable', 'The file store could not be reached', {
       reason: 'store_unreachable',
       why,
     });
     this.name = 'StoreUnavailableError';
+    this.storeStatus = storeStatus;
   }
 }
 
@@ -284,6 +290,16 @@ export interface StoreClient {
     now: number,
   ): PresignedGet;
   head(key: string): Promise<StoredObject | null>;
+  /**
+   * The bytes put by Laika itself, header-signed with their SHA-256 — only
+   * an inbound mail's attachment, which Brevo hands to the server and never
+   * to a browser (D-155, LAI-1315).
+   */
+  put(
+    key: string,
+    body: Uint8Array,
+    object: { contentType: string; contentDisposition: string },
+  ): Promise<void>;
   /** Bytes `from`–`to` inclusive, or fewer when the object is shorter. */
   readRange(key: string, from: number, to: number): Promise<Uint8Array>;
   /** Removes the object; one that is already gone is not an error. */
@@ -345,10 +361,11 @@ export function storeClient(options: StoreClientOptions): StoreClient {
    * Nothing else of a body is read: an error's is the store's words.
    */
   async function send(
-    method: 'HEAD' | 'GET' | 'DELETE',
+    method: 'HEAD' | 'GET' | 'DELETE' | 'PUT',
     key: string,
     extra: Record<string, string> = {},
     readBytes = 0,
+    payload?: Uint8Array,
   ): Promise<{ status: number; headers: Headers; body: Uint8Array }> {
     const path = objectPath(store.bucket, key);
     const headers = signedHeaders(credentials, {
@@ -356,7 +373,9 @@ export function storeClient(options: StoreClientOptions): StoreClient {
       host,
       path,
       headers: extra,
-      payloadHash: EMPTY_SHA256,
+      // A body is signed by its digest, so the store refuses one changed in flight.
+      payloadHash:
+        payload === undefined ? EMPTY_SHA256 : createHash('sha256').update(payload).digest('hex'),
       now: clock(),
     });
     const controller = new AbortController();
@@ -368,6 +387,7 @@ export function storeClient(options: StoreClientOptions): StoreClient {
         method,
         headers,
         signal: controller.signal,
+        ...(payload === undefined ? {} : { body: payload }),
       });
       // Read inside the timeout.
       const ok = res.status >= 200 && res.status < 300;
@@ -427,7 +447,7 @@ export function storeClient(options: StoreClientOptions): StoreClient {
       const answer = await send('HEAD', key);
       if (answer.status === 404) return null;
       if (answer.status < 200 || answer.status >= 300) {
-        throw new StoreUnavailableError(`HEAD answered ${String(answer.status)}`);
+        throw new StoreUnavailableError(`HEAD answered ${String(answer.status)}`, answer.status);
       }
       // Read as digits first: `Number(null)` is 0, so a store that sent no
       // length would otherwise read as an empty object — a size mismatch to
@@ -435,7 +455,7 @@ export function storeClient(options: StoreClientOptions): StoreClient {
       const length = answer.headers.get('content-length');
       const size = length !== null && /^\d+$/.test(length) ? Number(length) : NaN;
       if (!Number.isSafeInteger(size)) {
-        throw new StoreUnavailableError('HEAD answered no size');
+        throw new StoreUnavailableError('HEAD answered no size', answer.status);
       }
       return { size };
     },
@@ -444,17 +464,33 @@ export function storeClient(options: StoreClientOptions): StoreClient {
       const want = to - from + 1;
       const answer = await send('GET', key, { range: `bytes=${String(from)}-${String(to)}` }, want);
       if (answer.status !== 206 && answer.status !== 200) {
-        throw new StoreUnavailableError(`GET answered ${String(answer.status)}`);
+        throw new StoreUnavailableError(`GET answered ${String(answer.status)}`, answer.status);
       }
       // A store that ignored the range answers `200` and the whole object;
       // `readUpTo` stopped reading it after the bytes asked for.
       return answer.body;
     },
 
+    async put(key, body, object) {
+      const answer = await send(
+        'PUT',
+        key,
+        {
+          'content-type': object.contentType,
+          'content-disposition': object.contentDisposition,
+        },
+        0,
+        body,
+      );
+      if (answer.status < 200 || answer.status >= 300) {
+        throw new StoreUnavailableError(`PUT answered ${String(answer.status)}`, answer.status);
+      }
+    },
+
     async remove(key) {
       const answer = await send('DELETE', key);
       if (answer.status === 404 || (answer.status >= 200 && answer.status < 300)) return;
-      throw new StoreUnavailableError(`DELETE answered ${String(answer.status)}`);
+      throw new StoreUnavailableError(`DELETE answered ${String(answer.status)}`, answer.status);
     },
   };
 }

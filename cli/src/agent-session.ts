@@ -187,23 +187,42 @@ export function writeCredential(
 }
 
 /**
- * The agent's credential: `LAIKA_AGENT_TOKEN` (with `LAIKA_AGENT_URL`, or the
- * saved URL) when the harness supplies one, otherwise the saved file.
- * **Never `LAIKA_TOKEN`** — that is the person's.
+ * What `laika agent` and `laika project check` say once, on stderr, when the
+ * environment holds `LAIKA_AGENT_TOKEN` without `LAIKA_AGENT_URL` (LAI-1344):
+ * {@link readCredential} does not use it. Never the token itself; `undefined`
+ * when there is nothing to say. Hooks print nothing, so they never say it.
+ */
+export function ignoredAgentTokenNotice(
+  env: Readonly<Record<string, string | undefined>>,
+): string | undefined {
+  const token = env.LAIKA_AGENT_TOKEN;
+  const url = env.LAIKA_AGENT_URL;
+  return token !== undefined && token !== '' && (url === undefined || url === '')
+    ? 'laika: LAIKA_AGENT_TOKEN is set without LAIKA_AGENT_URL, so it is not used — set both, or neither to use the tool’s own credential file.'
+    : undefined;
+}
+
+/**
+ * The agent's credential, **as a pair from one place** (LAI-1344):
+ * `LAIKA_AGENT_TOKEN` with `LAIKA_AGENT_URL` when the environment holds both,
+ * otherwise the saved file's own URL and token. A token in the environment
+ * without its URL is not used — never sent to the file's board, which may not
+ * be the board that issued it. (It used to be: `LAIKA_AGENT_URL`, or the
+ * saved URL.) **Never `LAIKA_TOKEN`** — that is the person's.
  */
 export function readCredential(
   home: string,
   harness: Harness,
   env: Readonly<Record<string, string | undefined>>,
 ): AgentCredential | undefined {
+  const envToken = env.LAIKA_AGENT_TOKEN;
+  const envUrl = env.LAIKA_AGENT_URL;
+  if (envToken !== undefined && envToken !== '' && envUrl !== undefined && envUrl !== '') {
+    return { url: envUrl, token: envToken };
+  }
   const saved = readJson(credentialPath(home, harness));
   const savedUrl = isRecord(saved) && typeof saved.url === 'string' ? saved.url : undefined;
   const savedToken = isRecord(saved) && typeof saved.token === 'string' ? saved.token : undefined;
-  const envToken = env.LAIKA_AGENT_TOKEN;
-  if (envToken !== undefined && envToken !== '') {
-    const url = env.LAIKA_AGENT_URL ?? savedUrl;
-    return url === undefined || url === '' ? undefined : { url, token: envToken };
-  }
   if (savedUrl === undefined || savedToken === undefined || savedToken === '') return undefined;
   return { url: savedUrl, token: savedToken };
 }

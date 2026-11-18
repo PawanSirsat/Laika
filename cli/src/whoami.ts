@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { detectAgents } from './agents.ts';
 import { normaliseUrl, whoAmI } from './api.ts';
 import { readSettings, SETTINGS_PATH } from './config.ts';
+import { pairCredentials, unpairedLines } from './credential-pair.ts';
 
 /**
  * `laika whoami` — who this machine is, to which board (LAI-623).
@@ -54,6 +55,8 @@ export interface WhoamiIo {
   readonly envPath: string;
   /** Where to look for agent configs. Defaults to the real home directory. */
   readonly home?: string;
+  /** The environment the values are read from first. Defaults to this process's. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
 export const ENV_PATH = join(homedir(), '.laika', 'env');
@@ -128,22 +131,22 @@ export async function whoami(io: WhoamiIo = CONSOLE): Promise<number> {
    * `laika-claude` sources ~/.laika/env and exports both values, so inside a
    * session this branch is the one that answers. Then `laika init`'s file,
    * then the installer's.
+   *
+   * **The token goes with its board** (LAI-1343): the first board named, and a
+   * token only from a source naming that same board. The environment's
+   * `LAIKA_URL` beside another file's board and token reports that board with
+   * no token — the token is never sent to a board its own file did not name.
    */
-  const pick = (key: string): { value?: string; from: string } => {
-    const live = process.env[key];
-    if (live !== undefined && live !== '') return { value: live, from: 'the environment' };
-    const fromSettings = stored?.[key];
-    if (fromSettings !== undefined && fromSettings !== '') {
-      return { value: fromSettings, from: io.settingsPath };
-    }
-    const fromInstaller = installed[key];
-    if (fromInstaller !== undefined) return { value: fromInstaller, from: io.envPath };
-    return { from: 'nowhere' };
-  };
-
-  const board = pick('LAIKA_URL');
-  const url = board.value;
-  const token = pick('LAIKA_TOKEN').value;
+  const live = io.env ?? process.env;
+  const sources = [
+    { from: 'the environment', url: live.LAIKA_URL, token: live.LAIKA_TOKEN },
+    { from: io.settingsPath, url: stored?.LAIKA_URL, token: stored?.LAIKA_TOKEN },
+    { from: io.envPath, url: installed.LAIKA_URL, token: installed.LAIKA_TOKEN },
+  ];
+  const paired = pairCredentials(sources);
+  const board = { from: paired?.from ?? 'nowhere' };
+  const url = paired?.url;
+  const token = paired?.token;
 
   if (url === undefined || url === '') {
     io.err('This machine is not connected to a board.');
@@ -169,6 +172,13 @@ export async function whoami(io: WhoamiIo = CONSOLE): Promise<number> {
 
   if (token === undefined || token === '') {
     io.err('');
+    // A token held for another board, or with no URL beside it, is named —
+    // and not sent here (LAI-1343 and its review).
+    const why = paired === undefined ? undefined : unpairedLines(paired, sources);
+    if (why !== undefined) {
+      for (const line of why) io.err(line);
+      return 1;
+    }
     io.err(`LAIKA_TOKEN is not set, so ${base} will refuse every request.`);
     io.err('Run: laika init');
     return 1;
