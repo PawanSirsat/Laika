@@ -23,7 +23,7 @@ LAI-1302 makes these bodies longer (outputs with captions), so this goes first.
 ## Acceptance criteria
 
 - [x] **Log it:** the MCP transport sets `onerror`, and a `-32700` is logged with the body's declared versus received length and the client. The body itself is never logged.
-- [x] **Reproduce it** against Ksage through its real proxy (Coolify/Traefik): a `finish_task` of 8 KB or more containing `—`, `’`, `→` and emoji. Record the root cause, with evidence, in the task log.
+- [ ] **Reproduce it** against Ksage through its real proxy (Coolify/Traefik): a `finish_task` of 8 KB or more containing `—`, `’`, `→` and emoji. Record the root cause, with evidence, in the task log.
 - [ ] **Fix the cause,** wherever it is: server, proxy configuration, or client bridge (`cli/src/agent-mcp-bridge.ts`). If the fix is outside this repo, write the exact change for CHIEF to apply.
 - [x] **Regression test:** a route test sends a large multi-byte `/mcp` body and gets a normal tool result.
 - [ ] **Live check:** after release, a 10 KB non-ASCII `finish_task` succeeds on Ksage.
@@ -37,10 +37,10 @@ LAI-1302 makes these bodies longer (outputs with captions), so this goes first.
 
 ## Builder notes (core, review)
 
-- **Reproduce it:** done. The attempt didn't fail on Ksage at any size. There
-  were 8–47 KB `finish_task` calls with — ’ → and emoji, through Node fetch,
-  through the bridge and through Claude Code's own client. The evidence is in
-  `logs/core-2026-11-18-LAI-1350.md`.
+- **Reproduce it:** left unticked. Attempted on Ksage through Traefik at
+  1–50 KB in ASCII, multi-byte and emoji, via fetch, chunked, the bridge and
+  Claude Code's client: not reproducible; the failures were on the retired AWS
+  box. The evidence is in `logs/core-2026-11-18-LAI-1350.md`.
 - **Fix the cause:** left unticked. The hypothesis is refuted by measurement:
   Claude Code, the bridge and the legacy polly bridge all send `Content-Length`
   in bytes, and Traefik passes every body whole. The reported failures were on
