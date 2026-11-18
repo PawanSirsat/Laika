@@ -795,6 +795,63 @@ export type EmailDigestState = (typeof EMAIL_DIGEST_STATES)[number];
 export type EmailSuppressedReason = (typeof EMAIL_SUPPRESSED_REASONS)[number];
 
 /**
+ * What became of one inbound mail at one space's address (`email_inbound`,
+ * D-155, LAI-1315): a task, a comment on the task it replies to, or nothing.
+ */
+export const EMAIL_INBOUND_OUTCOMES = ['task_created', 'comment_added', 'dropped'] as const;
+export type EmailInboundOutcome = (typeof EMAIL_INBOUND_OUTCOMES)[number];
+
+/**
+ * Why an inbound mail was dropped (D-155). Each one answers part of the
+ * forged-sender threat or a loop; a dropped mail is never answered, so a
+ * sender learns nothing from trying.
+ */
+export const EMAIL_INBOUND_REASONS = [
+  // The organisation's *Email to tasks* switch is off.
+  'switch_off',
+  // No space's address was among the recipients.
+  'unknown_address',
+  // The sender is the board itself: its own From address, or its inbound domain.
+  'own_sender',
+  // An auto-reply, a bounce or list mail (`Auto-Submitted`, `Precedence`).
+  'auto_reply',
+  // Brevo's spam score was at or above the line.
+  'spam',
+  // Authentication-Results did not show an aligned DMARC, DKIM or SPF pass.
+  'unauthenticated',
+  // No active person has the From address.
+  'unknown_sender',
+  // `can()` refused that person: not a member, or below the space's rule.
+  'not_allowed',
+  // Nothing to write: no subject and no text for a task, no text for a comment.
+  'empty',
+  // Any other refusal by the write, such as an archived space.
+  'refused',
+] as const;
+export type EmailInboundReason = (typeof EMAIL_INBOUND_REASONS)[number];
+
+/** An inbound mail's attachment on its way to the store (`email_inbound_attachments`, LAI-1315). */
+export const EMAIL_INBOUND_ATTACHMENT_STATES = ['pending', 'stored', 'failed', 'skipped'] as const;
+export type EmailInboundAttachmentState = (typeof EMAIL_INBOUND_ATTACHMENT_STATES)[number];
+
+/** Why an attachment was not stored. */
+export const EMAIL_INBOUND_ATTACHMENT_REASONS = [
+  // Over the board's attachment limit, as Brevo announced it or as it arrived.
+  'too_large',
+  // The board has no file store (§13.4: attachments are off).
+  'store_off',
+  // No Brevo API key is saved, so nothing can be fetched.
+  'no_api_key',
+  // Brevo refused or did not answer the fetch.
+  'fetch_failed',
+  // The store refused or did not answer the upload.
+  'store_failed',
+  // The mail itself was dropped, or wrote nothing to attach to.
+  'not_needed',
+] as const;
+export type EmailInboundAttachmentReason = (typeof EMAIL_INBOUND_ATTACHMENT_REASONS)[number];
+
+/**
  * `teams_posts`' `kind` (§4.96, D-154, LAI-1314): KSage's three things a
  * project's Teams channel hears — the twice-a-weekday stand-up, the nightly
  * digest and an instant notice — and the test post an owner or admin sends.

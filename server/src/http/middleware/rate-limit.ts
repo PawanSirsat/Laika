@@ -145,6 +145,9 @@ export const HR_CALL_PATHS: ReadonlySet<string> = new Set([
 /** *Send test email* (D-153, LAI-1312): each one opens a connection to the mail server. */
 export const EMAIL_TEST_PATH = '/api/v1/org/email/test';
 
+/** Brevo's inbound deliveries (D-155, LAI-1315). */
+export const INBOUND_EMAIL_PATH = '/webhooks/email';
+
 /** A space's Teams test post (D-154, LAI-1314): `/projects/:slug/teams/test`. */
 export const TEAMS_TEST_PATH = /^\/api\/v1\/projects\/[^/]+\/teams\/test$/;
 
@@ -205,6 +208,11 @@ export function classify(
   // small bucket per person of its own, as the HR calls do.
   if (TEAMS_TEST_PATH.test(path) && method === 'POST') {
     return { key: `teams-test:${who}`, policy: LIMITS.teamsTest };
+  }
+
+  // Inbound email (LAI-1315): one anonymous sender, so one bucket of its own.
+  if (path === INBOUND_EMAIL_PATH && method === 'POST') {
+    return { key: 'inbound-email', policy: LIMITS.inboundEmail };
   }
 
   // OpenTelemetry has its own budget (LAI-773), per token as reports are.

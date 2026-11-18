@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import type Database from 'better-sqlite3';
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { createMiddleware } from 'hono/factory';
 import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { createLogger, type Logger } from './log.ts';
@@ -49,6 +50,11 @@ import { projectTaskRoutes, taskRoutes } from './http/routes/tasks.ts';
 import { orgRoutes } from './http/routes/orgs.ts';
 import { hrRoutes } from './http/routes/hr.ts';
 import { emailRoutes } from './http/routes/email.ts';
+import {
+  inboundEmailWebhookRoutes,
+  orgEmailInboundRoutes,
+  projectEmailAddressRoutes,
+} from './http/routes/email-inbound.ts';
 import { orgTeamsRoutes, projectTeamsRoutes } from './http/routes/teams.ts';
 import { githubWebhookRoutes } from './http/routes/webhooks.ts';
 import { checkpointRoutes, taskCheckpointRoutes } from './http/routes/checkpoints.ts';
@@ -131,6 +137,15 @@ function contentSecurityPolicyFor(fallbackDocument: string, storageOrigin: strin
 
 /** 1 MiB. Generous for JSON, small enough that a bad client cannot exhaust us. */
 const BODY_LIMIT_BYTES = 1024 * 1024;
+
+/**
+ * 4 MiB for `POST /webhooks/email` alone (D-155, LAI-1315): a mail arrives
+ * with its HTML and plain text both, which a long thread or a pasted table
+ * can take past a megabyte. Its attachments are never in it — Brevo sends a
+ * token for each.
+ */
+const INBOUND_EMAIL_BODY_LIMIT_BYTES = 4 * 1024 * 1024;
+const INBOUND_EMAIL_PATH = '/webhooks/email';
 
 export const API_BASE = '/api/v1';
 
@@ -351,7 +366,14 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   // body — idempotency keeps the plain bytes it replays — and it decides for
   // itself which paths it may touch: never `/mcp`, never the SSE stream.
   app.use('*', apiCompression());
-  app.use('*', bodyLimit({ maxSize: BODY_LIMIT_BYTES }));
+  const defaultLimit = bodyLimit({ maxSize: BODY_LIMIT_BYTES });
+  const inboundEmailLimit = bodyLimit({ maxSize: INBOUND_EMAIL_BODY_LIMIT_BYTES });
+  app.use(
+    '*',
+    createMiddleware<AppEnv>((c, next) =>
+      c.req.path === INBOUND_EMAIL_PATH ? inboundEmailLimit(c, next) : defaultLimit(c, next),
+    ),
+  );
   // SPEC §11.2 position. Real when auth is configured, pass-through otherwise;
   // either way an anonymous request continues with `actor: null` rather than 401.
   app.use(
@@ -501,6 +523,18 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       '/webhooks',
       githubWebhookRoutes({ db, sqlite: options.sqlite, serverSecret: options.serverSecret ?? '' }),
     );
+    // Email to tasks (D-155, LAI-1315): the inbound webhook beside §10's two,
+    // the organisation's card on `/org/email-inbound`, and each space's
+    // address on `/projects/:slug/email-address` — paths nothing else has.
+    const inbound = {
+      db,
+      sqlite: options.sqlite,
+      serverSecret: options.serverSecret ?? '',
+      publicUrl: options.publicUrl,
+    };
+    app.route('/webhooks', inboundEmailWebhookRoutes(inbound));
+    app.route(`${API_BASE}/org`, orgEmailInboundRoutes(inbound));
+    app.route(`${API_BASE}/projects`, projectEmailAddressRoutes(inbound));
     app.route(`${API_BASE}/tokens`, tokenRoutes({ db, sqlite: options.sqlite }));
     // D-114 (LAI-534): a person's registered agents and their credentials.
     app.route(`${API_BASE}/agents`, agentRoutes({ db, sqlite: options.sqlite }));

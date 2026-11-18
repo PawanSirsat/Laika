@@ -84,7 +84,10 @@ export type SecretPurpose =
   | 'email_body'
   // D-154 (LAI-1314): a space's Power Automate webhook address, whose `sig=`
   // is the credential, in `project_teams_channels.webhook_url_enc`.
-  | 'teams_webhook_url';
+  | 'teams_webhook_url'
+  // D-155 (LAI-1315): the Brevo API key that fetches an inbound mail's
+  // attachments, in `org_email_inbound.api_key_enc`.
+  | 'brevo_api_key';
 
 /**
  * `v1.` and then base64url of `nonce ‖ tag ‖ ciphertext`.

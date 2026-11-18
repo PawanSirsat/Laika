@@ -230,6 +230,10 @@ export const SYSTEM_ACTIONS = [
   // §11.6: each space's Teams stand-ups, digest and notices, every minute,
   // and the posts' record kept 90 days (D-154, LAI-1314).
   'system.teams.post',
+  // §10.3: an inbound mail's address and sender resolved before anything is
+  // written as the sender (D-155, LAI-1315) — nobody yet, so nobody is the
+  // actor until the sender is matched.
+  'system.email.receive',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];

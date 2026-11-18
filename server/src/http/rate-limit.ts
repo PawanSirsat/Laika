@@ -104,6 +104,13 @@ export const LIMITS = {
    * test a flow while fixing it, never a loop that has Laika flood a channel.
    */
   teamsTest: { perMinute: 6 },
+  /**
+   * Brevo's inbound deliveries (D-155, LAI-1315): one sender, anonymous until
+   * its token is checked, on a bucket of its own so a flood of bad tokens never
+   * spends the session budget every anonymous page shares — and a burst big
+   * enough for a mailing that arrives at once.
+   */
+  inboundEmail: { perMinute: 120, burst: 60 },
 } as const satisfies Record<string, LimitPolicy>;
 
 export type LimitName = keyof typeof LIMITS;
