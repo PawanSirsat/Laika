@@ -326,6 +326,10 @@ const NOT_SERVED = new Map<string, string>([
   ['BackfillResult', 'what a backfill did, returned to the migration runner and never to a client'],
   ['JobResult', '§11.6 cron bookkeeping — counts the sweep touched, logged rather than served'],
   [
+    'NotifyResult',
+    '§11.6 cron bookkeeping — what one email.notify run wrote, logged rather than served (LAI-1313)',
+  ],
+  [
     'EmailRunResult',
     '§11.6 cron bookkeeping — what one email.send run did to each row, logged rather than served (LAI-1312)',
   ],

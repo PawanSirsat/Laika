@@ -104,3 +104,20 @@ export function clearEmailSettings(): Promise<void> {
 export function sendTestEmail(): Promise<EmailTestResult> {
   return request<EmailTestResult>('/org/email/test', { method: 'POST' });
 }
+
+/** A person's own email switches (§4.97, LAI-1313): both on until they change them. */
+export interface EmailPrefs {
+  /** Mail at once when assigned a task or @mentioned. */
+  readonly instant: boolean;
+  /** One mail a morning with everything else on the tasks they watch. */
+  readonly digest: boolean;
+}
+
+export function getEmailPrefs(signal?: AbortSignal): Promise<EmailPrefs> {
+  return request<EmailPrefs>('/me/email-prefs', signal === undefined ? {} : { signal });
+}
+
+/** Either or both; the server keeps what is not given. */
+export function saveEmailPrefs(patch: Partial<EmailPrefs>): Promise<EmailPrefs> {
+  return request<EmailPrefs>('/me/email-prefs', { method: 'PUT', body: patch });
+}

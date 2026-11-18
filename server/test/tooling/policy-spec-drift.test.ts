@@ -138,6 +138,8 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['See availability of people in your spaces', ['availability.read']],
   // D-134 (LAI-1136): a member's own notices.
   ['Read and dismiss own notices', ['notices.own']],
+  // D-153 (LAI-1313): instant and digest, a person's own.
+  ['Read and set own email preferences', ['email_prefs.own']],
   // D-139 (LAI-1151): a person's own pairing requests and setup activity.
   ['View own developer setup', ['developer_setup.read_own']],
   // D-149 (LAI-1181): Clan, connected once, synced, and its people mapped.

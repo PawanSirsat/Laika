@@ -261,6 +261,7 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.attachment.prune',
   'system.email.send',
   'system.email.prune',
+  'system.email.notify',
   'system.teams.post',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
@@ -656,6 +657,13 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // D-134 (LAI-1136): every role, and nobody else's — the service reads and
     // marks the caller's own rows only.
     case 'notices.own':
+      return true;
+
+    // | Read and set own email preferences | ✓ (session only) | … | ✓ (session only) |
+    //
+    // D-153 (LAI-1313): every role, and nobody else's — the service reads and
+    // writes the caller's own row only.
+    case 'email_prefs.own':
       return true;
 
     // | View own developer setup | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
