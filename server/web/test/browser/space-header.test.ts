@@ -10,7 +10,8 @@
  * so. Each describe below is one of those, measured in a browser.
  *
  * Since LAI-1227 the space bar has no + Create — the app's one Create is the
- * top bar's — and a *Spaces /* breadcrumb sits above the space's name.
+ * top bar's — and since LAI-1328 no *Spaces /* breadcrumb above the space's
+ * name (the owner): the name and its mark start the page.
  */
 
 import assert from 'node:assert/strict';
@@ -63,7 +64,7 @@ const header = (page: Page) =>
   });
 
 void describe('one header on every tab', () => {
-  void test('breadcrumb, title, tabs, one toolbar — the same on all eight, and no Create in it', async () => {
+  void test('title, tabs, one toolbar — the same on all eight, with no breadcrumb and no Create', async () => {
     const seen: { tab: string; m: Awaited<ReturnType<typeof header>> }[] = [];
     for (const tab of SPACE_TABS) {
       const h = await open(`${tab}?${Q}`, spaceStub(), {
@@ -82,7 +83,7 @@ void describe('one header on every tab', () => {
 
     assert.equal(seen.length, 8, 'not every tab was measured');
     const first = seen[0]?.m;
-    assert.ok(first?.crumbs && first.tabs && first.toolbar, 'the board has no header to compare');
+    assert.ok(first?.title && first.tabs && first.toolbar, 'the board has no header to compare');
     for (const { tab, m } of seen) {
       assert.deepEqual(
         m.rows,
@@ -91,11 +92,8 @@ void describe('one header on every tab', () => {
       );
       assert.equal(m.filtersInTitle, 0, `${tab}: a filter is in the title row`);
       assert.equal(m.createInBar, 0, `${tab}: a Create in the space bar (LAI-1227)`);
-      assert.ok(
-        m.crumbs !== null && m.title !== null && m.crumbs.b <= m.title.y,
-        `${tab}: the Spaces / breadcrumb is not above the space's name`,
-      );
-      assert.deepEqual(m.crumbs, first.crumbs, `${tab}: the breadcrumb moved`);
+      assert.equal(m.crumbs, null, `${tab}: a Spaces / breadcrumb is back (LAI-1328)`);
+      assert.deepEqual(m.title, first.title, `${tab}: the space's name moved`);
       assert.deepEqual(m.tabs, first.tabs, `${tab}: the tab row moved`);
       assert.equal(m.toolbar?.y, first.toolbar.y, `${tab}: the toolbar row moved`);
       assert.equal(m.bar?.b, first.bar?.b, `${tab}: the header is a different height`);
@@ -207,8 +205,8 @@ void describe('the header at 390', () => {
    * **~20%, not ~15%** (LAI-1227): the space's title row — name, key, live,
    * ⋯ (Agents until LAI-1233) — was drawn in the 48px app header from LAI-1188 and is the
    * page's own row now, under Jira's top bar, which names no page. That row
-   * is the whole of the difference (the *Spaces /* breadcrumb is not drawn on
-   * a phone); the content still starts in the top fifth.
+   * is the whole of the difference (there is no breadcrumb since LAI-1328);
+   * the content still starts in the top fifth.
    */
   void test('the content starts within ~20% of the screen, and nothing scrolls sideways', async () => {
     for (const tab of ['/board', '/calendar', '/sprints', '/list'] as const) {
