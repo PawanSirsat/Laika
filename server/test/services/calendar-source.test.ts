@@ -12,6 +12,7 @@ import {
 import { ApiError } from '../../src/errors.ts';
 import { decryptSecret } from '../../src/secrets.ts';
 import {
+  backfillCalendar,
   disconnectCalendar,
   getCalendarSource,
   saveCalendarSource,
@@ -411,5 +412,70 @@ describe('sync now and disconnect', () => {
     expect(t.db.select().from(calendarAway).all()).toHaveLength(2);
     disconnectCalendar(t.db, owner);
     expect(t.db.select().from(calendarAway).all()).toEqual([]);
+  });
+});
+
+describe('a backfill (LAI-1335)', () => {
+  it('refuses 0, 91 and a fraction by name, before anything else is asked', async () => {
+    saveCalendarSource(t.db, owner, SECRET, { ...SAVE, enabled: true }, deps());
+    await new Promise((done) => setTimeout(done, 0));
+    await calendarSyncInFlight(t.db);
+    const asked = fake.requests.length;
+    for (const days of [0, 91, 1.5, -7]) {
+      const err = await caught(backfillCalendar(t.db, owner, SECRET, { days }, deps()));
+      expect(err.code, String(days)).toBe('unprocessable');
+      expect(err.details, String(days)).toEqual({
+        field: 'days',
+        reason: 'days_out_of_range',
+        min: 1,
+        max: 90,
+      });
+    }
+    expect(fake.requests).toHaveLength(asked);
+  });
+
+  it('is an owner’s or an admin’s, never a member’s', async () => {
+    saveCalendarSource(t.db, owner, SECRET, { ...SAVE, enabled: true }, deps());
+    const member = load(person('member@example.test', 'member'));
+    const err = await caught(backfillCalendar(t.db, member, SECRET, { days: 7 }, deps()));
+    expect(err.code).toBe('forbidden');
+    const admin = load(person('admin@example.test', 'admin'));
+    expect((await backfillCalendar(t.db, admin, SECRET, { days: 1 }, deps())).days).toBe(1);
+  });
+
+  it('refuses while the switch is off and while Time is off', async () => {
+    expect(
+      (await caught(backfillCalendar(t.db, owner, SECRET, { days: 7 }, deps()))).details,
+    ).toEqual({ reason: 'calendar_off' });
+    saveCalendarSource(t.db, owner, SECRET, SAVE);
+    expect(
+      (await caught(backfillCalendar(t.db, owner, SECRET, { days: 7 }, deps()))).details,
+    ).toEqual({ reason: 'calendar_off' });
+    t.db.update(orgCalendarSource).set({ enabled: 1 }).run();
+    t.db.update(orgTimeSettings).set({ mode: 'off' }).run();
+    const off = await caught(backfillCalendar(t.db, owner, SECRET, { days: 7 }, deps()));
+    expect(off.code).toBe('forbidden');
+    expect(off.details).toMatchObject({ reason: 'time_off' });
+    expect(fake.requests).toEqual([]);
+  });
+
+  it('answers the days, what it did and the connection after it; a failed read has no result', async () => {
+    fake.calendars.set('owner@example.test', [
+      graphEvent(Date.UTC(2026, 10, 2, 9), { responseStatus: { response: 'notResponded' } }),
+    ]);
+    saveCalendarSource(t.db, owner, SECRET, SAVE);
+    t.db.update(orgCalendarSource).set({ enabled: 1 }).run();
+    const view = await backfillCalendar(t.db, owner, SECRET, { days: 30 }, deps());
+    expect(view.days).toBe(30);
+    expect(view.result).toMatchObject({ people: 1, meetings: 1, created: 1 });
+    expect(view.connection).toMatchObject({ last_success_at: NOW, last_error: null });
+    expect(view.connection.last_result).toEqual(view.result);
+    expect(t.db.select().from(timeEntries).all()).toHaveLength(1);
+
+    fake.intercept = (req) =>
+      req.kind === 'calendarView' ? new Response('{}', { status: 500 }) : undefined;
+    const failed = await backfillCalendar(t.db, owner, SECRET, { days: 30 }, deps(fake, NOW + 1));
+    expect(failed.result).toBeNull();
+    expect(failed.connection.last_error).toMatchObject({ code: 'unreachable' });
   });
 });

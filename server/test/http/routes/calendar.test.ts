@@ -154,6 +154,7 @@ describe('who may', () => {
         ['PUT', '/calendar', SAVE],
         ['POST', '/calendar/test', undefined],
         ['POST', '/calendar/sync', undefined],
+        ['POST', '/calendar/backfill', { days: 7 }],
         ['DELETE', '/calendar', undefined],
       ] as const) {
         const res = await call(method, path, body, { Cookie: other });
@@ -182,6 +183,7 @@ describe('who may', () => {
       ['GET', '/calendar', undefined],
       ['PUT', '/calendar', SAVE],
       ['POST', '/calendar/test', undefined],
+      ['POST', '/calendar/backfill', { days: 7 }],
     ] as const) {
       const res = await call(method, path, body, { Authorization: `Bearer ${secret}` });
       expect(res.status, `${method} ${path}`).toBe(403);
@@ -293,6 +295,9 @@ describe('the connection', () => {
     expect(classify('/api/v1/org/calendar/test', { userId: 'u1', tokenId: null }, 'POST').key).toBe(
       'calendar:u1',
     );
+    expect(
+      classify('/api/v1/org/calendar/backfill', { userId: 'u1', tokenId: null }, 'POST').key,
+    ).toBe('calendar:u1');
     // Reading and saving are ordinary requests.
     expect(classify('/api/v1/org/calendar', { userId: 'u1', tokenId: null }, 'GET').key).toBe(
       'session:u1',
@@ -308,5 +313,75 @@ describe('the connection', () => {
     expect(statuses.slice(0, LIMITS.calendar.perMinute).every((s) => s === 409)).toBe(true);
     expect(statuses.at(-1)).toBe(429);
     expect((await call('GET', '/calendar')).status).toBe(200);
+  });
+});
+
+describe('the backfill (LAI-1335)', () => {
+  it('refuses days out of 1 to 90, a fraction and a body that is not one, by code, before calling Microsoft', async () => {
+    expect((await call('PUT', '/calendar', { ...SAVE, enabled: true })).status).toBe(200);
+    await settle();
+    const asked = fake.requests.length;
+    for (const days of [0, 91, 1.5]) {
+      const res = await call('POST', '/calendar/backfill', { days });
+      expect(res.status, String(days)).toBe(422);
+      expect(await errorOf(res), String(days)).toMatchObject({
+        code: 'unprocessable',
+        details: { field: 'days', reason: 'days_out_of_range', min: 1, max: 90 },
+      });
+    }
+    for (const body of [{ days: '7' }, { days: 7, members: ['x'] }, {}]) {
+      const res = await call('POST', '/calendar/backfill', body);
+      expect(res.status, JSON.stringify(body)).toBe(422);
+      expect((await errorOf(res)).details, JSON.stringify(body)).toHaveProperty('issues');
+    }
+    expect(fake.requests).toHaveLength(asked);
+  });
+
+  it('answers 409 calendar_off while the switch is off, and 403 time_off while Time is off', async () => {
+    expect((await call('PUT', '/calendar', SAVE)).status).toBe(200);
+    const off = await call('POST', '/calendar/backfill', { days: 7 });
+    expect(off.status).toBe(409);
+    expect((await errorOf(off)).details).toEqual({ reason: 'calendar_off' });
+    expect((await call('PUT', '/calendar', { ...SAVE, enabled: true })).status).toBe(200);
+    await settle();
+    h.db.update(orgTimeSettings).set({ mode: 'off' }).run();
+    const timeOff = await call('POST', '/calendar/backfill', { days: 7 });
+    expect(timeOff.status).toBe(403);
+    expect((await errorOf(timeOff)).details).toMatchObject({ reason: 'time_off' });
+  });
+
+  it('backfills the days asked for and answers the counts and the connection', async () => {
+    // 2 November, two weeks before NOW: in a 30-day backfill, not in the regular window.
+    fake.calendars.set('ada@example.test', [
+      graphEvent(Date.UTC(2026, 10, 2, 9), {
+        subject: 'Not answered',
+        responseStatus: { response: 'notResponded' },
+        showAs: 'tentative',
+      }),
+    ]);
+    expect((await call('PUT', '/calendar', { ...SAVE, enabled: true })).status).toBe(200);
+    await settle();
+    expect(h.db.select().from(timeEntries).all()).toEqual([]);
+
+    const res = await call('POST', '/calendar/backfill', { days: 30 });
+    expect(res.status, await res.clone().text()).toBe(200);
+    const body = (await res.json()) as {
+      days: number;
+      result: Record<string, number> | null;
+      connection: { last_result: unknown; enabled: boolean };
+    };
+    expect(body.days).toBe(30);
+    expect(body.result).toMatchObject({ people: 1, meetings: 1, created: 1 });
+    expect(body.connection).toMatchObject({ enabled: true, last_result: body.result });
+    expect(h.db.select().from(timeEntries).all()).toEqual([
+      expect.objectContaining({ userId: ownerId, source: 'calendar', day: '2026-11-02' }),
+    ]);
+    // Again: nothing more.
+    const again = await call('POST', '/calendar/backfill', { days: 30 });
+    expect(((await again.json()) as { result: unknown }).result).toMatchObject({
+      created: 0,
+      unchanged: 1,
+    });
+    expect(h.db.select().from(timeEntries).all()).toHaveLength(1);
   });
 });

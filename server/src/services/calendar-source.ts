@@ -8,6 +8,7 @@ import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { decryptSecret, encryptSecret } from '../secrets.ts';
 import {
+  CALENDAR_BACKFILL_MAX_DAYS,
   CALENDAR_RULES_MAX,
   CALENDAR_SYNC_EVERY_MINUTES,
   calendarSyncInFlight,
@@ -15,6 +16,7 @@ import {
   type CalendarSyncResultView,
   graphTokenCache,
   parseRules,
+  runCalendarBackfill,
   runCalendarSync,
   type StoredRule,
 } from './calendar-sync.ts';
@@ -25,7 +27,8 @@ import { assertTimeOn } from './time-settings.ts';
 /**
  * The organisation's Outlook calendar connection (§4.101, D-157, LAI-1316):
  * the Entra app's tenant, client id and secret, the rules that send a meeting
- * to a space, the switch, a test of the grant, sync now, and disconnect.
+ * to a space, the switch, a test of the grant, sync now, a backfill of the
+ * last N days (LAI-1335), and disconnect.
  *
  * **Every call is `org.calendar.configure`** — owners and admins holding
  * *Change organisation settings, Time and breaks*, signed in (§3.1). The
@@ -86,6 +89,25 @@ export interface CalendarSourceView {
   last_success_at: number | null;
   last_error: CalendarSyncErrorView | null;
   last_result: CalendarSyncResultView | null;
+}
+
+/** `POST /api/v1/org/calendar/backfill`'s answer (LAI-1335). */
+export interface CalendarBackfillView {
+  /** The days before today it reached back, as asked. */
+  days: number;
+  /**
+   * What it did — `null` when a read failed, which the connection's
+   * `last_error` says, or the switch went off while it ran.
+   */
+  result: CalendarSyncResultView | null;
+  /** The connection afterwards, as `GET /org/calendar` answers it. */
+  connection: CalendarSourceView;
+}
+
+/** `POST /api/v1/org/calendar/backfill`. */
+export interface CalendarBackfillInput {
+  /** A whole number of days before today, 1 to 90. */
+  days: number;
 }
 
 /** `PUT /api/v1/org/calendar`. */
@@ -394,6 +416,48 @@ export async function syncCalendarNow(
   assertTimeOn(db);
   await runCalendarSync(db, serverSecret, deps);
   return viewOf(db);
+}
+
+/**
+ * `POST /api/v1/org/calendar/backfill` (LAI-1335): the sync over the last
+ * `days` days for every member — from the start of the day that many days
+ * before today to the end of tomorrow, each in their own zone — under the
+ * sync's every rule, and answer what it did. It waits for a sync already
+ * running, never beside it.
+ *
+ * `days` is a whole number from 1 to 90, or `422 days_out_of_range` (with
+ * `min` and `max`); `409 calendar_off` unless the connection is saved and its
+ * switch is on; `403 time_off` while the organisation's Time is off. A read
+ * Microsoft fails is recorded on the connection, as any sync's is, and
+ * answered with no result.
+ */
+export async function backfillCalendar(
+  db: Db,
+  actor: ResolvedActor,
+  serverSecret: string,
+  input: CalendarBackfillInput,
+  deps: CalendarSyncDeps = {},
+): Promise<CalendarBackfillView> {
+  assertCan(actor, 'org.calendar.configure');
+  const { days } = input;
+  if (!Number.isInteger(days) || days < 1 || days > CALENDAR_BACKFILL_MAX_DAYS) {
+    throw new ApiError(
+      'unprocessable',
+      `days is a whole number from 1 to ${String(CALENDAR_BACKFILL_MAX_DAYS)}`,
+      { field: 'days', reason: 'days_out_of_range', min: 1, max: CALENDAR_BACKFILL_MAX_DAYS },
+    );
+  }
+  const row = db.select().from(orgCalendarSource).get();
+  if (row?.enabled !== 1) {
+    throw new ApiError('conflict', 'The Outlook calendar sync is off', { reason: 'calendar_off' });
+  }
+  assertTimeOn(db);
+  const outcome = await runCalendarBackfill(db, serverSecret, days, deps);
+  return {
+    days,
+    result: outcome.kind === 'synced' ? outcome.result : null,
+    connection: viewOf(db),
+  };
 }
 
 /**
