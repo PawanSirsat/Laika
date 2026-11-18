@@ -4977,8 +4977,6 @@ a.bento-row:active {
   grid-template-columns: 14.5rem minmax(0, 1fr);
   gap: var(--space-5);
   align-items: start;
-  margin-left: 1.125rem;
-  margin-right: 1.125rem;
 }
 
 .org-hub > .org-body {
@@ -4989,14 +4987,19 @@ a.bento-row:active {
 .org-nav {
   position: sticky;
   top: var(--space-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
   padding: var(--space-3);
   border: 1px solid var(--glass-border);
   border-radius: calc(var(--radius-card) + var(--radius-chip));
   background: var(--glass-sheen), var(--glass-2);
   box-shadow: var(--glass-highlight);
+}
+
+/* The groups, inside the one tab strip (LAI-1193): a column beside the page,
+   a row that scrolls with an edge fade below 1600px. */
+.org-nav-strip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
 }
 
 .org-nav-heading {
@@ -5185,11 +5188,15 @@ a.bento-row:active {
 
   .org-nav {
     position: static;
+    padding: var(--space-2);
+  }
+
+  /* The strip scrolls, hides its scrollbar and fades the edge that hides a
+     section — the one tab strip's rules (tabs.css), not a copy of them. */
+  .org-nav-strip {
+    position: relative;
     flex-direction: row;
     gap: var(--space-3);
-    overflow-x: auto;
-    padding: var(--space-2);
-    scrollbar-width: none;
   }
 
   .org-nav-group {
@@ -5199,8 +5206,21 @@ a.bento-row:active {
     flex: none;
   }
 
+  /* Out of sight in the row, still read: the groups keep their names for a
+     screen reader. */
   .org-nav-heading {
-    display: none;
+    /* As .visually-hidden (index.css): anchored, so it never widens the
+       strip it sits in. */
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .org-nav .org-nav-list {
