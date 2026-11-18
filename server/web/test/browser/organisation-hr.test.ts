@@ -20,7 +20,11 @@ import {
   type ApiStub,
   type Harness,
   type StubCall,
+  openSectionsByDefault,
 } from './harness.ts';
+
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+openSectionsByDefault('hr');
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
@@ -652,7 +656,7 @@ void describe('HR system: connected', () => {
             'People’s departments are hidden from this token, so holidays meant for some departments can’t be matched.',
           );
         }
-        assert.equal(await card.locator('.org-count').innerText(), 'connected');
+        assert.equal(await card.locator('.org-status-badge').innerText(), 'connected');
       } finally {
         await h.close();
       }

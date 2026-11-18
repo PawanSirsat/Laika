@@ -6,6 +6,7 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { GrantsCard } from './GrantsCard.tsx';
+import { OrgAccordion } from './OrgAccordion.tsx';
 import { ScrollRegion } from './ScrollRegion.tsx';
 import {
   actionName,
@@ -150,6 +151,7 @@ const article = (word: string): string => (/^[aeiou]/i.test(word) ? 'An' : 'A');
 function Matrix({
   id,
   title,
+  description,
   roles,
   view,
   scope,
@@ -159,6 +161,8 @@ function Matrix({
 }: {
   readonly id: string;
   readonly title: string;
+  /** One line under the title, read while the table is folded (LAI-1318). */
+  readonly description: string;
   readonly roles: readonly string[];
   readonly view: Permissions;
   readonly scope: 'org' | 'project';
@@ -173,11 +177,23 @@ function Matrix({
   const explanation = explained === undefined ? undefined : explainRole(all, explained);
   const where = scope === 'project' ? 'space' : 'organisation';
   return (
-    <section className="org-card perm-card" aria-labelledby={id} data-matrix={scope}>
-      <header className="org-card-head">
-        <h2 id={id}>{title}</h2>
-        {action}
-      </header>
+    // Folded to one row (LAI-1318): the tables are long, and read when asked.
+    // A find in the box above opens both, so a match is never out of sight.
+    <OrgAccordion
+      name={`perm-${scope}`}
+      id={id}
+      title={title}
+      meta={
+        query.trim() === ''
+          ? `${String(roles.length)} roles · ${String(all.length)} actions`
+          : `${String(shown.length)} of ${String(all.length)} actions match`
+      }
+      description={description}
+      className="perm-card"
+      matrix={scope}
+      forceOpen={query.trim() !== ''}
+      actions={action}
+    >
       {roles.length > 0 && (
         <div className="perm-explain">
           <span className="perm-explain-label" id={`${id}-explain`}>
@@ -293,7 +309,7 @@ function Matrix({
         </ScrollRegion>
       )}
       {footer}
-    </section>
+    </OrgAccordion>
   );
 }
 
@@ -548,6 +564,7 @@ export function RolesPermissionsSection({
       <Matrix
         id="perm-org"
         title="Organisation roles"
+        description="What each organisation role may do, as the server answers it."
         roles={view.org_roles}
         view={view}
         scope="org"
@@ -564,6 +581,7 @@ export function RolesPermissionsSection({
       <Matrix
         id="perm-project"
         title="Space roles"
+        description="What each role inside a space may do. Set on each space’s members."
         roles={view.project_roles}
         view={view}
         scope="project"

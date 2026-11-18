@@ -8,6 +8,7 @@ import {
   rotateGithubWebhookSecret,
   type OrgGithubWebhook,
 } from '../../../api/org.ts';
+import { OrgAccordion } from './OrgAccordion.tsx';
 
 /**
  * The events to tick on GitHub's *Add webhook* page, in its own words — the
@@ -111,11 +112,17 @@ export function GithubWebhookSection({ webhook, onChanged }: GithubWebhookSectio
   };
 
   return (
-    <section className="org-card org-github" aria-labelledby="org-github" data-section="github">
-      <header className="org-card-head">
-        <h2 id="org-github">GitHub webhook</h2>
-        {/* A state, not a code tag (LAI-1210). "secret set", not
-            "connected": Laika cannot tell from here whether GitHub sends. */}
+    // Folded to one row that says its state (LAI-1318).
+    <OrgAccordion
+      name="github"
+      id="org-github"
+      title="GitHub webhook"
+      className="org-github"
+      section="github"
+      description="Pushes, pull requests and CI — what turns claimed proof into confirmed."
+      meta={
+        // A state, not a code tag (LAI-1210). "secret set", not
+        // "connected": Laika cannot tell from here whether GitHub sends.
         <span
           className="org-status-badge"
           data-tone={webhook.configured ? 'on' : 'off'}
@@ -123,8 +130,8 @@ export function GithubWebhookSection({ webhook, onChanged }: GithubWebhookSectio
         >
           {webhook.configured ? 'secret set' : 'not set up'}
         </span>
-      </header>
-
+      }
+    >
       <p className="org-note org-github-lead">
         GitHub tells Laika about pushes, pull requests and CI, and that is what turns an agent’s
         claimed proof into confirmed or failed on the Review page. Laika never calls GitHub; it only
@@ -233,6 +240,6 @@ export function GithubWebhookSection({ webhook, onChanged }: GithubWebhookSectio
           {error}
         </p>
       )}
-    </section>
+    </OrgAccordion>
   );
 }

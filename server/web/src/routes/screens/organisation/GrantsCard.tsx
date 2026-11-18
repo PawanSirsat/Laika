@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import {
   getOrgPermissions,
@@ -11,6 +11,7 @@ import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
 import { Switch } from '../../../components/Switch.tsx';
 import { actionName, lockedRoles, sameGrants, withGrant } from './permissions-view.ts';
+import { OrgAccordion } from './OrgAccordion.tsx';
 
 type GrantsState =
   | { readonly status: 'loading' }
@@ -78,32 +79,37 @@ export function GrantsCard({ orgRoles, editable, onSaved }: GrantsCardProps) {
     };
   }, [attempt]);
 
-  const head = (
-    <header className="org-card-head">
-      <h2 id="perm-grants">Who can do what</h2>
-    </header>
+  /** The card, folded to one row (LAI-2005): open it to switch a capability. */
+  const frame = (children: ReactNode, meta?: ReactNode) => (
+    <OrgAccordion
+      name="grants"
+      id="perm-grants"
+      title="Who can do what"
+      meta={meta}
+      description={
+        editable
+          ? 'Switch a capability on or off for each role, then save. The owner holds every one.'
+          : 'Which capabilities each role holds. Set by the owner, who holds every one.'
+      }
+      className="perm-card"
+      card="grants"
+    >
+      {children}
+    </OrgAccordion>
   );
 
   if (state.status === 'loading') {
-    return (
-      <section className="org-card perm-card" data-card="grants" aria-labelledby="perm-grants">
-        {head}
-        <LoadingState shape="table" count={5} label="Loading who can do what" />
-      </section>
-    );
+    return frame(<LoadingState shape="table" count={5} label="Loading who can do what" />);
   }
 
   if (state.status === 'error') {
-    return (
-      <section className="org-card perm-card" data-card="grants" aria-labelledby="perm-grants">
-        {head}
-        <ApiErrorState
-          error={state.error}
-          resource="who can do what"
-          scope="organisation"
-          onRetry={reload}
-        />
-      </section>
+    return frame(
+      <ApiErrorState
+        error={state.error}
+        resource="who can do what"
+        scope="organisation"
+        onRetry={reload}
+      />,
     );
   }
 
@@ -130,86 +136,81 @@ export function GrantsCard({ orgRoles, editable, onSaved }: GrantsCardProps) {
       });
   };
 
-  return (
-    <section className="org-card perm-card" data-card="grants" aria-labelledby="perm-grants">
-      {head}
-      <p className="org-note">
-        {editable
-          ? 'Switch a capability on or off for a role, then save. The owner holds every one.'
-          : 'Set by the owner, who holds every one.'}
-      </p>
-
-      <table className="perm-table perm-grants" data-scope="grants">
-        <thead>
-          <tr>
-            <th scope="col">Capability</th>
-            {[...locked, ...view.roles].map((role) => (
-              <th key={role} scope="col" className="perm-role">
-                {role}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {view.capabilities.map((capability) => (
-            <tr key={capability.id} data-capability={capability.id}>
-              <th scope="row" className="perm-action">
-                <span className="perm-action-name">{capability.label}</span>
-                {/* What it lets a role do, in the server's words (LAI-985, LAI-989). */}
-                {capability.description !== '' && (
-                  <span className="perm-action-description">{capability.description}</span>
-                )}
-              </th>
-              {locked.map((role) => (
-                <td key={role} className="perm-cell" data-role={role} data-holding="yes">
-                  <span className="perm-cell-role" aria-hidden="true">
-                    {role}
-                  </span>
-                  {editable ? (
-                    <Switch checked disabled onChange={() => undefined}>
-                      <span className="visually-hidden">
-                        {capability.label}: {role}, always
-                      </span>
-                    </Switch>
-                  ) : (
-                    <span className="perm-cell-value">Yes</span>
-                  )}
-                </td>
+  return frame(
+    <>
+      <div className="perm-table-scroll">
+        <table className="perm-table perm-grants" data-scope="grants">
+          <thead>
+            <tr>
+              <th scope="col">Capability</th>
+              {[...locked, ...view.roles].map((role) => (
+                <th key={role} scope="col" className="perm-role">
+                  {role}
+                </th>
               ))}
-              {view.roles.map((role) => {
-                const on = shown[role]?.[capability.id] ?? false;
-                return (
-                  <td
-                    key={role}
-                    className="perm-cell"
-                    data-role={role}
-                    data-holding={on ? 'yes' : 'no'}
-                  >
+            </tr>
+          </thead>
+          <tbody>
+            {view.capabilities.map((capability) => (
+              <tr key={capability.id} data-capability={capability.id}>
+                <th scope="row" className="perm-action">
+                  <span className="perm-action-name">{capability.label}</span>
+                  {/* What it lets a role do, in the server's words (LAI-985, LAI-989). */}
+                  {capability.description !== '' && (
+                    <span className="perm-action-description">{capability.description}</span>
+                  )}
+                </th>
+                {locked.map((role) => (
+                  <td key={role} className="perm-cell" data-role={role} data-holding="yes">
                     <span className="perm-cell-role" aria-hidden="true">
                       {role}
                     </span>
                     {editable ? (
-                      <Switch
-                        checked={on}
-                        disabled={busy}
-                        onChange={(next) => {
-                          setDraft(withGrant(shown, role, capability.id, next));
-                        }}
-                      >
+                      <Switch checked disabled onChange={() => undefined}>
                         <span className="visually-hidden">
-                          {capability.label}: {role}
+                          {capability.label}: {role}, always
                         </span>
                       </Switch>
                     ) : (
-                      <span className="perm-cell-value">{on ? 'Yes' : 'No'}</span>
+                      <span className="perm-cell-value">Yes</span>
                     )}
                   </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                ))}
+                {view.roles.map((role) => {
+                  const on = shown[role]?.[capability.id] ?? false;
+                  return (
+                    <td
+                      key={role}
+                      className="perm-cell"
+                      data-role={role}
+                      data-holding={on ? 'yes' : 'no'}
+                    >
+                      <span className="perm-cell-role" aria-hidden="true">
+                        {role}
+                      </span>
+                      {editable ? (
+                        <Switch
+                          checked={on}
+                          disabled={busy}
+                          onChange={(next) => {
+                            setDraft(withGrant(shown, role, capability.id, next));
+                          }}
+                        >
+                          <span className="visually-hidden">
+                            {capability.label}: {role}
+                          </span>
+                        </Switch>
+                      ) : (
+                        <span className="perm-cell-value">{on ? 'Yes' : 'No'}</span>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {view.owner_locked.length > 0 && (
         <>
@@ -252,6 +253,14 @@ export function GrantsCard({ orgRoles, editable, onSaved }: GrantsCardProps) {
           </div>
         </>
       )}
-    </section>
+    </>,
+    <>
+      {String(view.capabilities.length)} capabilities
+      {!unchanged && (
+        <span className="org-acc-flag" data-unsaved>
+          unsaved changes
+        </span>
+      )}
+    </>,
   );
 }

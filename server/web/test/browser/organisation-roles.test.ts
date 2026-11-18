@@ -35,10 +35,14 @@ import {
   type StubCall,
   setTheme,
   until,
+  openSectionsByDefault,
 } from './harness.ts';
 import { DEACTIVATES, rowAction } from './row-menu.ts';
 import { capacityPerson } from './capacity-org.ts';
 import { optionsOf, pick } from './dropdown.ts';
+
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+openSectionsByDefault('ai', 'github');
 
 const user = (id: string, name: string, org_role: string, is_active = true) => ({
   id,
@@ -102,7 +106,7 @@ void describe('the org itself', () => {
     const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
       // The name heads the page since LAI-796; the settings are Overview's.
-      const card = h.page.locator('.org-card').first();
+      const card = h.page.locator('.org-card', { has: h.page.locator('#org-name') });
       await card.locator('#org-name').waitFor({ timeout: 20_000 });
       assert.equal(
         await h.page.locator('.screen-page-title').innerText(),

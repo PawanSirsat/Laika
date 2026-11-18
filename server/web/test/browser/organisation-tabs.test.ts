@@ -14,9 +14,23 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { answerConfirm } from './confirm.ts';
-import { closeBrowser, open, until, type StubCall } from './harness.ts';
+import { closeBrowser, open, until, type StubCall, openSectionsByDefault } from './harness.ts';
 import { PEOPLE } from './organisation-refine-fixtures.ts';
 import { TABS } from './organisation-tabs-fixtures.ts';
+
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+openSectionsByDefault(
+  'github',
+  'hr',
+  'email',
+  'teams',
+  'calendar',
+  'prices',
+  'ai',
+  'grants',
+  'perm-org',
+  'perm-project',
+);
 
 void after(async () => {
   await closeBrowser();
