@@ -649,6 +649,8 @@ void describe("People's columns adapt to the room beside the side menu", () => {
     [1440, []],
     [1366, ['Last sign-in']],
     [1280, ['Tools running', 'Last sign-in']],
+    // Below the side menu's breakpoint: 682px of room against the 648px floor.
+    [768, ['Tools running', 'Last sign-in']],
   ] as const) {
     void test(`at ${String(width)} ${out.length === 0 ? 'every column shows' : `${out.join(' and ')} ${out.length === 1 ? 'steps' : 'step'} out, still read`}`, async () => {
       const h = await open('/organisation?tab=people', OWNER(), {
@@ -678,10 +680,15 @@ void describe("People's columns adapt to the room beside the side menu", () => {
           all.filter((c) => !c.shown && c.name !== 'Actions').map((c) => c.name),
           [...out],
         );
+        // The table fits its room, and the page does not scroll sideways.
         assert.equal(
           await h.page.locator('[data-scroll-region]').first().getAttribute('data-overflow'),
           'false',
         );
+        const sideways = await h.page.evaluate(
+          () => document.documentElement.scrollWidth - window.innerWidth,
+        );
+        assert.ok(sideways <= 0, `the page scrolls ${String(sideways)}px sideways`);
 
         // What stepped out is in sight under Last active — for a keyboard and
         // a finger, not only a mouse — with no tooltip saying it again, and
