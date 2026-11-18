@@ -507,12 +507,116 @@ describe('a file, from asking to removing', () => {
     });
   });
 
-  it('adds the store to img-src and connect-src, and nowhere else', async () => {
+  it('adds the store to img-src, media-src and connect-src, and nowhere else', async () => {
     const csp = (await call('GET', '/org')).headers.get('content-security-policy') ?? '';
     const directive = (name: string) => csp.split('; ').find((d) => d.startsWith(`${name} `));
     expect(directive('img-src')).toBe(`img-src 'self' data: ${FAKE_STORE.endpoint}`);
+    // An inline recording plays through the same 302 (D-162).
+    expect(directive('media-src')).toBe(`media-src 'self' ${FAKE_STORE.endpoint}`);
     expect(directive('connect-src')).toBe(`connect-src 'self' ${FAKE_STORE.endpoint}`);
-    expect(csp.split(FAKE_STORE.endpoint)).toHaveLength(3);
+    expect(csp.split(FAKE_STORE.endpoint)).toHaveLength(4);
+  });
+});
+
+describe('an agent’s outputs (D-162, LAI-1302)', () => {
+  beforeEach(async () => {
+    await boot(fakeAttachments(4 * 1024 * 1024));
+  });
+
+  const csv = (body: string) => new TextEncoder().encode(body);
+
+  it('takes the task by its key, as every MCP tool does — and another project’s key is a 404', async () => {
+    const asked = await must<Upload>(
+      ask({ filename: 'shot.png', content_type: 'image/png', size_bytes: 3, task_id: 'lai-1' }),
+      201,
+    );
+    expect(asked.attachment.task_id).toBe(taskId);
+
+    await must(call('POST', '/projects', { name: 'Other', slug: 'other', prefix: 'OTH' }), 201);
+    await must(call('POST', '/projects/other/tasks', { title: 'Theirs' }), 201);
+    const refused = await ask({
+      filename: 'shot.png',
+      content_type: 'image/png',
+      size_bytes: 3,
+      task_id: 'OTH-1',
+    });
+    expect(refused.status).toBe(404);
+  });
+
+  it('refuses a text file that holds a secret, deletes it, and never says the secret', async () => {
+    const secret = ['Welcome', '-', '2026', '!'].join('');
+    const body = csv(`email,temp password\nada@example.test,${secret}\n`);
+    const asked = await must<Upload>(
+      ask({ filename: 'accounts.csv', content_type: 'text/csv', size_bytes: body.length }),
+      201,
+    );
+    expect((await browserPut(fake, asked.upload, body)).status).toBe(200);
+
+    const res = await call('POST', `/attachments/${asked.attachment.id}/complete`);
+    expect(res.status).toBe(422);
+    const text = await res.text();
+    expect(text).not.toContain(secret);
+    expect((JSON.parse(text) as ErrorBody).error).toMatchObject({
+      code: 'unprocessable',
+      details: { reason: 'secret_detected', pattern: 'credential_column', line: 2 },
+    });
+    // Gone from the store and from every read; the sweep has nothing left to do.
+    expect(fake.objects.size).toBe(0);
+    expect(h.db.select().from(attachments).get()).toMatchObject({
+      state: 'pending',
+      deletedBy: ownerId,
+      purgedAt: expect.any(Number) as number,
+    });
+    expect((await call('GET', `/attachments/${asked.attachment.id}/content`)).status).toBe(404);
+    expect((await call('POST', `/attachments/${asked.attachment.id}/complete`)).status).toBe(404);
+    expect(verbs()).toEqual([]);
+  });
+
+  it('completes the masked copy of the same file', async () => {
+    const view = await attach(csv('email,temp password\nada@example.test,********\n'), {
+      filename: 'accounts-masked.csv',
+      content_type: 'text/csv',
+    });
+    expect(view).toMatchObject({ inline: false, ready_at: expect.any(Number) as number });
+  });
+
+  it('reads the secret check through one ranged GET of at most 2 MiB', async () => {
+    const big = new Uint8Array(3 * 1024 * 1024).fill(0x61);
+    await attach(big, { filename: 'run.log', content_type: 'text/plain' });
+    const ranges = fake.of('GET').map((r) => r.headers.get('range'));
+    expect(ranges).toEqual([`bytes=0-${String(2 * 1024 * 1024 - 1)}`]);
+  });
+
+  it('shows an mp4 recording inline', async () => {
+    const mp4 = new Uint8Array([
+      0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0x00, 0x00, 0x02,
+      0x00, 0x69, 0x73, 0x6f, 0x6d,
+    ]);
+    const view = await attach(mp4, { filename: 'demo.mp4', content_type: 'video/mp4' });
+    expect(view.inline).toBe(true);
+    const location = new URL(
+      (await call('GET', `/attachments/${view.id}/content`)).headers.get('location')!,
+    );
+    expect(location.searchParams.get('response-content-type')).toBe('video/mp4');
+  });
+
+  it('finishes a task over REST with captioned outputs, as finish_task does', async () => {
+    const shot = await attach();
+    await must(call('POST', `/tasks/${taskId}/status`, { status: 'in_progress' }), 200);
+    await must(
+      call('POST', `/tasks/${taskId}/finish`, {
+        summary: 'Built it',
+        outputs: [{ attachment: shot.id, caption: 'The new board' }],
+      }),
+      200,
+    );
+    const comments = await must<{ data: { body_md: string }[] }>(
+      call('GET', `/tasks/${taskId}/comments`),
+      200,
+    );
+    expect(comments.data.at(-1)?.body_md).toBe(
+      `Built it\n\n**Outputs**\n\n- ![The new board](/api/v1/attachments/${shot.id}/content)`,
+    );
   });
 });
 

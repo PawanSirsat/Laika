@@ -26,7 +26,7 @@ const bytes = (...values: number[]) =>
   new Uint8Array([...values, ...new Array<number>(16).fill(0)]);
 const text = (value: string) => new TextEncoder().encode(value.padEnd(16, ' '));
 
-describe('sniffInlineType — the five a browser may show, by their first bytes', () => {
+describe('sniffInlineType — the seven a browser may show, by their first bytes', () => {
   it('knows each of them', () => {
     expect(sniffInlineType(bytes(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a))).toBe(
       'image/png',
@@ -36,6 +36,16 @@ describe('sniffInlineType — the five a browser may show, by their first bytes'
     expect(sniffInlineType(text('GIF87a'))).toBe('image/gif');
     expect(sniffInlineType(text('RIFF\u0000\u0000\u0000\u0000WEBPVP8 '))).toBe('image/webp');
     expect(sniffInlineType(text('%PDF-1.7'))).toBe('application/pdf');
+  });
+
+  it('knows an mp4 or a webm recording, and not a HEIF still that shares the box (D-162)', () => {
+    expect(sniffInlineType(text('\u0000\u0000\u0000\u0020ftypisom'))).toBe('video/mp4');
+    expect(sniffInlineType(text('\u0000\u0000\u0000\u0018ftypmp42'))).toBe('video/mp4');
+    expect(sniffInlineType(bytes(0x1a, 0x45, 0xdf, 0xa3, 0x9f, 0x42, 0x86, 0x81))).toBe(
+      'video/webm',
+    );
+    expect(sniffInlineType(text('\u0000\u0000\u0000\u0018ftypheic'))).toBeNull();
+    expect(sniffInlineType(text('\u0000\u0000\u0000\u001cftypavif'))).toBeNull();
   });
 
   it('knows nothing else — HTML and SVG above all', () => {
