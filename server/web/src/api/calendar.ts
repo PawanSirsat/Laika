@@ -17,7 +17,11 @@ import { ApiError } from './errors.ts';
  * last four characters.
  */
 
-/** Why the last sync failed — or, `stopped_partway`, why a backfill stopped (LAI-1335). */
+/**
+ * Why the last sync failed — or `stopped_partway`: a backfill the switch
+ * stopped between two people, which the server derives from its counts rather
+ * than keeping as a failure (LAI-1335).
+ */
 export type CalendarSyncErrorCode =
   'credentials_rejected' | 'not_granted' | 'unreachable' | 'bad_answer' | 'stopped_partway';
 

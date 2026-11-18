@@ -1541,7 +1541,7 @@ describe('a backfill (LAI-1335)', () => {
     expect(t.db.select().from(timeEntries).all()).toHaveLength(6);
   });
 
-  it('stops at the switch turned off between two people, keeping who was written, and records stopped_partway with the counts so far (review F5)', async () => {
+  it('stops at the switch turned off between two people, keeping who was written, and keeps the counts so far marked stopped_partway — no error code (review F5)', async () => {
     for (const email of EMAILS) fake.calendars.set(email, [graphEvent(nineOn(2))]);
     connect();
     let on = true;
@@ -1561,15 +1561,17 @@ describe('a backfill (LAI-1335)', () => {
     });
     expect(t.db.select().from(timeEntries).all()).toHaveLength(1);
     const row = sourceRow();
+    // `last_error_code` holds hard failures only; the stop is a mark beside the counts.
     expect(row).toMatchObject({
       lastAttemptAt: NOW,
       lastSuccessAt: null,
-      lastErrorCode: 'stopped_partway',
+      lastErrorCode: null,
+      lastError: null,
     });
-    expect(row?.lastError).toMatch(/stopped part-way/);
-    expect(JSON.parse(row?.lastResultJson ?? 'null')).toEqual(
-      (outcome as { result: unknown }).result,
-    );
+    expect(JSON.parse(row?.lastResultJson ?? 'null')).toEqual({
+      ...(outcome as { result: object }).result,
+      stopped_partway: true,
+    });
   });
 
   it('records nothing when the switch went off before anyone was written', async () => {

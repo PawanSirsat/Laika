@@ -15,6 +15,7 @@ import {
   backfillCalendar,
   disconnectCalendar,
   getCalendarSource,
+  lastRunOf,
   saveCalendarSource,
   syncCalendarNow,
   testCalendarSource,
@@ -502,5 +503,77 @@ describe('a backfill going (LAI-1335 review F1)', () => {
     expect(fake.of('calendarView')).toHaveLength(1);
     expect(a.connection.backfill_running).toBeNull();
     expect(getCalendarSource(t.db, owner).backfill_running).toBeNull();
+  });
+});
+
+describe('a backfill stopped part-way, as read (LAI-1335 review F5)', () => {
+  const counts = {
+    people: 2,
+    no_mailbox: 0,
+    mailbox_denied: 0,
+    mailbox_refused: 0,
+    meetings: 9,
+    not_a_meeting: 0,
+    created: 9,
+    updated: 0,
+    removed: 0,
+    unchanged: 0,
+    kept_edits: 0,
+    kept_older: 0,
+    skipped: 0,
+    away: 0,
+  };
+  const row = (over: Partial<Parameters<typeof lastRunOf>[0]> = {}) => ({
+    lastErrorCode: null,
+    lastError: null,
+    lastResultJson: JSON.stringify({ ...counts, stopped_partway: true }),
+    ...over,
+  });
+
+  it('is served as last_error stopped_partway, with the counts so far and never the mark', () => {
+    const { last_error, last_result } = lastRunOf(row());
+    expect(last_error).toEqual({
+      code: 'stopped_partway',
+      message: expect.stringMatching(/stopped part-way/) as unknown,
+    });
+    expect(last_result).toEqual(counts);
+    expect(last_result).not.toHaveProperty('stopped_partway');
+  });
+
+  it('gives way to a hard failure recorded since, and is gone once a run stores its counts unmarked', () => {
+    expect(
+      lastRunOf(row({ lastErrorCode: 'unreachable', lastError: 'Microsoft could not be reached.' }))
+        .last_error,
+    ).toEqual({ code: 'unreachable', message: 'Microsoft could not be reached.' });
+    expect(lastRunOf(row({ lastResultJson: JSON.stringify(counts) })).last_error).toBeNull();
+    // Only `true` marks it.
+    expect(
+      lastRunOf(row({ lastResultJson: JSON.stringify({ ...counts, stopped_partway: 'yes' }) }))
+        .last_error,
+    ).toBeNull();
+    expect(lastRunOf(row({ lastResultJson: null }))).toEqual({
+      last_error: null,
+      last_result: null,
+    });
+  });
+
+  it('is what GET answers after a backfill the switch stopped, and the backfill answers its counts', async () => {
+    fake.calendars.set('owner@example.test', [graphEvent(Date.UTC(2026, 10, 2, 9))]);
+    saveCalendarSource(t.db, owner, SECRET, SAVE);
+    t.db.update(orgCalendarSource).set({ enabled: 1 }).run();
+    // As the sync leaves the row when it stops (calendar-sync.test.ts proves it does).
+    t.db
+      .update(orgCalendarSource)
+      .set({
+        lastAttemptAt: NOW,
+        lastResultJson: JSON.stringify({ ...counts, stopped_partway: true }),
+      })
+      .run();
+    const view = getCalendarSource(t.db, owner);
+    expect(view.last_error?.code).toBe('stopped_partway');
+    expect(view.last_result).toEqual(counts);
+    // A run since clears it.
+    await backfillCalendar(t.db, owner, SECRET, { days: 30 }, deps());
+    expect(getCalendarSource(t.db, owner).last_error).toBeNull();
   });
 });

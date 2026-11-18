@@ -19,6 +19,8 @@ import {
   parseRules,
   runCalendarBackfill,
   runCalendarSync,
+  STOPPED_PARTWAY,
+  STOPPED_PARTWAY_TEXT,
   type StoredRule,
 } from './calendar-sync.ts';
 import { CALENDARS_READ, graphClient, isClientId, isTenantId } from './microsoft-graph.ts';
@@ -51,7 +53,11 @@ import { assertTimeOn } from './time-settings.ts';
  */
 
 export interface CalendarSyncErrorView {
-  code: CalendarSyncErrorCode;
+  /**
+   * A hard failure as `last_error_code` keeps it, or `stopped_partway` — a
+   * backfill the switch stopped, derived by {@link lastRunOf} (LAI-1335).
+   */
+  code: CalendarSyncErrorCode | typeof STOPPED_PARTWAY;
   message: string;
 }
 
@@ -114,8 +120,9 @@ export interface CalendarBackfillView {
   days: number;
   /**
    * What it did — what was written before it stopped, when the switch went
-   * off between two people (`last_error` `stopped_partway`) — or `null` when a
-   * read failed, which the connection's `last_error` says, or it wrote nothing.
+   * off between two people (the connection's `last_error` then
+   * `stopped_partway`, derived) — or `null` when a read failed, which the
+   * connection's `last_error` says, or it wrote nothing.
    */
   result: CalendarSyncResultView | null;
   /** The connection afterwards, as `GET /org/calendar` answers it. */
@@ -206,23 +213,44 @@ function viewOf(db: Db): CalendarSourceView {
         : { at: row.lastTestAt, calendars_read: roles.includes(CALENDARS_READ), roles },
     last_attempt_at: row.lastAttemptAt,
     last_success_at: row.lastSuccessAt,
-    last_error:
-      row.lastErrorCode === null ? null : { code: row.lastErrorCode, message: row.lastError ?? '' },
-    last_result: resultOf(row.lastResultJson),
+    ...lastRunOf(row),
     backfill_running: backfillRunningOf(db),
   };
 }
 
 /**
- * The last run's counts, as served: a result stored before LAI-1331 counted
- * no out-of-office spans, and one before LAI-1335 no older entries kept, so
- * each is `0` rather than missing.
+ * The last run as served: its error and its counts (LAI-1335 review F5).
+ *
+ * **`last_error_code` holds hard failures only** — Microsoft refused or
+ * failed, and the run changed nothing. A backfill the switch stopped between
+ * two people is not one: it wrote everyone it reached, so it keeps its counts
+ * so far in `last_result_json` marked `stopped_partway: true`, and **this is
+ * the one place that mark becomes `last_error` `stopped_partway`**. A hard
+ * failure recorded since wins; the next run's counts, stored unmarked, clear
+ * it. The mark itself is never served: `last_result` is the counts alone.
+ *
+ * A result stored before LAI-1331 counted no out-of-office spans, and one
+ * before LAI-1335 no older entries kept: each is `0` rather than missing.
  */
-function resultOf(json: string | null): CalendarSyncResultView | null {
-  const stored = jsonOf<CalendarSyncResultView>(json);
-  return stored === null
-    ? null
-    : { ...stored, away: stored.away ?? 0, kept_older: stored.kept_older ?? 0 };
+export function lastRunOf(
+  row: Pick<OrgCalendarSource, 'lastErrorCode' | 'lastError' | 'lastResultJson'>,
+): Pick<CalendarSourceView, 'last_error' | 'last_result'> {
+  const stored = jsonOf<CalendarSyncResultView & { [STOPPED_PARTWAY]?: unknown }>(
+    row.lastResultJson,
+  );
+  const stopped = stored?.[STOPPED_PARTWAY] === true;
+  let last_result: CalendarSyncResultView | null = null;
+  if (stored !== null) {
+    const { [STOPPED_PARTWAY]: _mark, ...counts } = stored;
+    last_result = { ...counts, away: counts.away ?? 0, kept_older: counts.kept_older ?? 0 };
+  }
+  const last_error: CalendarSyncErrorView | null =
+    row.lastErrorCode !== null
+      ? { code: row.lastErrorCode, message: row.lastError ?? '' }
+      : stopped
+        ? { code: STOPPED_PARTWAY, message: STOPPED_PARTWAY_TEXT }
+        : null;
+  return { last_error, last_result };
 }
 
 /** `GET /api/v1/org/calendar`. */

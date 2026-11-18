@@ -177,9 +177,22 @@ export type CalendarSyncOutcome =
   | { kind: 'synced'; result: CalendarSyncResultView }
   /**
    * A backfill the switch stopped between two people (review F5): `result` is
-   * what was written before it, recorded as `stopped_partway`.
+   * what was written before it, stored with {@link STOPPED_PARTWAY}.
    */
   | { kind: 'stopped'; result: CalendarSyncResultView };
+
+/**
+ * A backfill the switch stopped between two people (LAI-1335 review F5). **Not
+ * a `last_error_code`**, which holds hard failures only — Microsoft refused or
+ * failed and nothing changed: this run wrote everyone it reached. It is kept
+ * as `stopped_partway: true` beside its counts in `last_result_json`, and
+ * served as `last_error` by `lastRunOf` (`calendar-source.ts`) alone.
+ */
+export const STOPPED_PARTWAY = 'stopped_partway';
+
+/** What a `stopped_partway` says on the connection. */
+export const STOPPED_PARTWAY_TEXT =
+  'A backfill stopped part-way: the switch was turned off while it ran. The people before that were written.';
 
 export interface CalendarSyncDeps {
   /** Injected by every test: **no test makes a real call** to Microsoft. */
@@ -199,8 +212,6 @@ export const CALENDAR_ERROR_TEXT: Readonly<Record<CalendarSyncErrorCode, string>
     'The app may not read calendars: an admin grants it Calendars.Read in Microsoft Entra.',
   unreachable: 'Microsoft could not be reached. The next sync will try again.',
   bad_answer: 'Microsoft answered something Laika could not read. Nothing was changed.',
-  stopped_partway:
-    'A backfill stopped part-way: the switch was turned off while it ran. The people before that were written.',
 };
 
 /** `rules_json` as stored, defensively: a row that is not a rule is not one. */
@@ -744,8 +755,9 @@ function sameConnection(tx: Tx, source: OrgCalendarSource): boolean {
  * the writer, and the event loop, for the whole of it. Each person's write
  * rests on their own complete read, so a person written is right on its own.
  * The switch turned off between two people stops the rest: with anyone
- * written, the connection records `stopped_partway` and the counts so far
- * (review F5); with nobody, nothing, as the regular run. Disconnected, or
+ * written, the connection keeps the counts so far marked {@link
+ * STOPPED_PARTWAY} (review F5) — an attempt, not a success, and no hard
+ * failure either; with nobody, nothing, as the regular run. Disconnected, or
  * saved with other credentials meanwhile, nothing is recorded.
  */
 async function reconcilePaced(
@@ -769,9 +781,10 @@ async function reconcilePaced(
           tx.update(orgCalendarSource)
             .set({
               lastAttemptAt: now,
-              lastErrorCode: 'stopped_partway',
-              lastError: CALENDAR_ERROR_TEXT.stopped_partway,
-              lastResultJson: JSON.stringify(result),
+              // Not a hard failure: any older one is behind this attempt.
+              lastErrorCode: null,
+              lastError: null,
+              lastResultJson: JSON.stringify({ ...result, [STOPPED_PARTWAY]: true }),
               updatedAt: now,
             })
             .where(eq(orgCalendarSource.orgId, source.orgId))
