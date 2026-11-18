@@ -10,6 +10,7 @@ CREATE TABLE `email_inbound` (
 	`task_id` text,
 	`comment_id` text,
 	`auth` text,
+	`authserv_ids` text,
 	`attachment_count` integer DEFAULT 0 NOT NULL,
 	`received_at` integer NOT NULL,
 	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade,
@@ -22,6 +23,7 @@ CREATE TABLE `email_inbound` (
 	CONSTRAINT "email_inbound_message_id_check" CHECK(length(message_id) BETWEEN 1 AND 512),
 	CONSTRAINT "email_inbound_from_check" CHECK(from_address IS NULL OR length(from_address) <= 320),
 	CONSTRAINT "email_inbound_auth_check" CHECK(auth IS NULL OR length(auth) <= 300),
+	CONSTRAINT "email_inbound_authserv_ids_check" CHECK(authserv_ids IS NULL OR length(authserv_ids) <= 300),
 	CONSTRAINT "email_inbound_attachments_check" CHECK(attachment_count >= 0)
 );
 --> statement-breakpoint
@@ -79,7 +81,8 @@ CREATE TABLE `org_email_inbound` (
 	CONSTRAINT "org_email_inbound_token_check" CHECK((token_hash IS NULL) = (token_last4 IS NULL)),
 	CONSTRAINT "org_email_inbound_api_key_check" CHECK((api_key_enc IS NULL) = (api_key_last4 IS NULL)),
 	CONSTRAINT "org_email_inbound_authserv_check" CHECK(authserv_id IS NULL OR length(authserv_id) BETWEEN 1 AND 253),
-	CONSTRAINT "org_email_inbound_on_check" CHECK(enabled = 0 OR (domain IS NOT NULL AND token_hash IS NOT NULL))
+	CONSTRAINT "org_email_inbound_on_check" CHECK(enabled = 0 OR (domain IS NOT NULL AND token_hash IS NOT NULL)),
+	CONSTRAINT "org_email_inbound_authserv_needed_check" CHECK(enabled = 0 OR require_authenticated = 0 OR authserv_id IS NOT NULL)
 );
 --> statement-breakpoint
 CREATE INDEX `org_email_inbound_updated_by_idx` ON `org_email_inbound` (`updated_by`);--> statement-breakpoint

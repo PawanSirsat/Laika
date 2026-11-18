@@ -52,8 +52,17 @@ export interface InboundMail {
   headers: InboundHeaders;
 }
 
-/** Header values by lower-case name, in the order the mail carried them. */
-export type InboundHeaders = ReadonlyMap<string, readonly string[]>;
+/**
+ * Header values by lower-case name, in the order the mail carried them — and
+ * the names whose order Laika cannot know (LAI-1315 review, M1): Brevo's
+ * object form with two keys that differ only in case (`Authentication-Results`
+ * and `authentication-results`), whose relative order is the JSON's, not the
+ * mail's; or a value that is neither a string nor a list of strings. A check
+ * that depends on order fails closed on an ambiguous name.
+ */
+export interface InboundHeaders extends ReadonlyMap<string, readonly string[]> {
+  readonly ambiguous: ReadonlySet<string>;
+}
 
 /** The longest text a task description or a comment takes from a mail. */
 export const INBOUND_TEXT_MAX = 50_000;
@@ -111,9 +120,16 @@ function mailbox(value: unknown): InboundMailbox | null {
   return { name: str(box.Name), address };
 }
 
+/** A list of `{ Name, Address }`, or of plain addresses — Brevo has sent both (LAI-1315 review, F1). */
 function mailboxes(value: unknown): InboundMailbox[] {
   if (!Array.isArray(value)) return [];
-  return value.map(mailbox).filter((m): m is InboundMailbox => m !== null);
+  return value
+    .map((one) => {
+      if (typeof one !== 'string') return mailbox(one);
+      const address = plainAddress(one);
+      return address === null ? null : { name: null, address };
+    })
+    .filter((m): m is InboundMailbox => m !== null);
 }
 
 /**
@@ -124,26 +140,35 @@ function mailboxes(value: unknown): InboundMailbox[] {
  */
 export function readHeaders(value: unknown): InboundHeaders {
   const out = new Map<string, string[]>();
+  const ambiguous = new Set<string>();
   const add = (name: string, raw: unknown): void => {
     const key = name.trim().toLowerCase();
     if (key === '') return;
-    const values = (Array.isArray(raw) ? raw : [raw]).filter(
-      (v): v is string => typeof v === 'string',
-    );
+    const list = Array.isArray(raw) ? raw : [raw];
+    const values = list.filter((v): v is string => typeof v === 'string');
+    if (values.length !== list.length) ambiguous.add(key);
     if (values.length === 0) return;
     out.set(key, [...(out.get(key) ?? []), ...values.map(oneLine)]);
   };
   const object = record(value);
   if (object !== null) {
-    for (const [name, raw] of Object.entries(object)) add(name, raw);
+    const seen = new Set<string>();
+    for (const [name, raw] of Object.entries(object)) {
+      const key = name.trim().toLowerCase();
+      // Two keys for one header: which came first in the mail is lost.
+      if (seen.has(key)) ambiguous.add(key);
+      seen.add(key);
+      add(name, raw);
+    }
   } else if (Array.isArray(value)) {
+    // Lines keep the mail's own order, so a name seen twice is just two headers.
     for (const line of value) {
       if (typeof line !== 'string') continue;
       const colon = line.indexOf(':');
       if (colon > 0) add(line.slice(0, colon), line.slice(colon + 1));
     }
   }
-  return out;
+  return Object.assign(out, { ambiguous });
 }
 
 /** Every `<id>` in a header such as `References`, without the brackets. */
@@ -216,11 +241,16 @@ export function readInboundMail(item: unknown): InboundMail | null {
     ...(headers.get('references') ?? []).flatMap(messageIdsIn),
   ].map(storedMessageId);
 
-  const recipients = [...mailboxes(raw.Recipients), ...mailboxes(raw.To), ...mailboxes(raw.Cc)].map(
-    (m) => m.address,
-  );
+  // The envelope (`RCPT TO`) first: it is where the mail was delivered, and it
+  // has a Bcc'd space's address, which To and Cc never show (F1). To and Cc
+  // only when Brevo sent no envelope.
+  const envelope = mailboxes(raw.Recipients);
+  const recipients = (
+    envelope.length > 0 ? envelope : [...mailboxes(raw.To), ...mailboxes(raw.Cc)]
+  ).map((m) => m.address);
 
-  const spam = record(raw.Spam)?.Score;
+  // `Spam.Score`, or a top-level `SpamScore` (F1).
+  const spam = record(raw.Spam)?.Score ?? raw.SpamScore;
 
   const attachments = (Array.isArray(raw.Attachments) ? raw.Attachments : [])
     .map((a): InboundAttachment | null => {
@@ -347,81 +377,93 @@ export function parseAuthenticationResults(value: string): AuthHeader | null {
 }
 
 /**
- * Relaxed alignment (DMARC, RFC 7489 §3.1): the domain a check passed for is
- * the From domain, or one is a subdomain of the other. A single label (`com`)
- * aligns with nothing.
+ * **Strict** alignment (LAI-1315 review, F5): the domain a check passed for
+ * is the From domain, exactly. DMARC's relaxed mode would let a subdomain
+ * stand for its parent, and a parent for its subdomain — and without the
+ * public-suffix list Laika cannot tell `kvelld.co.za` from `co.za`, so it
+ * allows neither. A single label (`com`) is nobody's domain.
  */
 export function aligned(checked: string, from: string): boolean {
   const a = checked.toLowerCase().replace(/\.$/, '');
   const b = from.toLowerCase().replace(/\.$/, '');
-  if (!a.includes('.') || !b.includes('.')) return false;
-  return a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
+  return a.includes('.') && a === b;
 }
 
-/** The domain an SPF or DKIM property names: `x@kvelld.com` and `@kvelld.com` give `kvelld.com`. */
-function propDomain(value: string | undefined): string | null {
-  if (value === undefined || value === '') return null;
-  return value.includes('@') ? domainOf(value) : value;
+/**
+ * The domain a property names: `kvelld.com`, `@kvelld.com`, `x@kvelld.com` and
+ * `<x@kvelld.com>` (F4) all give `kvelld.com`.
+ */
+export function propDomain(value: string | undefined): string | null {
+  const bare = (value ?? '').trim().replace(/^<|>$/g, '');
+  if (bare === '') return null;
+  return (bare.includes('@') ? domainOf(bare) : bare).toLowerCase().replace(/\.$/, '');
 }
 
 /** What the receiving server vouched for, and the line `email_inbound.auth` keeps. */
 export interface AuthVerdict {
-  /** An aligned DMARC, DKIM or SPF pass from a header Laika believes. */
+  /** An aligned DMARC, DKIM or SPF pass, in the one header Laika believes. */
   pass: boolean;
-  /** `mx.example dmarc=pass dkim=pass spf=pass`, from the headers believed; null when none. */
+  /** `mx.example dmarc=pass dkim=pass`, from the believed header; null when none was. */
   summary: string | null;
 }
 
 /**
- * Whether the receiving server vouched for the From address (D-155).
+ * Whether the receiving server vouched for the From address (D-155 item 4).
  *
- * **Which headers are believed.** A sender can write any
- * `Authentication-Results` header into a mail; only the one the receiving
- * server added is evidence. With `authservId` set, only headers that server
- * wrote count. Without it, only the **topmost** counts — a receiving server
- * adds its header above everything already in the mail, so a forged one
- * sits below it.
+ * **Which header is believed** (LAI-1315 review, M1). A sender can write any
+ * `Authentication-Results` header into a mail — even one naming the receiving
+ * server — and only the one that server added is evidence. So:
  *
- * **What passes.** `dmarc=pass` for the From domain; else `dkim=pass` for a
- * signing domain aligned with it; else `spf=pass` for an aligned envelope
- * sender. Any of the three proves the From domain sent it.
+ * - **No server named (`authservId` null): nothing is believed**, and every
+ *   mail is unauthenticated. There is no "topmost" fallback: if the receiving
+ *   server stamps no header of its own, the topmost is the forger's.
+ * - **A server named:** only the **first** header carrying that id counts —
+ *   the receiving server prepends its header above everything the mail
+ *   already carried — and every later one, the same id or not, is ignored.
+ * - **Fails closed** when the delivery's headers are ambiguous: two keys for
+ *   `Authentication-Results`, whose order is lost, or a value Laika cannot read.
+ *
+ * **What passes**: `dmarc=pass` for exactly the From domain; else `dkim=pass`
+ * for a signing domain equal to it; else `spf=pass` for an envelope sender at
+ * it. Each proves the **domain** sent it — not which mailbox: D-155 says what
+ * that means.
  */
 export function authVerdict(
   headers: InboundHeaders,
   fromAddress: string,
   authservId: string | null,
 ): AuthVerdict {
-  const parsed = (headers.get('authentication-results') ?? [])
+  const none: AuthVerdict = { pass: false, summary: null };
+  if (authservId === null || headers.ambiguous.has('authentication-results')) return none;
+  const believed = (headers.get('authentication-results') ?? [])
     .map(parseAuthenticationResults)
-    .filter((h): h is AuthHeader => h !== null);
-  const believed =
-    authservId === null
-      ? parsed.slice(0, 1)
-      : parsed.filter((h) => h.authservId === authservId.toLowerCase());
+    .find((h) => h?.authservId === authservId.toLowerCase());
+  if (believed == null) return none;
 
   const fromDomain = domainOf(fromAddress);
-  const pass = believed.some((h) =>
-    h.results.some((r) => {
-      if (r.result !== 'pass') return false;
-      if (r.method === 'dmarc') return r.props.get('header.from') === fromDomain;
-      if (r.method === 'dkim') {
-        const d = propDomain(r.props.get('header.d') ?? r.props.get('header.i'));
-        return d !== null && aligned(d, fromDomain);
-      }
-      if (r.method === 'spf') {
-        const mailFrom = propDomain(r.props.get('smtp.mailfrom') ?? r.props.get('smtp.helo'));
-        return mailFrom !== null && aligned(mailFrom, fromDomain);
-      }
-      return false;
-    }),
-  );
+  const pass = believed.results.some((r) => {
+    if (r.result !== 'pass') return false;
+    if (r.method === 'dmarc') {
+      const d = propDomain(r.props.get('header.from'));
+      return d !== null && aligned(d, fromDomain);
+    }
+    if (r.method === 'dkim') {
+      const d = propDomain(r.props.get('header.d') ?? r.props.get('header.i'));
+      return d !== null && aligned(d, fromDomain);
+    }
+    if (r.method === 'spf') {
+      const d = propDomain(r.props.get('smtp.mailfrom'));
+      return d !== null && aligned(d, fromDomain);
+    }
+    return false;
+  });
 
-  const words = believed.flatMap((h) => [
-    h.authservId,
-    ...h.results
+  const words = [
+    believed.authservId,
+    ...believed.results
       .filter((r) => ['dmarc', 'dkim', 'spf'].includes(r.method))
       .map((r) => `${r.method}=${r.result}`),
-  ]);
+  ];
   const summary = words
     .join(' ')
     .replace(/[^a-z0-9.=_ -]/g, '')
@@ -429,10 +471,16 @@ export function authVerdict(
   return { pass, summary: summary === '' ? null : summary };
 }
 
-/** The authserv-ids a mail carried, topmost first — what the card shows to choose from. */
+/**
+ * The receiving servers a mail's `Authentication-Results` headers name, topmost
+ * first, each once — what the card shows so an owner can name the right one
+ * from a real delivery (M1), never from a guess.
+ */
 export function authservIds(headers: InboundHeaders): string[] {
-  return (headers.get('authentication-results') ?? [])
+  const ids = (headers.get('authentication-results') ?? [])
     .map(parseAuthenticationResults)
     .filter((h): h is AuthHeader => h !== null)
-    .map((h) => h.authservId);
+    .map((h) => h.authservId.replace(/[^a-z0-9.-]/g, ''))
+    .filter((id) => id !== '');
+  return [...new Set(ids)];
 }

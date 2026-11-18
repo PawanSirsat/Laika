@@ -90,6 +90,9 @@ export const HEALTH_PATH = '/api/v1/health';
  */
 export function isLimited(path: string): boolean {
   if (path === HEALTH_PATH) return false;
+  // Inbound email counts itself, after its token is checked (LAI-1315
+  // review, F2): a bucket decided before that would let junk spend Brevo's.
+  if (path === INBOUND_EMAIL_PATH) return false;
   return isReservedPath(path);
 }
 
@@ -214,11 +217,6 @@ export function classify(
   // small bucket per person of its own, as the HR calls do.
   if (TEAMS_TEST_PATH.test(path) && method === 'POST') {
     return { key: `teams-test:${who}`, policy: LIMITS.teamsTest };
-  }
-
-  // Inbound email (LAI-1315): one anonymous sender, so one bucket of its own.
-  if (path === INBOUND_EMAIL_PATH && method === 'POST') {
-    return { key: 'inbound-email', policy: LIMITS.inboundEmail };
   }
 
   // The Outlook calendar (LAI-1316): each of these calls Microsoft, the same way.

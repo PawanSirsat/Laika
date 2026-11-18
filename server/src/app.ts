@@ -390,7 +390,9 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       ? authMiddleware({ auth: options.auth, db: options.db })
       : anonymousAuth,
   );
-  app.use('*', rateLimitMiddleware(options.rateLimiter ?? new RateLimiter()));
+  // One limiter: the middleware's buckets and inbound email's own (F2).
+  const limiter = options.rateLimiter ?? new RateLimiter();
+  app.use('*', rateLimitMiddleware(limiter));
 
   // After rateLimit, before the routes: an un-set-up instance answers `conflict`
   // for every API path except setup and health (LAI-009 AC1).
@@ -549,6 +551,7 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       sqlite: options.sqlite,
       serverSecret: options.serverSecret ?? '',
       publicUrl: options.publicUrl,
+      rateLimiter: limiter,
     };
     app.route('/webhooks', inboundEmailWebhookRoutes(inbound));
     app.route(`${API_BASE}/org`, orgEmailInboundRoutes(inbound));

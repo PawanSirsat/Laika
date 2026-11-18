@@ -1,6 +1,8 @@
 import { eq } from 'drizzle-orm';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { classify } from '../../../src/http/middleware/rate-limit.ts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '../../../src/errors.ts';
+import type * as TasksModule from '../../../src/services/tasks.ts';
+import { isLimited } from '../../../src/http/middleware/rate-limit.ts';
 import { LIMITS } from '../../../src/http/rate-limit.ts';
 import {
   comments,
@@ -35,8 +37,30 @@ const PASSWORD = 'correct-horse-battery-staple';
 const DOMAIN = 'tasks.example.test';
 const SUBJECT = 'Login page answers 500 after the deploy';
 const TEXT = 'Since 09:10 every sign-in fails. Steps: open /login, sign in.';
-const REAL_AR =
-  'mx.brevo.test; dkim=pass header.d=example.test; dmarc=pass header.from=example.test';
+/**
+ * **A fixture, not a capture**: what a receiving server named `mx.brevo.test`
+ * would stamp. Brevo's real header has not been seen yet (LAI-1315 review,
+ * M1) — which is why the switch needs the server named, by an owner, from a
+ * real delivery, before it turns on.
+ */
+const RECEIVER = 'mx.brevo.test';
+const REAL_AR = `${RECEIVER}; dkim=pass header.d=example.test; dmarc=pass header.from=example.test`;
+
+/*
+ * Two titles that make the write misbehave (F3): one refused for a reason no
+ * check names, one a fault. Every other create is the real one.
+ */
+vi.mock('../../../src/services/tasks.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof TasksModule>();
+  return {
+    ...real,
+    createTask: (...args: Parameters<typeof real.createTask>) => {
+      if (args[4].title === 'REFUSE ME') throw new ApiError('conflict', 'An odd refusal');
+      if (args[4].title === 'BREAK ME') throw new TypeError('a fault, not a decision');
+      return real.createTask(...args);
+    },
+  };
+});
 
 let h: AuthHarness;
 let cookie: string;
@@ -111,7 +135,7 @@ function userId(email: string): string {
 
 /** The domain, a token and the switch: what turning it on is. Returns the bearer token. */
 async function switchOn(): Promise<string> {
-  await ok(await call('PUT', '/org/email-inbound', { domain: DOMAIN }));
+  await ok(await call('PUT', '/org/email-inbound', { domain: DOMAIN, authserv_id: RECEIVER }));
   const { token } = await ok<{ token: string }>(
     await call('POST', '/org/email-inbound/token'),
     201,
@@ -240,7 +264,16 @@ describe('the card and the address: who may', () => {
     const again = await call('GET', '/org/email-inbound');
     expect(await again.text()).not.toContain(token);
 
-    await ok(await call('PUT', '/org/email-inbound', { enabled: true }));
+    // Authentication required, and no server named: nothing would be believed (M1).
+    const unnamed = await call('PUT', '/org/email-inbound', { enabled: true });
+    expect(unnamed.status).toBe(422);
+    expect((await errorOf(unnamed)).details).toMatchObject({
+      field: 'authserv_id',
+      reason: 'authserv_required',
+    });
+    await ok(await call('PUT', '/org/email-inbound', { enabled: true, authserv_id: RECEIVER }));
+    // Nor can the server be un-named while it is on.
+    expect((await call('PUT', '/org/email-inbound', { authserv_id: null })).status).toBe(422);
     // Clearing the domain turns the switch off with it.
     const cleared = await ok<{ enabled: boolean; domain: null }>(
       await call('PUT', '/org/email-inbound', { domain: null }),
@@ -271,6 +304,29 @@ describe('the card and the address: who may', () => {
       await call('PUT', '/org/email-inbound', { api_key: null }),
     );
     expect(cleared.api_key_last4).toBeNull();
+  });
+
+  it('turning it on, and authentication off, are an owner’s alone — not an admin’s (M2)', async () => {
+    await ok(await call('PUT', '/org/email-inbound', { domain: DOMAIN, authserv_id: RECEIVER }));
+    await ok(await call('POST', '/org/email-inbound/token'), 201);
+    const admin = { Cookie: await join('bo@example.test', 'admin') };
+    const asAdmin = await ok<{ can_switch_on: boolean; can_allow_unauthenticated: boolean }>(
+      await call('GET', '/org/email-inbound', undefined, admin),
+    );
+    expect(asAdmin).toMatchObject({ can_switch_on: false, can_allow_unauthenticated: false });
+    for (const body of [{ enabled: true }, { require_authenticated: false }]) {
+      const res = await call('PUT', '/org/email-inbound', body, admin);
+      expect(res.status, JSON.stringify(body)).toBe(403);
+      expect((await errorOf(res)).details).toMatchObject({ reason: 'owner_only' });
+    }
+    // The owner turns it on; the admin may still turn it off, and change the rest.
+    await ok(await call('PUT', '/org/email-inbound', { enabled: true }));
+    await ok(await call('PUT', '/org/email-inbound', { enabled: false }, admin));
+    await ok(await call('PUT', '/org/email-inbound', { require_authenticated: true }, admin));
+    const asOwner = await ok<{ can_switch_on: boolean; can_allow_unauthenticated: boolean }>(
+      await call('PUT', '/org/email-inbound', { require_authenticated: false }),
+    );
+    expect(asOwner).toMatchObject({ can_switch_on: true, can_allow_unauthenticated: true });
   });
 
   it('says on everyone’s OrgView whether it is on, and the domain', async () => {
@@ -397,13 +453,12 @@ describe('a mail from a member becomes a task, written as them', () => {
     expect(inboundRows()).toHaveLength(1);
   });
 
-  it('makes a task in each space a mail was sent to', async () => {
+  it('makes a task in each space the envelope delivered it to', async () => {
     const token = await switchOn();
+    const murphy = await addressOf('murphy');
+    const halo = await addressOf('halo');
     const results = await delivered(token, [
-      {
-        ...brevo({ to: await addressOf('murphy') }),
-        Cc: [{ Name: null, Address: await addressOf('halo') }],
-      },
+      { ...brevo({ to: murphy }), Recipients: [{ Address: murphy }, { Address: halo }] },
     ]);
     expect(results.map((r) => r.outcome)).toEqual(['task_created', 'task_created']);
     expect(
@@ -582,11 +637,32 @@ describe('dropped, never written, never answered: one reason each', () => {
     );
   });
 
+  it('unauthenticated: a forged header above the server’s own, naming another server', async () => {
+    await dropped(
+      {
+        headers: {
+          'Authentication-Results': [
+            'mx.attacker.test; dmarc=pass header.from=example.test',
+            `${RECEIVER}; dmarc=fail header.from=example.test`,
+          ],
+        },
+      },
+      'unauthenticated',
+    );
+  });
+
+  it('unauthenticated: two keys for the header, whose order is lost — fails closed', async () => {
+    await dropped(
+      { headers: { 'Authentication-Results': REAL_AR, 'authentication-results': REAL_AR } },
+      'unauthenticated',
+    );
+  });
+
   it('unauthenticated: no verdict at all', async () => {
     await dropped({ headers: { 'Authentication-Results': [] } }, 'unauthenticated');
   });
 
-  it('unauthenticated: with the receiving server named, another server’s pass counts for nothing', async () => {
+  it('unauthenticated: another server’s pass counts for nothing', async () => {
     await dropped(
       {
         headers: {
@@ -594,9 +670,6 @@ describe('dropped, never written, never answered: one reason each', () => {
         },
       },
       'unauthenticated',
-      async () => {
-        await ok(await call('PUT', '/org/email-inbound', { authserv_id: 'mx.brevo.test' }));
-      },
     );
   });
 
@@ -630,7 +703,13 @@ describe('dropped, never written, never answered: one reason each', () => {
     const res = await call('GET', '/org/email-inbound');
     const text = await res.text();
     expect(text).not.toContain('Login page');
-    const view = JSON.parse(text) as { recent: Record<string, unknown>[] };
+    const view = JSON.parse(text) as {
+      recent: Record<string, unknown>[];
+      authserv_seen: string[];
+    };
+    // The servers recent mail named: what an owner names the believed one from (M1).
+    expect(view.authserv_seen).toEqual([RECEIVER]);
+    expect(view.recent[0]).toMatchObject({ authserv_ids: [RECEIVER] });
     expect(view.recent.map((r) => [r.outcome, r.reason, r.task_key])).toEqual(
       expect.arrayContaining([
         ['task_created', null, 'MUR-1'],
@@ -640,12 +719,79 @@ describe('dropped, never written, never answered: one reason each', () => {
   });
 });
 
-describe('limits and retention', () => {
-  it('spends a bucket of its own, never the anonymous session’s', () => {
-    expect(classify('/webhooks/email', null, 'POST')).toEqual({
-      key: 'inbound-email',
-      policy: LIMITS.inboundEmail,
+describe('Brevo’s shapes, and one mail’s fault (F1, F3)', () => {
+  it('reads plain-address recipients and a top-level SpamScore, and finds a Bcc’d space on the envelope', async () => {
+    const token = await switchOn();
+    const to = await addressOf('murphy');
+    const bcc = {
+      ...brevo({ to: 'someone@elsewhere.test' }),
+      Recipients: [to],
+      Spam: undefined,
+      SpamScore: 0.2,
+    };
+    expect(await delivered(token, [bcc])).toEqual([{ outcome: 'task_created', reason: null }]);
+    const spam = { ...brevo({ to }), Spam: undefined, SpamScore: 9 };
+    expect(await delivered(token, [spam])).toEqual([{ outcome: 'dropped', reason: 'spam' }]);
+  });
+
+  it('one mail’s fault stops none after it; 503 asks Brevo again, and the redelivery lands it once', async () => {
+    const token = await switchOn();
+    const to = await addressOf('murphy');
+    const items = [
+      brevo({ to, messageId: '<one@x.test>' }),
+      brevo({ to, messageId: '<two@x.test>', subject: 'BREAK ME' }),
+      brevo({ to, messageId: '<three@x.test>', subject: 'After the fault' }),
+    ];
+    const first = await deliver(token, items);
+    expect(first.status).toBe(503);
+    expect(((await first.json()) as { results: unknown[] }).results).toEqual([
+      { outcome: 'task_created', reason: null },
+      { outcome: 'failed', reason: null },
+      { outcome: 'task_created', reason: null },
+    ]);
+    expect(h.log.find('email.inbound_failed')).toMatchObject({
+      level: 'error',
+      error: 'TypeError',
     });
+    // Nothing of the failed mail was recorded, so the retry finds it new.
+    expect(
+      inboundRows()
+        .map((r) => r.messageId)
+        .sort(),
+    ).toEqual(['one@x.test', 'three@x.test']);
+    const again = await deliver(token, items);
+    expect(again.status).toBe(503);
+    expect(((await again.json()) as { results: unknown[] }).results).toEqual([
+      { outcome: 'duplicate', reason: null },
+      { outcome: 'failed', reason: null },
+      { outcome: 'duplicate', reason: null },
+    ]);
+    expect(h.db.select().from(tasks).all()).toHaveLength(2);
+  });
+
+  it('a refusal no check named is recorded `refused` and logged at warn', async () => {
+    const token = await switchOn();
+    const to = await addressOf('murphy');
+    expect(await delivered(token, [brevo({ to, subject: 'REFUSE ME' })])).toEqual([
+      { outcome: 'dropped', reason: 'refused' },
+    ]);
+    expect(
+      h.log.records.find((r) => r.event === 'email.inbound' && r.reason === 'refused'),
+    ).toMatchObject({ level: 'warn' });
+  });
+});
+
+describe('limits and retention', () => {
+  it('counts itself after the token: junk fills its own bucket, never Brevo’s (F2)', async () => {
+    const token = await switchOn();
+    // The middleware leaves the path alone; the route decides, once it knows.
+    expect(isLimited('/webhooks/email')).toBe(false);
+    for (let i = 0; i < LIMITS.inboundEmailRefused.burst; i += 1) {
+      expect((await deliver(`junk-${String(i)}`, [])).status).toBe(401);
+    }
+    expect((await deliver('junk-again', [])).status).toBe(429);
+    // Brevo, with the token, is still let in.
+    expect((await deliver(token, [])).status).toBe(200);
   });
 
   it('takes a delivery up to 4 MiB on this route, and only this one', async () => {
@@ -656,6 +802,12 @@ describe('limits and retention', () => {
     expect((await deliver(token, [padded])).status).toBe(200);
     const huge = { ...big, RawHtmlBody: 'y'.repeat(5 * 1024 * 1024) };
     expect((await deliver(token, [huge])).status).toBe(413);
+    // Another route keeps the 1 MiB every route has (F6).
+    const elsewhere = await call('PUT', '/org/email-inbound', {
+      domain: DOMAIN,
+      api_key: 'k'.repeat(2 * 1024 * 1024),
+    });
+    expect(elsewhere.status).toBe(413);
   });
 
   it('prunes records 90 days old', async () => {

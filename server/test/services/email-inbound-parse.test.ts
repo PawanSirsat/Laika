@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addressToken,
   aligned,
+  authservIds,
   authVerdict,
   INBOUND_ATTACHMENTS_MAX,
   INBOUND_TITLE_MAX,
@@ -147,6 +148,25 @@ describe('readInboundMail', () => {
     });
   });
 
+  it('reads both payload shapes Brevo sends (F1): plain-address lists and a top-level SpamScore', () => {
+    const mail = readInboundMail(
+      item({ Recipients: [ADDRESS, 'not an address'], Spam: undefined, SpamScore: 6.5 }),
+    )!;
+    expect(mail.recipients).toEqual([ADDRESS]);
+    expect(mail.spamScore).toBe(6.5);
+  });
+
+  it('matches on the envelope, so a Bcc’d space is found; To and Cc only without one', () => {
+    const bcc = readInboundMail(
+      item({ To: [{ Address: 'someone@else.example' }], Recipients: [{ Address: ADDRESS }] }),
+    )!;
+    expect(bcc.recipients).toEqual([ADDRESS]);
+    const noEnvelope = readInboundMail(
+      item({ Recipients: [], To: [{ Address: ADDRESS }], Cc: [{ Address: 'b@x.example' }] }),
+    )!;
+    expect(noEnvelope.recipients).toEqual([ADDRESS, 'b@x.example']);
+  });
+
   it('is null for anything that is not an object', () => {
     expect(readInboundMail(null)).toBeNull();
     expect(readInboundMail('mail')).toBeNull();
@@ -212,59 +232,101 @@ describe('Authentication-Results', () => {
     expect(parseAuthenticationResults('; dmarc=pass')).toBeNull();
   });
 
-  it('relaxed alignment: equal, or one a subdomain of the other — never a bare suffix', () => {
-    expect(aligned('mail.example.com', 'example.com')).toBe(true);
-    expect(aligned('example.com', 'eu.example.com')).toBe(true);
-    expect(aligned('example.com.evil.net', 'example.com')).toBe(false);
-    expect(aligned('com', 'example.com')).toBe(false);
+  it('strict alignment (F5): exactly the From domain — no parent, no subdomain, no bare suffix', () => {
+    expect(aligned('example.com', 'example.com')).toBe(true);
+    expect(aligned('Example.com.', 'example.com')).toBe(true);
+    expect(aligned('mail.example.com', 'example.com')).toBe(false);
+    expect(aligned('example.com', 'eu.example.com')).toBe(false);
+    expect(aligned('co.za', 'kvelld.co.za')).toBe(false);
+    expect(aligned('com', 'com')).toBe(false);
   });
 
-  const verdict = (ar: string | string[], from = 'ada@example.com', server: string | null = null) =>
+  const verdict = (ar: unknown, from = 'ada@example.com', server: string | null = 'mx.b') =>
     authVerdict(readHeaders({ 'Authentication-Results': ar }), from, server);
 
-  it('passes on DMARC for the From domain, an aligned DKIM, or an aligned SPF', () => {
+  it('passes on DMARC for the From domain, a DKIM signature by it, or SPF for it', () => {
     expect(verdict('mx.b; dmarc=pass header.from=example.com').pass).toBe(true);
-    expect(verdict('mx.b; dkim=pass header.d=mail.example.com').pass).toBe(true);
+    expect(verdict('mx.b; dmarc=pass header.from=<ada@example.com>').pass).toBe(true);
+    expect(verdict('mx.b; dkim=pass header.d=example.com').pass).toBe(true);
+    expect(verdict('mx.b; dkim=pass header.i=@example.com').pass).toBe(true);
     expect(verdict('mx.b; spf=pass smtp.mailfrom=bounce@example.com').pass).toBe(true);
   });
 
-  it('fails a forged From: every pass is for another domain', () => {
+  it('fails a forged From: every pass is for another domain, or only a related one', () => {
     expect(verdict('mx.b; dmarc=pass header.from=attacker.example').pass).toBe(false);
     expect(verdict('mx.b; dkim=pass header.d=attacker.example').pass).toBe(false);
+    expect(verdict('mx.b; dkim=pass header.d=mail.example.com').pass).toBe(false);
     expect(verdict('mx.b; spf=pass smtp.mailfrom=x@attacker.example').pass).toBe(false);
+    expect(verdict('mx.b; spf=pass smtp.helo=example.com').pass).toBe(false);
     expect(verdict('mx.b; dmarc=fail header.from=example.com; dkim=none').pass).toBe(false);
-    expect(authVerdict(readHeaders({}), 'ada@example.com', null)).toEqual({
+    expect(authVerdict(readHeaders({}), 'ada@example.com', 'mx.b')).toEqual({
       pass: false,
       summary: null,
     });
   });
 
-  it('believes only the topmost header: one the sender wrote below it counts for nothing', () => {
-    // The receiving server's verdict first, the forger's own header under it.
-    const forged = [
-      'mx.b; dmarc=fail header.from=example.com',
-      'mx.b; dmarc=pass header.from=example.com',
-    ];
-    expect(verdict(forged).pass).toBe(false);
-    expect(verdict(forged).summary).toBe('mx.b dmarc=fail');
+  it('with no receiving server named, believes nothing — there is no topmost fallback (M1)', () => {
+    // If the receiving server stamps nothing, the topmost header is the forger's.
+    expect(verdict('mx.b; dmarc=pass header.from=example.com', 'ada@example.com', null)).toEqual({
+      pass: false,
+      summary: null,
+    });
   });
 
-  it('with a receiving server named, believes only that server’s headers', () => {
-    const headers = [
-      'mx.attacker; dmarc=pass header.from=example.com',
-      'mx.brevo.example; dmarc=fail header.from=example.com',
-    ];
-    expect(verdict(headers, 'ada@example.com', 'mx.brevo.example').pass).toBe(false);
-    expect(verdict(headers.slice().reverse(), 'ada@example.com', 'MX.BREVO.EXAMPLE').pass).toBe(
-      false,
-    );
+  it('believes only the first header carrying the named server — later ones, forged or not, count for nothing', () => {
+    // The receiving server's verdict first, a forger's copy with the same id under it.
+    expect(
+      verdict([
+        'mx.b; dmarc=fail header.from=example.com',
+        'mx.b; dmarc=pass header.from=example.com',
+      ]),
+    ).toEqual({ pass: false, summary: 'mx.b dmarc=fail' });
+    // A forger's header above it, naming another server: not the receiver's.
+    expect(
+      verdict([
+        'mx.attacker; dmarc=pass header.from=example.com',
+        'mx.b; dmarc=fail header.from=example.com',
+      ]).pass,
+    ).toBe(false);
+    // The named server's pass, wherever it is, is the one that counts.
     expect(
       verdict(
         ['mx.attacker; dmarc=fail', 'mx.brevo.example; dmarc=pass header.from=example.com'],
         'ada@example.com',
-        'mx.brevo.example',
+        'MX.BREVO.EXAMPLE',
       ).pass,
     ).toBe(true);
+  });
+
+  it('fails closed on headers whose order is lost: two keys for one header, or a value it cannot read', () => {
+    const pass = 'mx.b; dmarc=pass header.from=example.com';
+    const twoKeys = readHeaders({ 'Authentication-Results': pass, 'authentication-results': pass });
+    expect(twoKeys.ambiguous.has('authentication-results')).toBe(true);
+    expect(authVerdict(twoKeys, 'ada@example.com', 'mx.b').pass).toBe(false);
+    expect(verdict([pass, 7]).pass).toBe(false);
+    expect(verdict({ text: pass }).pass).toBe(false);
+    // Lines keep the mail's order: the same name twice is just two headers.
+    const lines = readHeaders([
+      `Authentication-Results: ${pass}`,
+      'authentication-results: x; none',
+    ]);
+    expect(lines.ambiguous.size).toBe(0);
+    expect(authVerdict(lines, 'ada@example.com', 'mx.b').pass).toBe(true);
+  });
+
+  it('lists the servers a mail named, topmost first, each once', () => {
+    expect(
+      authservIds(
+        readHeaders({
+          'Authentication-Results': [
+            'MX.b; dmarc=pass',
+            'mx.c; spf=none',
+            'mx.b; dkim=pass',
+            '; x',
+          ],
+        }),
+      ),
+    ).toEqual(['mx.b', 'mx.c']);
   });
 
   it('summarises the believed verdicts in a line safe to keep: names and words only', () => {

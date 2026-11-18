@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "1e44892a-f875-4bab-a31a-92ff474f9da6",
+  "id": "766b445d-e5a5-49be-a1c2-c3cc00f08231",
   "prevId": "cbc47527-0dd7-4a00-a417-28d287284a7e",
   "tables": {
     "accounts": {
@@ -3046,6 +3046,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "authserv_ids": {
+          "name": "authserv_ids",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "attachment_count": {
           "name": "attachment_count",
           "type": "integer",
@@ -3158,6 +3165,10 @@
         "email_inbound_auth_check": {
           "name": "email_inbound_auth_check",
           "value": "auth IS NULL OR length(auth) <= 300"
+        },
+        "email_inbound_authserv_ids_check": {
+          "name": "email_inbound_authserv_ids_check",
+          "value": "authserv_ids IS NULL OR length(authserv_ids) <= 300"
         },
         "email_inbound_attachments_check": {
           "name": "email_inbound_attachments_check",
@@ -5511,6 +5522,10 @@
         "org_email_inbound_on_check": {
           "name": "org_email_inbound_on_check",
           "value": "enabled = 0 OR (domain IS NOT NULL AND token_hash IS NOT NULL)"
+        },
+        "org_email_inbound_authserv_needed_check": {
+          "name": "org_email_inbound_authserv_needed_check",
+          "value": "enabled = 0 OR require_authenticated = 0 OR authserv_id IS NOT NULL"
         }
       }
     },

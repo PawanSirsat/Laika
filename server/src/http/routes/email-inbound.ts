@@ -15,6 +15,7 @@ import {
   verifyInboundToken,
 } from '../../services/email-inbound.ts';
 import { type AppEnv } from '../context.ts';
+import { LIMITS, RateLimiter } from '../rate-limit.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
 /**
@@ -52,6 +53,14 @@ export interface EmailInboundRouteOptions {
   publicUrl?: string | undefined;
   /** Injectable so a test can stamp a delivery. */
   now?: () => number;
+  /** The app's limiter: the webhook counts itself in it, after its token (F2). */
+  rateLimiter?: RateLimiter | undefined;
+}
+
+/** The first frame of a fault's stack — where, never what: no mail text reaches a log. */
+function whereOf(cause: unknown): string {
+  const frame = cause instanceof Error ? (cause.stack ?? '').split('\n')[1] : undefined;
+  return (frame ?? '').trim().slice(0, 200);
 }
 
 /** `POST /webhooks/email`, mounted on `/webhooks`. */
@@ -60,13 +69,30 @@ export function inboundEmailWebhookRoutes(options: EmailInboundRouteOptions): Ho
   const { db } = options;
   const sqlite = options.sqlite ?? db.$client;
   const clock = options.now ?? Date.now;
+  const limiter = options.rateLimiter ?? new RateLimiter();
 
   app.post('/email', async (c) => {
     // Read as text, and nothing parses it until the token holds — the §10.1
     // ordering: an unauthenticated caller cannot make this server parse JSON,
     // and a malformed body answers exactly as a bad token does.
     const raw = await c.req.text();
-    if (!verifyInboundToken(db, c.req.header('authorization'))) {
+    const verified = verifyInboundToken(db, c.req.header('authorization'));
+
+    // **Two buckets, chosen after the token** (LAI-1315 review, F2): a flood
+    // of bad tokens fills its own and is refused `429`, while Brevo's real
+    // deliveries keep theirs. One bucket for both would let anybody stop
+    // every space's mail by posting junk.
+    const policy = verified ? LIMITS.inboundEmail : LIMITS.inboundEmailRefused;
+    const decision = limiter.take(verified ? 'inbound-email' : 'inbound-email:refused', policy);
+    c.header('X-RateLimit-Limit', String(policy.burst));
+    c.header('X-RateLimit-Remaining', String(decision.remaining));
+    if (!decision.allowed) {
+      c.header('Retry-After', String(decision.retryAfterSeconds));
+      throw new ApiError('rate_limited', 'Too many requests', {
+        retry_after_seconds: decision.retryAfterSeconds,
+      });
+    }
+    if (!verified) {
       c.get('log').warn('webhook.received', { source: 'email', verified: false });
       throw new ApiError('unauthorized', 'That delivery could not be verified');
     }
@@ -77,13 +103,26 @@ export function inboundEmailWebhookRoutes(options: EmailInboundRouteOptions): Ho
     } catch {
       throw new ApiError('unprocessable', 'A delivery is JSON: { "items": [ … ] }');
     }
-    const results = receiveInboundEmail(sqlite, db, payload, clock());
+    const log = c.get('log');
+    const results = receiveInboundEmail(sqlite, db, payload, clock(), (cause) => {
+      log.error('email.inbound_failed', {
+        error: cause instanceof Error ? cause.name : 'unknown',
+        at: whereOf(cause),
+      });
+    });
     for (const result of results) {
-      c.get('log').info('email.inbound', { outcome: result.outcome, reason: result.reason });
+      if (result.outcome === 'failed') continue;
+      // `refused` is a write refused for a reason no check named: worth a look (F3).
+      const line = { outcome: result.outcome, reason: result.reason };
+      if (result.reason === 'refused') log.warn('email.inbound', line);
+      else log.info('email.inbound', line);
     }
-    // `200` for every mail, dropped or not: Brevo retries what is not, and a
-    // mail Laika chose to drop must not come back.
-    return c.json({ ok: true, results });
+    // `200` for every mail Laika decided about, dropped or not: Brevo retries
+    // what is not, and a mail Laika chose to drop must not come back. **`503`
+    // when one failed** (F3): Brevo delivers again, every mail that landed is
+    // a `duplicate`, and the failed one is received.
+    const failed = results.some((r) => r.outcome === 'failed');
+    return c.json({ ok: !failed, results }, failed ? 503 : 200);
   });
 
   return app;

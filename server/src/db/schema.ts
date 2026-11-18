@@ -2258,10 +2258,10 @@ export const calendarEvents = sqliteTable(
  * attachments, so it is §12 ciphertext under `brevo_api_key`.
  *
  * `authserv_id` names the receiving server whose `Authentication-Results`
- * Laika believes. A sender can put any `Authentication-Results` header in a
- * mail; only the one the receiving server added is evidence. With none named,
- * the topmost header is the one read — the receiving server adds its header
- * above everything already in the mail.
+ * Laika believes — the first header carrying it (LAI-1315 review, M1). A
+ * sender can put any `Authentication-Results` header in a mail; only the one
+ * the receiving server added is evidence. **With none named, nothing is
+ * believed**, and the switch cannot be on while authentication is required.
  *
  * Its own table rather than columns on `orgs`, the `org_teams_settings`
  * precedent: additive, and a CHECK on `orgs` is a rebuild of `orgs`.
@@ -2281,7 +2281,7 @@ export const orgEmailInbound = sqliteTable(
     /** §12 ciphertext under `brevo_api_key`: what fetches an attachment. */
     apiKeyEnc: text('api_key_enc'),
     apiKeyLast4: text('api_key_last4'),
-    /** Drop a mail without an aligned DMARC, DKIM or SPF pass. On unless turned off. */
+    /** Drop a mail without a DMARC, DKIM or SPF pass for its From domain. On unless an owner turns it off. */
     requireAuthenticated: integer('require_authenticated').notNull().default(1),
     /** The receiving server whose `Authentication-Results` count; null reads the topmost. */
     authservId: text('authserv_id'),
@@ -2312,6 +2312,11 @@ export const orgEmailInbound = sqliteTable(
     check(
       'org_email_inbound_on_check',
       sql.raw('enabled = 0 OR (domain IS NOT NULL AND token_hash IS NOT NULL)'),
+    ),
+    // Nor, while senders must be authenticated, without a server to believe.
+    check(
+      'org_email_inbound_authserv_needed_check',
+      sql.raw('enabled = 0 OR require_authenticated = 0 OR authserv_id IS NOT NULL'),
     ),
   ],
 );
@@ -2383,8 +2388,10 @@ export const emailInbound = sqliteTable(
     /** The task it made, or the task it commented on. */
     taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
     commentId: text('comment_id').references(() => comments.id, { onDelete: 'set null' }),
-    /** The receiving server and its verdicts, e.g. `mx.example dmarc=pass`. Never mail text. */
+    /** The believed server and its verdicts, e.g. `mx.example dmarc=pass`. Never mail text. */
     auth: text('auth'),
+    /** Every server the mail's `Authentication-Results` named, topmost first, space-separated. */
+    authservIds: text('authserv_ids'),
     /** How many attachments the mail announced. */
     attachmentCount: integer('attachment_count').notNull().default(0),
     receivedAt: integer('received_at').notNull(),
@@ -2409,6 +2416,10 @@ export const emailInbound = sqliteTable(
       sql.raw('from_address IS NULL OR length(from_address) <= 320'),
     ),
     check('email_inbound_auth_check', sql.raw('auth IS NULL OR length(auth) <= 300')),
+    check(
+      'email_inbound_authserv_ids_check',
+      sql.raw('authserv_ids IS NULL OR length(authserv_ids) <= 300'),
+    ),
     check('email_inbound_attachments_check', sql.raw('attachment_count >= 0')),
   ],
 );

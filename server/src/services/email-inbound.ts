@@ -21,6 +21,7 @@ import { encryptSecret } from '../secrets.ts';
 import { addComment } from './comments.ts';
 import {
   addressToken,
+  authservIds,
   authVerdict,
   domainOf,
   type InboundMail,
@@ -48,7 +49,7 @@ import { createTask, resolveTaskRef } from './tasks.ts';
  * - the organisation turned *Email to tasks* on (it ships off);
  * - it came through Brevo, which proved it by the webhook's bearer token;
  * - it was sent to a space's address, which carries sixty random bits;
- * - the receiving server vouched for the From domain — an aligned DMARC, DKIM
+ * - the receiving server vouched for the From domain — a DMARC, DKIM
  *   or SPF pass in the `Authentication-Results` header Laika believes (on
  *   unless an owner turns it off);
  * - it is not the board's own mail, an auto-reply, a bounce, list mail or
@@ -120,8 +121,10 @@ export interface EmailInboundRowView {
   /** The task it made or commented on, by key. */
   task_key: string | null;
   comment_id: string | null;
-  /** The receiving server and its verdicts, e.g. `mx.example dmarc=pass`. */
+  /** The believed server and its verdicts, e.g. `mx.example dmarc=pass`. */
   auth: string | null;
+  /** Every server the mail's `Authentication-Results` named, topmost first. */
+  authserv_ids: string[];
   attachment_count: number;
 }
 
@@ -131,7 +134,7 @@ export interface EmailInboundSettingsView {
   enabled: boolean;
   /** The receiving subdomain, e.g. `tasks.kvelld.com`. */
   domain: string | null;
-  /** Drop a mail without an aligned DMARC, DKIM or SPF pass. */
+  /** Drop a mail without a DMARC, DKIM or SPF pass for its From domain. */
   require_authenticated: boolean;
   /** The receiving server whose `Authentication-Results` count; null reads the topmost. */
   authserv_id: string | null;
@@ -148,6 +151,14 @@ export interface EmailInboundSettingsView {
    * stored (§12) — so the card can say so before *Save*, not after.
    */
   can_store_secrets: boolean;
+  /** Owners only (M2): turning the switch on, and authentication off. */
+  can_switch_on: boolean;
+  can_allow_unauthenticated: boolean;
+  /**
+   * The receiving servers the recent mail named, newest first — what an owner
+   * names `authserv_id` from, read off a real delivery (M1).
+   */
+  authserv_seen: string[];
   example_domain: string;
   updated_at: number | null;
   updated_by: InboundPersonView | null;
@@ -169,6 +180,11 @@ export interface ProjectEmailAddressView {
   enabled: boolean;
   /** Whether the caller may replace it (`project.settings.edit`). */
   can_rotate: boolean;
+}
+
+/** The receiving servers recent mail named, newest first, each once. */
+function authservSeen(rows: readonly { authserv_ids: readonly string[] }[]): string[] {
+  return [...new Set(rows.flatMap((r) => r.authserv_ids))];
 }
 
 type SettingsRow = typeof orgEmailInbound.$inferSelect;
@@ -232,6 +248,7 @@ function recentRows(db: Db, actor: ResolvedActor): EmailInboundRowView[] {
             : `${project.prefix}-${String(taskNumber)}`,
         comment_id: row.commentId,
         auth: row.auth,
+        authserv_ids: (row.authservIds ?? '').split(' ').filter((id) => id !== ''),
         attachment_count: row.attachmentCount,
       }))
   );
@@ -247,6 +264,8 @@ export function getEmailInboundSettings(
   assertCan(actor, 'org.email.configure');
   const row = settingsRow(db);
   const base = publicUrl.replace(/\/+$/, '');
+  const recent = recentRows(db, actor);
+  const owner = actor.orgRole === 'owner';
   return {
     enabled: row?.enabled === 1,
     domain: row?.domain ?? null,
@@ -257,10 +276,13 @@ export function getEmailInboundSettings(
     webhook_url: base === '' ? null : `${base}/webhooks/email`,
     own_address: boardFromAddress(db),
     can_store_secrets: serverSecret !== '',
+    can_switch_on: owner,
+    can_allow_unauthenticated: owner,
+    authserv_seen: authservSeen(recent),
     example_domain: EXAMPLE_INBOUND_DOMAIN,
     updated_at: row?.updatedBy == null ? null : row.updatedAt,
     updated_by: personView(db, row?.updatedBy ?? null),
-    recent: recentRows(db, actor),
+    recent,
   };
 }
 
@@ -281,6 +303,13 @@ const HOST_NAME =
 
 function refuse(field: string, message: string): never {
   throw new ApiError('unprocessable', message, { field });
+}
+
+function ownerOnly(field: string): ApiError {
+  return new ApiError('forbidden', 'Only an owner may make that change', {
+    field,
+    reason: 'owner_only',
+  });
 }
 
 function ensureRow(db: Db, now: number): string {
@@ -332,11 +361,33 @@ export function setEmailInboundSettings(
   const nextDomain = domain === undefined ? current.domain : domain;
   // Clearing the domain turns the switch off with it: there is nowhere to receive.
   const nextEnabled = domain === null ? false : (input.enabled ?? current.enabled === 1);
+  const nextRequire = input.require_authenticated ?? current.requireAuthenticated === 1;
+  const nextAuthserv = authserv === undefined ? current.authservId : authserv;
+
+  // **An owner's decisions, not an admin's** (LAI-1315 review, M2): turning
+  // it on accepts D-155's residual risk — a member written as by anybody who
+  // can send as their domain — and turning authentication off widens it to
+  // anybody at all. `org.email.configure` reaches admins; these two do not.
+  if (actor.orgRole !== 'owner') {
+    if (nextEnabled && current.enabled !== 1) throw ownerOnly('enabled');
+    if (!nextRequire && current.requireAuthenticated === 1) {
+      throw ownerOnly('require_authenticated');
+    }
+  }
   if (nextEnabled && (nextDomain === null || current.tokenHash === null)) {
     throw new ApiError(
       'unprocessable',
       'Email to tasks needs a receiving domain and a webhook token before it can be turned on',
       { field: 'enabled', reason: 'inbound_not_configured' },
+    );
+  }
+  // With no server named nothing is believed, so every mail would be dropped:
+  // name it from a real delivery first (M1).
+  if (nextEnabled && nextRequire && nextAuthserv === null) {
+    throw new ApiError(
+      'unprocessable',
+      'Name the receiving server, from a real delivery, before Email to tasks is turned on',
+      { field: 'authserv_id', reason: 'authserv_required' },
     );
   }
 
@@ -511,9 +562,13 @@ export function rotateProjectEmailAddress(
 
 // -------------------------------------------------------------- receiving
 
-/** What became of one mail at one address — the webhook's answer, ids and reasons only. */
+/**
+ * What became of one mail at one address — the webhook's answer, ids and
+ * reasons only. `failed` is a fault, not a decision: nothing was recorded, so
+ * Brevo's retry finds the mail new (F3).
+ */
 export interface InboundItemOutcome {
-  outcome: EmailInboundOutcome | 'duplicate';
+  outcome: EmailInboundOutcome | 'duplicate' | 'failed';
   reason: EmailInboundReason | null;
 }
 
@@ -524,6 +579,7 @@ interface InboundRecord {
   projectId: string | null;
   userId: string | null;
   auth: string | null;
+  authservIds: string | null;
 }
 
 function recordInbound(
@@ -548,6 +604,7 @@ function recordInbound(
       taskId: ids.taskId ?? null,
       commentId: ids.commentId ?? null,
       auth: rec.auth,
+      authservIds: rec.authservIds,
       attachmentCount: rec.mail.attachments.length,
       receivedAt: now,
     })
@@ -660,6 +717,7 @@ function receiveAtAddress(
         projectId: project?.id ?? null,
         userId: null,
         auth: auth.summary,
+        authservIds: authservIds(mail.headers).join(' ').slice(0, 300) || null,
       };
       const drop = (reason: EmailInboundReason): InboundItemOutcome => {
         recordInbound(db, rec, 'dropped', reason, {}, now);
@@ -749,6 +807,8 @@ export function receiveInboundEmail(
   db: Db,
   payload: unknown,
   now: number = Date.now(),
+  /** Told of each mail that failed for a reason that was not a decision. */
+  onFault?: (cause: unknown) => void,
 ): InboundItemOutcome[] {
   assertCan(systemPrincipal(), 'system.email.receive');
   const items = (payload as { items?: unknown } | null)?.items;
@@ -782,7 +842,17 @@ export function receiveInboundEmail(
       ),
     ];
     for (const token of tokens.length === 0 ? [''] : tokens) {
-      results.push(receiveAtAddress(sqlite, db, settings, mail, token, ownAddress, now));
+      // **One mail's fault is its own** (LAI-1315 review, F3): its transaction
+      // rolled back, so nothing of it is recorded, and the mails after it are
+      // still received. The answer says `failed`, and the route asks Brevo to
+      // deliver again — a redelivery is a `duplicate` for every mail that
+      // landed, and new for this one.
+      try {
+        results.push(receiveAtAddress(sqlite, db, settings, mail, token, ownAddress, now));
+      } catch (cause) {
+        onFault?.(cause);
+        results.push({ outcome: 'failed', reason: null });
+      }
     }
   }
   return results;

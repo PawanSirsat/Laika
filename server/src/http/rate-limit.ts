@@ -112,6 +112,11 @@ export const LIMITS = {
    */
   inboundEmail: { perMinute: 120, burst: 60 },
   /**
+   * The same path with a token that did not verify (LAI-1315 review, F2): its
+   * own small bucket, so junk is bounded and never spends Brevo's.
+   */
+  inboundEmailRefused: { perMinute: 30, burst: 30 },
+  /**
    * Testing the Outlook calendar connection and syncing it now (D-157,
    * LAI-1316): each calls Microsoft, so 6 a minute per person on its own
    * bucket, as the HR system's.

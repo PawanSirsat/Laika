@@ -52,7 +52,7 @@ function refusal(fn: () => unknown): { code: string; details: unknown } {
 }
 
 function switchOn(): string {
-  setEmailInboundSettings(t.db, owner, { domain: DOMAIN }, SECRET, '', NOW);
+  setEmailInboundSettings(t.db, owner, { domain: DOMAIN, authserv_id: 'mx.b' }, SECRET, '', NOW);
   const { token } = rotateEmailInboundToken(t.db, owner, '', NOW);
   setEmailInboundSettings(t.db, owner, { enabled: true }, SECRET, '', NOW);
   return token;
