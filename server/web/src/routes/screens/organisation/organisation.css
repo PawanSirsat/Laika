@@ -1625,9 +1625,10 @@
 }
 
 /* Every column's floor, seven gaps and the row's padding. Below it the table
-   drops a column rather than squeeze one — see the container queries below. */
+   drops a column rather than squeeze one — see the container queries below.
+   Last sign-in's floor is 6rem, so its header never breaks at the hyphen. */
 .org-people-table {
-  min-width: 52rem;
+  min-width: 52.5rem;
 }
 
 /* Last active and Last sign-in side by side (LAI-999): presence, and the account.
@@ -1636,7 +1637,7 @@
   display: grid;
   grid-template-columns:
     1.25rem minmax(12rem, 2.6fr) minmax(6rem, 1.1fr) minmax(3.5rem, 0.7fr)
-    minmax(4.5rem, 0.7fr) minmax(5.5rem, 1fr) minmax(5.5rem, 1fr) 5.5rem;
+    minmax(4.5rem, 0.7fr) minmax(5.5rem, 1fr) minmax(6rem, 1fr) 5.5rem;
   align-items: center;
   gap: var(--space-3);
   padding: 0.5625rem var(--space-5);
@@ -1652,7 +1653,7 @@
    running: out of sight, still read by a screen reader (as .visually-hidden,
    index.css), and both named in Last active's tooltip. Below the last floor the
    table scrolls. */
-@container people (width < 52rem) {
+@container people (width < 52.5rem) {
   .org-people-table {
     min-width: 45.75rem;
   }
@@ -5111,6 +5112,14 @@ a.bento-row:active {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+/* Beside the page the column never scrolls, so it clips nothing: a focused
+   section's ring reaches past the items' edge (LAI-1345). */
+@media (min-width: 901px) {
+  .org-nav .org-nav-strip {
+    overflow: visible;
+  }
 }
 
 .org-nav-heading {

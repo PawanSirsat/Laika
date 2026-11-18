@@ -500,6 +500,15 @@ void describe('a wide table says it scrolls', () => {
       assert.ok(nav.x + nav.width <= body.x, 'the sections are not beside the page');
       assert.ok(Math.abs(nav.y - body.y) <= 1, 'the sections do not start level with the page');
       assert.ok(nav.height > nav.width, 'the sections are not a column');
+      // A column that never scrolls clips nothing, so a focused section's
+      // ring is whole at the column's edge.
+      assert.equal(
+        await h.page
+          .locator('.org-nav [data-tab-strip]')
+          .evaluate((el) => getComputedStyle(el).overflowX),
+        'visible',
+        'the column clips its items’ focus ring',
+      );
 
       // Each group's heading is in sight, and its items sit indented under it.
       const groups = await h.page
