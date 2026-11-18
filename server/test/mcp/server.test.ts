@@ -312,6 +312,13 @@ describe('the server tells any agent how to work the board (D-076)', () => {
     }
     expect(head).toMatch(/before .*code/i);
     expect(head).toMatch(/never .*done/i);
+    // Whole sentences, wrapped lines read as one: one task at a time, and
+    // D-162's show-your-work rule, word for word (LAI-1302).
+    const flat = head.replace(/\s+/g, ' ');
+    expect(flat).toContain('One task at a time.');
+    expect(flat).toContain(
+      'Show your work: when a person needs to see the result (UI changes, generated files), attach screenshots or outputs with `laika attach` or `request_upload`, captioned. Never upload secrets.',
+    );
 
     await client.close();
   });
