@@ -6,8 +6,9 @@ assignee: chief
 priority: p2
 depends-on: [LAI-1312]
 discovered-from: LAI-1310
-status: in-progress
+status: review
 started: 2026-11-18T09:58:00Z
+finished: 2026-11-18T13:05:00Z
 ---
 
 ## Goal
@@ -146,7 +147,7 @@ outbox kind.
 - [x] The *Email to tasks* card and the Space settings address work in both themes, at 1440
       and 390
 - [x] D-155; SPEC §1.1, §3.4, §4, §6.4, §10.3, §11.6, §13.4; OPERATIONS
-- [ ] (PR B) attachments are fetched from Brevo and PUT to the store as ready rows linked to
+- [x] (PR B) attachments are fetched from Brevo and PUT to the store as ready rows linked to
       the task or comment; a failure never blocks the task
 - [ ] CI green on each PR
 
@@ -269,3 +270,71 @@ are done, and each was checked by putting the bug back, which turned its test re
   - Another sender's mail with a failed record's id does not touch it.
   - Migration 0088 is regenerated.
 - **Nit.** `ensureRow` now runs after the owner check, so a refused change writes nothing.
+
+## PR B (2026-11-18)
+
+PR A (#375) is merged at 3c728e889. PR B, `LAI-1315-email-attachments`, merges it and brings
+the attachments up to date with A's three review rounds: §4.106 and §4.103's key, and its tests
+name the receiving server. It needs no migration; the queue table was in A's 0088.
+
+- **The store's `put`.** A header-signed `PUT` whose `x-amz-content-sha256` is the body's
+  SHA-256, so the store refuses a body changed in flight. The fake store re-verifies both the
+  signature and the digest.
+- **`fetchInboundAttachment`.**
+  - It calls Brevo's one origin only, with the token path-encoded and `redirect: 'error'`.
+  - It reads at most the board's limit, plus the one byte that proves `too_large`, and never
+    reads Brevo's error bodies.
+- **`storeServerAttachment`.** It follows a browser upload's lifecycle: a `pending` row, the
+  `PUT`, then `ready` and `attachment.added` as the sender. A failed `PUT` leaves a pending row
+  for §11.6's sweep.
+- **The `system.email.attachments` job.**
+  - It runs every 30 seconds, and only when `index.ts` passes `inboundEmail`, so no test can
+    reach Brevo by leaving it out.
+  - It skips `store_off`, `no_api_key`, `too_large` and `not_needed` at once.
+  - It tries `fetch_failed` and `store_failed` three times.
+  - It joins a tick still running, and never blocks the task.
+
+The criterion "CI green on each PR" is ticked by CHIEF after PR B's CI and review.
+
+### PR B, review round 1 (review-1315 on #381, 975006fba)
+
+- **M1.** One filename could stop the whole org's queue for good. A name cut by UTF-16 units
+  left a lone surrogate, `encodeURIComponent` threw, and the tick aborted on every run.
+  - The cut is now by code points, and the name is made well-formed (lone halves become
+    U+FFFD) before the disposition is built.
+  - `contentDisposition` itself can no longer throw on such a name, which also covers the
+    browser path.
+  - Anything unexpected that one file throws is now retried and counted like a refusal (three
+    tries, then `failed`) and reported through `onFault`, which the scheduler logs.
+- **F1.** A `DownloadToken` is queued only if it stays a single URL path segment:
+  `^(?!\.{1,2}$)[A-Za-z0-9_.=-]{1,2048}$`. This deliberately differs from the suggested
+  `[A-Za-z0-9_-]`: Brevo doesn't specify the alphabet, and the one published sample begins
+  `eyJ0eXAiOi`, a JWT, whose segments are joined by dots. Refusing `.` and `..` closes the path
+  that resolves elsewhere.
+- **F2.** The inbound path reads at most the smaller of the board's limit and 40 MiB. A
+  `Content-Length` over that limit is refused before any byte is read. The body is written into
+  one buffer: sized to the declared length when there is one, grown otherwise. OPERATIONS says
+  so next to "the upload goes through it, not through Laika".
+- **F3.** The job checks the switch again when it runs; with Email to tasks off, queued files
+  are `switch_off`. This is a new reason, so **migration 0089** rebuilds
+  `email_inbound_attachments` for its CHECK, keeping every row (migrate test added).
+- **F4.** `attachment.create` is checked before Brevo is asked; a sender removed from the space
+  has nothing fetched or stored.
+- **F5.** A reply whose comment was deleted is `not_needed` and is never moved onto the task.
+
+### PR B, review round 2 (review-1315 on #381, 489dfd874)
+
+- **Gzip.** Node's `fetch` asks for gzip and inflates it, but `Content-Length` stays the
+  compressed size, so a compressed file failed as "sent more than it declared". This was
+  checked against a real local server. The fetch now asks for `Accept-Encoding: identity`.
+  A body that comes compressed anyway is read by what arrives, so a gzip bomb still stops at
+  the limit.
+- **Circuit breaker.** A store that is down (no answer, 5xx, 408, 429) ends the tick at once:
+  nothing is charged and nothing behind it is fetched, as `pruneAttachments`' `storeDown`
+  does. A store that refuses the file (4xx) is still charged and the tick goes on. Otherwise
+  one file the store will never take, such as a proxy's 413, would hold the queue forever.
+  Two unexpected faults in a row also end the tick. `StoreUnavailableError` now carries the
+  store's `storeStatus`.
+- **Token check in the fetch.** `fetchInboundAttachment` checks the token pattern itself
+  before the key is sent. `DOWNLOAD_TOKEN` now lives in `brevo-inbound.ts`.
+- `origin/master` (a3db10808) was merged first; 0089 is still the next free migration.

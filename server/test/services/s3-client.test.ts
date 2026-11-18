@@ -205,6 +205,39 @@ describe('the client, against the fake store', () => {
     expect(await store.head(KEY)).toEqual({ size: 4 });
   });
 
+  it('puts bytes itself, header-signed with their digest — and a body changed in flight is refused (LAI-1315)', async () => {
+    const { fake, store } = client();
+    const bytes = new TextEncoder().encode('%PDF-1.7 a mailed file');
+    await store.put(KEY, bytes, {
+      contentType: 'application/pdf',
+      contentDisposition: 'attachment',
+    });
+    expect(fake.objects.get(KEY)).toMatchObject({
+      contentType: 'application/pdf',
+      contentDisposition: 'attachment',
+    });
+    expect(new TextDecoder().decode(fake.objects.get(KEY)!.body)).toBe('%PDF-1.7 a mailed file');
+    const sent = fake.of('PUT')[0]!;
+    expect(sent.query.has('X-Amz-Signature')).toBe(false);
+    expect(sent.headers.get('authorization')).toMatch(
+      /SignedHeaders=content-disposition;content-type;host;x-amz-content-sha256;x-amz-date,/,
+    );
+
+    // A proxy that swaps the body: the signed digest no longer agrees.
+    const tampering = fakeS3();
+    const inner = tampering.fetchImpl;
+    tampering.fetchImpl = (input, init) =>
+      inner(input, { ...init, body: new TextEncoder().encode('something else') });
+    const { store: tampered } = client(tampering);
+    await expect(
+      tampered.put(KEY, bytes, {
+        contentType: 'application/pdf',
+        contentDisposition: 'attachment',
+      }),
+    ).rejects.toMatchObject({ code: 'unavailable', details: { why: 'PUT answered 403' } });
+    expect(tampering.objects.size).toBe(0);
+  });
+
   it('presigns a GET for five minutes with the response overrides signed', () => {
     const { store } = client();
     const get = store.presignGet(
