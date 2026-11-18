@@ -2985,8 +2985,9 @@
 }
 
 /* On a phone each person is a card, not a clipped table (V9, LAI-1210):
-   name and menu on the first line, role and last active under it. Spaces,
-   tools and last sign-in are on their profile, one tap away. */
+   name and menu on the first line, role and last active under it. Their
+   tools and last sign-in are lines under Last active (LAI-1345); the count
+   of their spaces is not on the card. */
 @media (max-width: 560px) {
   .org-people-table {
     min-width: 0;
