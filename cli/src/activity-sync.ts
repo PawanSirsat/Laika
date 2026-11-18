@@ -44,6 +44,7 @@ import {
 } from './activity-time.ts';
 import { usageRoots, usageStep, type UsageOutcome } from './activity-usage.ts';
 import { readSettings } from './config.ts';
+import { pairCredentials } from './credential-pair.ts';
 import { readEnvFile } from './whoami.ts';
 
 /**
@@ -106,9 +107,14 @@ export interface Credentials {
 }
 
 /**
- * The same order `laika whoami` reads them in: the environment, then
- * `laika init`'s `~/.claude/settings.json`, then `~/.laika/env`. A detached
- * sync started by a hook inherits whatever the agent had.
+ * The person's own board and token, in the order `laika whoami` reads them:
+ * the environment, then `laika init`'s `~/.claude/settings.json`, then
+ * `~/.laika/env`. A detached sync started by a hook inherits whatever the
+ * agent had.
+ *
+ * **As a pair** ({@link pairCredentials}, LAI-1343): the first board named,
+ * and a token only from a source naming that same board — never the
+ * environment's `LAIKA_URL` with another file's token.
  */
 export function findCredentials(
   home: string,
@@ -121,16 +127,12 @@ export function findCredentials(
     settings = undefined;
   }
   const installed = readEnvFile(join(home, '.laika', 'env'));
-  const pick = (key: string): string | undefined => {
-    for (const value of [env[key], settings?.[key], installed[key]]) {
-      if (typeof value === 'string' && value.trim() !== '') return value.trim();
-    }
-    return undefined;
-  };
-  const url = pick('LAIKA_URL');
-  const token = pick('LAIKA_TOKEN');
-  if (url === undefined || token === undefined) return undefined;
-  return { url: normaliseUrl(url), token };
+  const paired = pairCredentials([
+    { from: 'the environment', url: env.LAIKA_URL, token: env.LAIKA_TOKEN },
+    { from: '~/.claude/settings.json', url: settings?.LAIKA_URL, token: settings?.LAIKA_TOKEN },
+    { from: '~/.laika/env', url: installed.LAIKA_URL, token: installed.LAIKA_TOKEN },
+  ]);
+  return paired?.token === undefined ? undefined : { url: paired.url, token: paired.token };
 }
 
 /**

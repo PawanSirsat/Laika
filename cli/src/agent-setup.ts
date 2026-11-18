@@ -85,7 +85,11 @@ async function login(io: AgentIo, argv: readonly string[]): Promise<number> {
   let token: string;
   if (io.isTTY) {
     try {
-      token = (await askSecret('Agent token (shown once when the agent was registered)')).trim();
+      // The board it is for, named (LAI-1343): the URL came from --url, the
+      // environment or ~/.laika/env, and the token is checked and saved there.
+      token = (
+        await askSecret(`Agent token for ${url} (shown once when the agent was registered)`)
+      ).trim();
     } finally {
       closePrompt();
     }
