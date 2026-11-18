@@ -147,6 +147,15 @@ void describe('applyTaskFilter means what the server’s WHERE means', () => {
     assert.equal(applyTaskFilter(SET, { limit: 1, cursor: 'x' }), SET);
     assert.equal(matchesTaskFilter(SET[0]!, { limit: 1 }), true);
   });
+
+  void test('live work unless `archived: only`, which is the archived alone (LAI-1353)', () => {
+    const put = task({ id: '4', archived_at: 400, archived_by: 'ada' });
+    assert.equal(matchesTaskFilter(put, { status: put.status }), false);
+    assert.equal(matchesTaskFilter(put, { archived: 'only' }), true);
+    // A served task with no archive field yet, as older fixtures are, is live.
+    assert.equal(matchesTaskFilter(SET[0]!, { archived: 'only' }), false);
+    assert.equal(matchesTaskFilter(SET[0]!, { status: 'done' }), true);
+  });
 });
 
 /*

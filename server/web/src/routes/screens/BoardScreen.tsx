@@ -67,6 +67,7 @@ import type { ProjectStatus } from '../../api/statuses.ts';
 import { setHideDoneAfter } from '../../api/projects.ts';
 import { spaceSettingsHref } from '../space-settings-url.ts';
 import { BoardInsights } from './board/BoardInsights.tsx';
+import { BoardArchived } from './board/BoardArchived.tsx';
 import { BoardToolbar } from './board/BoardToolbar.tsx';
 import { DeleteColumnDialog } from './board/DeleteColumnDialog.tsx';
 import { HiddenColumnsDialog } from './board/HiddenColumnsDialog.tsx';
@@ -533,6 +534,8 @@ export function BoardScreen({
     undefined,
   );
   const [insightsOpen, setInsightsOpen] = useState(false);
+  /** The Archived panel (LAI-1353), from the toolbar's archive icon. */
+  const [archivedOpen, setArchivedOpen] = useState(false);
   /**
    * Labels to offer in the filter: every label in use **in the project**.
    *
@@ -1201,6 +1204,9 @@ export function BoardScreen({
             onInsights={() => {
               setInsightsOpen(true);
             }}
+            onArchived={() => {
+              setArchivedOpen(true);
+            }}
             onViewSettings={(anchor) => {
               setSettingsAt((at) => (at === undefined ? anchor : undefined));
             }}
@@ -1278,6 +1284,22 @@ export function BoardScreen({
           slug={slug}
           onClose={() => {
             setInsightsOpen(false);
+          }}
+        />
+      )}
+
+      {archivedOpen && slug !== undefined && (
+        <BoardArchived
+          slug={slug}
+          mayRestore={project !== undefined && gates.project(project.id, 'task.archive')}
+          nameOf={(id) => members.get(id)?.name}
+          onOpen={(taskId) => {
+            setArchivedOpen(false);
+            openTaskInUrl(taskId);
+          }}
+          onRestored={refresh}
+          onClose={() => {
+            setArchivedOpen(false);
           }}
         />
       )}
@@ -1624,6 +1646,9 @@ export function BoardScreen({
               mayEdit={mayWrite}
               maySetSprint={
                 boardProjectId !== undefined && gates.project(boardProjectId, 'task.assign_sprint')
+              }
+              mayArchive={
+                boardProjectId !== undefined && gates.project(boardProjectId, 'task.archive')
               }
               onOpen={openTaskInUrl}
               // The space's one Create task dialog (LAI-1167); the List's

@@ -64,6 +64,8 @@ import '../bulk-bar.css';
 import '../../routes/screens/list/list.css';
 import '../../routes/screens/board/sprint-stats.css';
 import '../../routes/screens/board/board-insights.css';
+// LAI-1353: the Archived panel, Insights' shape with rows.
+import '../../routes/screens/board/board-archived.css';
 import '../../routes/screens/board/board-toolbar.css';
 import '../../routes/screens/board/column-editor.css';
 import '../../routes/screens/board/view-settings.css';

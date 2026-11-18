@@ -30,6 +30,7 @@ import {
   type TeamsPost,
   users,
 } from '../db/schema.ts';
+import { liveTask } from '../db/live-task.ts';
 import { type Logger } from '../log.ts';
 import { assertCan, systemPrincipal } from '../policy/can.ts';
 import { decryptSecret } from '../secrets.ts';
@@ -565,24 +566,27 @@ function openBlockers(
   db: Db,
   taskId: string,
 ): { key: string; projectId: string; addedAt: number }[] {
-  return db
-    .select({
-      number: tasks.number,
-      prefix: projects.prefix,
-      projectId: tasks.projectId,
-      addedAt: taskDependencies.createdAt,
-    })
-    .from(taskDependencies)
-    .innerJoin(tasks, eq(tasks.id, taskDependencies.dependsOnTaskId))
-    .innerJoin(projects, eq(projects.id, tasks.projectId))
-    .where(and(eq(taskDependencies.taskId, taskId), sql`${tasks.status} <> 'done'`))
-    .orderBy(asc(taskDependencies.createdAt))
-    .all()
-    .map((b) => ({
-      key: `${b.prefix}-${String(b.number)}`,
-      projectId: b.projectId,
-      addedAt: b.addedAt,
-    }));
+  return (
+    db
+      .select({
+        number: tasks.number,
+        prefix: projects.prefix,
+        projectId: tasks.projectId,
+        addedAt: taskDependencies.createdAt,
+      })
+      .from(taskDependencies)
+      .innerJoin(tasks, eq(tasks.id, taskDependencies.dependsOnTaskId))
+      .innerJoin(projects, eq(projects.id, tasks.projectId))
+      // An archived blocker blocks nothing (LAI-1353).
+      .where(and(eq(taskDependencies.taskId, taskId), sql`${tasks.status} <> 'done'`, liveTask()))
+      .orderBy(asc(taskDependencies.createdAt))
+      .all()
+      .map((b) => ({
+        key: `${b.prefix}-${String(b.number)}`,
+        projectId: b.projectId,
+        addedAt: b.addedAt,
+      }))
+  );
 }
 
 /**
@@ -858,40 +862,43 @@ interface SpaceTask {
 
 /** Every task in a space with what a stand-up reads of it, by number. */
 function spaceTasks(db: Db, projectId: string): SpaceTask[] {
-  return db
-    .select({
-      id: tasks.id,
-      number: tasks.number,
-      title: tasks.title,
-      status: tasks.status,
-      statusName: projectStatuses.name,
-      assigneeId: tasks.assigneeId,
-      assigneeName: users.name,
-      dueOn: tasks.dueOn,
-      staleFlaggedAt: tasks.staleFlaggedAt,
-      updatedAt: tasks.updatedAt,
-      prefix: projects.prefix,
-    })
-    .from(tasks)
-    .innerJoin(projects, eq(projects.id, tasks.projectId))
-    .innerJoin(projectStatuses, eq(projectStatuses.id, tasks.statusId))
-    .leftJoin(users, eq(users.id, tasks.assigneeId))
-    .where(eq(tasks.projectId, projectId))
-    .orderBy(asc(tasks.number))
-    .all()
-    .map((t) => ({
-      id: t.id,
-      key: `${t.prefix}-${String(t.number)}`,
-      number: t.number,
-      title: t.title,
-      status: t.status,
-      statusName: t.statusName,
-      assignee: t.assigneeName ?? 'Unassigned',
-      assigneeId: t.assigneeId,
-      dueOn: t.dueOn,
-      staleFlaggedAt: t.staleFlaggedAt,
-      updatedAt: t.updatedAt,
-    }));
+  return (
+    db
+      .select({
+        id: tasks.id,
+        number: tasks.number,
+        title: tasks.title,
+        status: tasks.status,
+        statusName: projectStatuses.name,
+        assigneeId: tasks.assigneeId,
+        assigneeName: users.name,
+        dueOn: tasks.dueOn,
+        staleFlaggedAt: tasks.staleFlaggedAt,
+        updatedAt: tasks.updatedAt,
+        prefix: projects.prefix,
+      })
+      .from(tasks)
+      .innerJoin(projects, eq(projects.id, tasks.projectId))
+      .innerJoin(projectStatuses, eq(projectStatuses.id, tasks.statusId))
+      .leftJoin(users, eq(users.id, tasks.assigneeId))
+      // The space's work as it stands: archived tasks are put away (LAI-1353).
+      .where(and(eq(tasks.projectId, projectId), liveTask()))
+      .orderBy(asc(tasks.number))
+      .all()
+      .map((t) => ({
+        id: t.id,
+        key: `${t.prefix}-${String(t.number)}`,
+        number: t.number,
+        title: t.title,
+        status: t.status,
+        statusName: t.statusName,
+        assignee: t.assigneeName ?? 'Unassigned',
+        assigneeId: t.assigneeId,
+        dueOn: t.dueOn,
+        staleFlaggedAt: t.staleFlaggedAt,
+        updatedAt: t.updatedAt,
+      }))
+  );
 }
 
 /** Open tasks waiting on something not done, oldest wait first, with what they wait on. */

@@ -11,6 +11,7 @@ import { newId } from '../db/ids.ts';
 import { attachments, comments, projects, tasks } from '../db/schema.ts';
 import { type AttachmentsEnv } from '../env.ts';
 import { ApiError } from '../errors.ts';
+import { assertTaskLive } from './task-archive.ts';
 import { assertCan, can, systemPrincipal } from '../policy/can.ts';
 import { requireProjectBySlug } from './projects.ts';
 import { type StoreClient, storeClient, StoreUnavailableError } from './s3-client.ts';
@@ -340,12 +341,14 @@ export function createAttachment(
   const taskId = taskRef === undefined ? null : resolveTaskRef(db, taskRef, actor);
   if (taskId !== null) {
     const task = db
-      .select({ projectId: tasks.projectId })
+      .select({ projectId: tasks.projectId, archivedAt: tasks.archivedAt })
       .from(tasks)
       .where(eq(tasks.id, taskId))
       .get();
     // Another project's task answers as a missing one: no task id leaks across.
     if (task?.projectId !== project.id) throw ApiError.notFound(`No task "${taskRef ?? ''}"`);
+    // An archived task takes no new file (LAI-1353).
+    assertTaskLive(task);
   }
 
   const now = clockOf(deps);

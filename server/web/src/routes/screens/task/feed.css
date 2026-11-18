@@ -331,6 +331,13 @@
 
 /* ------------------------------------------------------------ composer */
 
+/* An archived task's thread (LAI-1353): read as it stands, no composer. */
+.feed-archived {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
 .feed-empty {
   margin: 0 0 var(--space-3);
   padding-left: calc(36px + var(--space-3));

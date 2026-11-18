@@ -3,6 +3,7 @@ import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type AvailabilityStatus, type ProjectRole } from '../db/enums.ts';
 import { projectMemberships, projects, tasks, timeEntries, users } from '../db/schema.ts';
+import { liveTask } from '../db/live-task.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { visibleProjectIds } from './activity.ts';
@@ -147,11 +148,20 @@ function cardsOf(
   projectIds: readonly string[],
 ): { assigneeId: string | null; status: string; dueOn: number | null }[] {
   if (userIds.length === 0 || projectIds.length === 0) return [];
-  return db
-    .select({ assigneeId: tasks.assigneeId, status: tasks.status, dueOn: tasks.dueOn })
-    .from(tasks)
-    .where(and(inArray(tasks.assigneeId, [...userIds]), inArray(tasks.projectId, [...projectIds])))
-    .all();
+  return (
+    db
+      .select({ assigneeId: tasks.assigneeId, status: tasks.status, dueOn: tasks.dueOn })
+      .from(tasks)
+      // Load is live work: an archived card is nobody's load (LAI-1353).
+      .where(
+        and(
+          inArray(tasks.assigneeId, [...userIds]),
+          inArray(tasks.projectId, [...projectIds]),
+          liveTask(),
+        ),
+      )
+      .all()
+  );
 }
 
 function projectRefs(db: Db, ids: readonly string[]): Map<string, ProjectRef> {

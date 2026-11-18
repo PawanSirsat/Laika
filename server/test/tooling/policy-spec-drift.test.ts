@@ -180,6 +180,8 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
   ['Attach a file', ['attachment.create']],
   ['Remove an attachment', ['attachment.delete']],
   ['Cancel / delete task', ['task.delete']],
+  // LAI-1353.
+  ['Archive or restore a task', ['task.archive']],
   ['Add / remove dependencies', ['task.dependency.write']],
   ['Read tasks, comments, activity, capacity', ['project.read']],
   ['Watch / unwatch a task', ['task.watch']],

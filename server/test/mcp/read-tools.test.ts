@@ -575,6 +575,10 @@ describe('get_project_context', () => {
     // is accepted, so that is the call to make; update_status to the status it
     // already has would be refused.
     expect(rule).toMatch(/also when it is already yours and in progress/);
+    // The owner's rule, word for word as the CLI and the repo block say it (LAI-1360).
+    expect(rule).toContain(
+      'A feature with several parts gets one parent task; file each part as a child (`parent`). Work on an existing feature becomes a new child of its parent. Attach the main outputs to the parent.',
+    );
     expect(rule).not.toMatch(/`update_status` to `in_progress` when it is already yours/);
 
     await client.close();

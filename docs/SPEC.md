@@ -646,6 +646,7 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Attach a file | ✓ | ✓ | — |
 | Remove an attachment | own + any | own | — |
 | Cancel / delete task | ✓ | own-created | — |
+| Archive or restore a task | ✓ (session only) | ✓ (session only) | — |
 | Add / remove dependencies | ✓ | ✓ | — |
 | Read tasks, comments, activity, capacity | ✓ | ✓ | ✓ |
 | Watch / unwatch a task | ✓ | ✓ | ✓ |
@@ -998,6 +999,8 @@ which is the check working on the document it exists to pin.
 | `estimate_hash` | nullable — a hash of everything the model read for the current estimate (title, description, acceptance, tags, what blocks it, its children and the project's model version), so a recompute that would change nothing costs nothing |
 | `selected_agent_id` | nullable FK `agents` (§4.63), `ON DELETE SET NULL` — the registered agent **meant to do the work** (D-114 item 7, LAI-535). Not the assignee and not a claim: selecting one opens a **work request** addressed to it, and changes neither `assignee_id`, `status` nor anything a claim holds; a task can stay human-only. Set by `PATCH /tasks/:id` and `update_task`, and in the create by `POST /projects/:slug/tasks` (`selected_agent_id`) and `create_task` (`agent`) (§6.4, §7.1, LAI-1027), by anyone who may edit the task, to **their own** agent only — active, granted `full` on the project, in a space whose agents may write (the hand-off policy's defaults, proposal §4.5; other members' agents wait for LAI-546). `null` withdraws the request. Under a live claim it may move only to the claim's own holder (§6.4). Served on `TaskView` as `selected_agent` |
 | `handoff_count` | integer, default `0` — **completed** hand-offs of the task: an accepted `handoff` or `recovery` offer adds one in the accept's transaction (§4.73); a work request does not. Compared with the project policy's `max_handoffs` (§4.74). Never decremented (LAI-546) |
+| `archived_at` | nullable — when the task was **archived** (LAI-1353): put away whole, null while it is live. Archiving a parent stamps its subtasks with the same instant, so a restore brings back exactly those. Served on `TaskView` |
+| `archived_by` | nullable FK `users`, `ON DELETE SET NULL` — who archived it; null while it is live. Set and cleared together with `archived_at`. Served on `TaskView` |
 
 **`started_at`** is set the first time a task enters `in_progress` and is never
 moved again. **`completed_at`** is set on **every** arrival at `done`, and is
@@ -1131,7 +1134,8 @@ Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `task.claim_reclaimed`, `task.checkpoint_saved`, `task.handoff_offered`,
 `task.handoff_approved`, `task.handoff_accepted`, `task.handoff_declined`,
 `task.handoff_cancelled`, `task.handoff_expired`, `task.recovered`,
-`agent.capacity_requested`, `attachment.added`, `attachment.removed`.
+`agent.capacity_requested`, `attachment.added`, `attachment.removed`,
+`task.archived`, `task.restored`.
 
 **`task.agent_selected`** (D-114 item 7, LAI-535) is a task's selected agent
 set, changed or cleared — one verb for every direction, payload `{ from, to }`,
@@ -1206,6 +1210,16 @@ was never added, and a file nothing linked belonged to no task. Their own verbs
 because *"who put this file on the task, and when"* is the question. Three
 owners (CLAUDE.md §4.4): this row, the enum and CHECK in migration 0082, and the
 web mirror and its wording — one change (LAI-1300).
+
+**`task.archived` and `task.restored`** (LAI-1353) are a task put away and
+brought back (`PATCH /tasks/:id { archived }`, §6.4). Actor: the person who did
+it — never a token (§3.2). Task-scoped, one row **per task**: archiving a parent
+writes one for each subtask that went with it, payload `{ with_parent }` naming
+the parent; the task asked about writes `{}`. Their own verbs, not
+`task.updated` with a field, because *"who archived this, and when"* is the
+question — and not `task.status_changed`, because the status stays underneath.
+Three owners (CLAUDE.md §4.4): this row, the enum and CHECK in migration 0093,
+and the web mirror and its wording — one change.
 
 **The nine verbs added 2026-09-01 are the same argument, four more times.**
 Sprints, the project context document, unlisted-work triage and deactivation
@@ -5051,8 +5065,10 @@ GET    /api/v1/projects/:slug/context/deliveries   ?revision=&limit=&cursor= →
        └ **each session's latest delivery, not a history** (§4.69 keeps one row per session and project): `data` is [{ session_id, revision, delivered_at, session_ended_at, agent }], newest delivery first; `?revision=N` keeps the sessions whose latest delivery is N, so a session later given N+1 leaves N's list. A revision the project has not reached is 404, as the revision read's. *Delivered* means sent, never read (§4.69). `agent` is `{ id, harness, device_label, display_name, status }` only for the reader's own agent — another person's agent is missing to everyone else (D-121 item 7), so its row carries `agent: null` and no id or label (LAI-1003)
        └ all five context reads follow project read; a project the caller cannot see is answered **exactly as a missing one** — 404 to a person, and to an agent's token the 403 `agent_not_granted` it gets for any slug it may not use (LAI-555)
 GET    /api/v1/projects/:slug/budgets        PUT /api/v1/projects/:slug/budget  body { tokens | null }   (set: lead, session only; LAI-773)
-GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=&fields=
+GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&archived=&updated_since=&cursor=&fields=
                                              status is a category (§4.5), status_id one project status (§4.20);
+                                             live tasks only: archived=only lists the archived ones instead, and with
+                                             updated_since a task archived since then is a §6.3 tombstone (LAI-1353);
                                              fields=slim leaves out description_md, acceptance_md, deliverables, solves and unlocks (LAI-795, LAI-1115)
                                              each task carries `handoff`, its saves and hand-off in brief (LAI-1005), read once
                                              for the page returned, whatever its size and however many `ready=` batches were
@@ -5073,7 +5089,7 @@ PATCH  /api/v1/projects/:slug/tags/:name     rename project-wide (lead+)
 DELETE /api/v1/projects/:slug/tags/:name     remove from every task (lead+); tasks are untouched
 GET    /api/v1/projects/:slug/timeline       ?from=&to=  — sprints with date ranges and their tasks
 POST   /api/v1/projects/:slug/tasks
-GET    /api/v1/tasks                         ?project=&status=&assignee=&sprint=&updated_since=&cursor=&fields= — every project the caller may read
+GET    /api/v1/tasks                         ?project=&status=&assignee=&sprint=&archived=&updated_since=&cursor=&fields= — every project the caller may read
                                              (project.read per project); the per-project list's task shape and order; any other filter is 422 (LAI-887)
 GET    /api/v1/tasks/summary                 /tasks' filters, same set → { total, by_status, by_assignee: [{ user_id|null|'others', name, count }] (top 10, then others), overdue, blocked, unassigned } (LAI-974)
 GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id
@@ -5244,6 +5260,24 @@ three original fields, unchanged.
 `{ title, description_md, acceptance_md, deliverables, solves, unlocks, tags,
 priority, assignee_id, parent_task_id, due_on, planned_start, external_ref,
 selected_agent_id }`.
+
+**`{ archived: true | false }` archives or restores the task** (LAI-1353),
+*Archive or restore a task* in §3.2 — signed in only. It travels **alone**:
+with any other field it is `422` `reason: archived_alone`. Archiving takes the
+task's subtasks with it, releases its live claim, closes its live hand-off
+offers and its open work request `task_closed`, and writes `task.archived` per
+task (§4.8). Restoring brings back the subtasks archived with it, asks the
+selected agent again if the archive closed its request, and writes
+`task.restored`; a subtask whose parent is still archived is `409`
+`reason: parent_archived`. Asking for what the task already is writes nothing.
+**An archived task is read-only**: every other write to it — `PATCH`, a
+status, a claim, a dependency either way, a reorder, a sprint, a comment, a
+file — is `409 conflict` with `reason: archived`. Reads answer as before, with
+`archived_at` and `archived_by` on `TaskView`; it is never `ready`, and as a
+blocker it blocks nothing until restored. Deleting a status is a setting of the
+space, not an edit of the task: an archived task in it is re-filed to the
+status the work moves to, still archived, with a `task.status_changed` row
+`via: status_deleted`.
 **`null` clears a field; absent leaves it alone** — they are different requests,
 and `acceptance_md`, `assignee_id`, `parent_task_id` and both dates draw the
 distinction. `tags` replaces the whole set, and so do `deliverables`, `solves`
@@ -6907,7 +6941,10 @@ makes an agent with no heartbeat hook present (§9.3).
 The instructions stay under 2,048 characters with the must-follow rules in the
 first 512 — claim before code, one task at a time, finish into review never
 done, and D-162's *show your work, never a secret* (LAI-1302), each whole
-sentence inside them, which `test/mcp/server.test.ts` asserts — and those rules are repeated in the descriptions of `start_working`,
+sentence inside them, which `test/mcp/server.test.ts` asserts. The owner's
+parent-and-child rule follows them (LAI-1360): one parent task per feature,
+its parts as children, work on an existing feature as a new child, the main
+outputs on the parent. And those rules are repeated in the descriptions of `start_working`,
 `create_task` and `finish_task` for clients that never show `instructions`.
 `/mcp` answers only `POST`: any other method gets `405` with `Allow: POST`. A
 `401` says whether the `Authorization` header was missing, empty (`Bearer` and
@@ -6938,16 +6975,16 @@ matched.
 | `list_projects` | `{}` | projects the user can read |
 | `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age. On a registered agent's token, also `work_requests`: its open work requests, ready or not, newest first, under the same `project` and `limit`, as `GET /agents/me/work-requests?project=&limit=` answers (LAI-535) — a request, not a claim |
 | `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, what it delivers (`### Delivers (n of m built)` — each Ships item with its state and its id, which `checkpoint_task` and `finish_task` take back — `### Solves`, `### Unlocks`; LAI-1115), `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`), and `estimate` — the size, its *why*, the forecast frozen at start and the actual, as `GET /tasks/:id/estimate` answers (D-085), with the token forecast, what was said at claim, *scope grew* and the split suggestion (LAI-772) — and `similar`: up to five similar finished tasks in the project, closest first, each `{ task_id, key, title, status, similarity, rounds, send_backs: [{ round, reason }] }` — why it was sent back, and nobody's name — and `attachments`: its ready files, oldest first, each `{ id, filename, content_type, size_bytes, inline, caption, url, round, comment_id, uploaded_by, created_at }` — `caption` the text of the first link to it in the task's text and comments, `round` the number of the round whose summary attached it, each or `null` (§4.92, D-162, LAI-1302); `url` is `/api/v1/attachments/<id>/content`, relative to the board. Empty on a board with no store |
-| `get_project_context` | `{ project, since_revision?, session_id? }` | `context_md` with its `revision` — or, with `since_revision`, **no document**: `context_diff` from that revision to the current one (§6.4's diff, truncated past 2,000 changed lines with the same `hint`) — its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770) — and show your work: attach what a person needs to see, captioned, never a secret (D-162). `session_id` is a registered agent's own open session: the revision answered is recorded as **delivered** to it (§4.69) — but not by a truncated diff, which sent none of it |
+| `get_project_context` | `{ project, since_revision?, session_id? }` | `context_md` with its `revision` — or, with `since_revision`, **no document**: `context_diff` from that revision to the current one (§6.4's diff, truncated past 2,000 changed lines with the same `hint`) — its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770) — the owner's parent-and-child rule, *"A feature with several parts gets one parent task; file each part as a child (`parent`). Work on an existing feature becomes a new child of its parent. Attach the main outputs to the parent."* (LAI-1360) — and show your work: attach what a person needs to see, captioned, never a secret (D-162). `session_id` is a registered agent's own open session: the revision answered is recorded as **delivered** to it (§4.69) — but not by a truncated diff, which sent none of it |
 | `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
-| `create_task` | `{ project, title, description?, acceptance?, deliverables?, solves?, unlocks?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref?, agent?, attachments? }` | created task, `created_via: 'mcp'`. `attachments` — mockups, a screenshot of the problem, a repro — are `[{ attachment, caption }]`, files of this project with no task yet, checked before anything is created and added to the description as captioned links (§4.92, D-162). `deliverables` (Ships items, each `{ title, detail?, state? }`), `solves` and `unlocks` are the task's "what this delivers" (§4.5, LAI-1115), filled by the agent that files it. `parent` is a task ref and makes this a subtask, one level only. `external_ref` is an outside id (§4.5). `agent` is a registered agent's id and is `POST /projects/:slug/tasks`'s `selected_agent_id` (§6.4): a work request opened in the create, never an assignment (LAI-1027). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |
+| `create_task` | `{ project, title, description?, acceptance?, deliverables?, solves?, unlocks?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref?, agent?, attachments? }` | created task, `created_via: 'mcp'`. `attachments` — mockups, a screenshot of the problem, a repro — are `[{ attachment, caption }]`, files of this project with no task yet, checked before anything is created and added to the description as captioned links (§4.92, D-162). `deliverables` (Ships items, each `{ title, detail?, state? }`), `solves` and `unlocks` are the task's "what this delivers" (§4.5, LAI-1115), filled by the agent that files it. `parent` is a task ref and makes this a subtask, one level only; the tool tells an agent to file the parts of a feature as children of one parent, to file work on an existing feature as a new child of its parent, and to find that parent first (`get_project_context`, then `get_task_context` for its subtasks) — a small one-off may stand alone (LAI-1360). `external_ref` is an outside id (§4.5). `agent` is a registered agent's id and is `POST /projects/:slug/tasks`'s `selected_agent_id` (§6.4): a work request opened in the create, never an assignment (LAI-1027). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |
 | `update_task` | `{ task, title?, description?, acceptance?, deliverables?, solves?, unlocks?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start?, size?, external_ref?, agent?, claim_generation? }` | task. Every field optional; an omitted one is left alone; `deliverables`, `solves` and `unlocks` each replace the whole list, as `PATCH` does (§6.4, LAI-1115) — keep an item's `id` to keep its state; `null` on `parent`, a date, `size`, `external_ref` or `agent` clears it. **No `status`**. `size` (`XS`–`XL`) overrides the computed size (D-085). `agent` is a registered agent's id and is `PATCH`'s `selected_agent_id` (§6.4): a work request, never an assignment (LAI-535) |
 | `start_working` | `{ task, branch?, estimate?, session_id?, reclaim? }` | task, or `409` with the current assignee. A `branch` is kept on the task (LAI-770). `estimate` is the claimant's own `{ size?, confidence? }` — `XS`–`XL` and `green` \| `yellow` \| `red` — kept in §4.34, scored against what happens, and blended into the forecast only once estimates here beat the project median (LAI-772); a resume keeps none. **The holder's own call on a task already in progress succeeds** as a no-op that keeps the branch it is given and returns the task — no status change, no `activity` row, `started_at` and the frozen estimate untouched — so a session resuming its task can mark it (LAI-770 review, B2); anyone else, and a holder whose task is not in progress, still get `409`. **On a registered agent's token** it also takes the task's exclusive claim (§5, §4.66) and answers `claim` — `{ session_id, generation, lease_expires_at, … }` — beside the task, and **never writes the assignee** (§5); `session_id?` names the session to claim under (absent opens one), and the holder's session calling again renews the lease. A second session — the same agent's, or another agent of the same person — is `409`, `reason: claim_held`. **A task with a selected agent** (§4.5) is claimed only by that agent's sessions — another agent is `409`, `reason: selected_for_another_agent`, with or without `reclaim` (D-119, §6.3). **`reclaim: true`** is the explicit reclaim, `POST /tasks/:id/claim/reclaim`'s twin (§9.1, LAI-541): only it gives an agent whose claim expired a claim again, at `generation + 1` |
 | `update_status` | `{ task, status, note?, claim_generation? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
 | `set_task_sprint` | `{ task, sprint, claim_generation? }` | task. `sprint: null` takes it out of whichever it is in |
 | `add_comment` | `{ task, body, attachments? }` | comment. `attachments` — the error screenshot, the log, the failing report of an incident or a blocker — are `[{ attachment, caption }]`, files of the task's project, added under the comment as captioned links, which the comment then owns (§4.92, D-162) |
-| `finish_task` | `{ task, summary, checklist?, commits?, branch?, pull_request?, tests?, outputs?, claim_generation? }` | task → **`review`**, summary posted as a comment, and a round with the proof, each item `claimed` until GitHub's deliveries confirm it (§4.25, D-082, D-083). A `checklist` line that is a deliverable's id or exact title marks it `done` (§4.5, LAI-1115); the other lines are appended `- [x]` under the summary. `outputs` — what a person needs to see of the result: screenshots, the generated file, a report, a short recording — are `[{ attachment, caption }]`, appended under `**Outputs**` as captioned links, so each belongs to the task, the summary comment and, through its `summary_md`, the round; a file of another project or task refuses the whole finish (§4.92, D-162). Its REST twin `POST /tasks/:id/finish` takes them too. Releases the session's claim (§5) |
+| `finish_task` | `{ task, summary, checklist?, commits?, branch?, pull_request?, tests?, outputs?, claim_generation? }` | task → **`review`**, summary posted as a comment, and a round with the proof, each item `claimed` until GitHub's deliveries confirm it (§4.25, D-082, D-083). A `checklist` line that is a deliverable's id or exact title marks it `done` (§4.5, LAI-1115); the other lines are appended `- [x]` under the summary. `outputs` — what a person needs to see of the result: screenshots, the generated file, a report, a short recording — are `[{ attachment, caption }]`, appended under `**Outputs**` as captioned links, so each belongs to the task, the summary comment and, through its `summary_md`, the round; a file of another project or task refuses the whole finish (§4.92, D-162). On a child task they are only its own; a feature's main outputs go on the parent, through `add_comment`'s `attachments` there (LAI-1360). Its REST twin `POST /tasks/:id/finish` takes them too. Releases the session's claim (§5) |
 | `create_sprint` | `{ project, name, goal?, start_date, end_date, status? }` | created sprint, with the id the other sprint tools take |
 | `update_sprint` | `{ sprint, name?, goal?, start_date?, end_date?, status? }` | sprint. Completing one **does not move its tasks** (§4.15, D-013) |
 | `update_project_context` | `{ project, context_md, mode, base_revision? }` | the document's new revision and length. `mode` is `replace` or `append`. `replace` must name the `base_revision` it replaces (absent is `422`, after the permission check); a stale one is `conflict`, `reason: stale_context_revision`, and nothing changes. `append` is computed from the current document inside the write, so two appends both land (LAI-555) |

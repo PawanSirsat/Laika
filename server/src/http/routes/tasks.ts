@@ -14,9 +14,11 @@ import {
   listTasks,
   removeTaskDependency,
   reorderTask,
+  setTaskArchived,
   startWorking,
   SIZE_LEVELS,
   summariseAllTasks,
+  TASK_ARCHIVED_FILTERS,
   TASK_LIST_FIELDS,
   TASK_PRIORITIES,
   TASK_STATUSES,
@@ -43,7 +45,7 @@ import { getTaskTime, type TaskTimeView } from '../../services/task-time.ts';
 import { getTaskUsage, type TaskUsageView } from '../../services/token-usage.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
-import { parseUpdatedSince } from '../updated-since.ts';
+import { parseUpdatedSince, tombstone, type WithTombstones } from '../updated-since.ts';
 import { unwatchTask, watchersOfTask, watchTask } from '../../services/watchers.ts';
 import { parseBody, parseQuery, strictObject, z } from '../validation.ts';
 
@@ -140,6 +142,8 @@ const UpdateBody = strictObject({
   // The agent meant to do it (D-114, LAI-535); `null` withdraws the request.
   // Eligibility is the service's, and answers `422` with the reason.
   selected_agent_id: z.string().min(1).max(64).nullable().optional(),
+  // Put away or bring back (LAI-1353) — sent on its own, see the handler.
+  archived: z.boolean().optional(),
 });
 
 /** One strong ETag exactly as a read sent it. `*`, a weak `W/` tag or a list is not one. */
@@ -229,6 +233,7 @@ const AllTasksQuery = strictObject({
   cursor: z.string().optional(),
   updated_since: z.string().optional(),
   fields: z.string().optional(),
+  archived: z.string().optional(),
   project: z.string().optional(),
   status: z.string().optional(),
   assignee: z.string().optional(),
@@ -303,6 +308,27 @@ function parseEnum<T extends string>(
   throw ApiError.badRequest(`${name} must be one of ${allowed.join(', ')}`, { [name]: raw });
 }
 
+/**
+ * A page of task views as a list sends it (LAI-571, LAI-795, LAI-1353): each
+ * row with its ETag, slim or whole — and, when the caller did not ask for
+ * archived tasks, an archived one as a §6.3 tombstone. Only `updated_since`
+ * reads one back (`sharedConditions`), so a client catching up learns the
+ * task left its list.
+ */
+function listedPage(
+  page: Page<TaskView>,
+  fields: (typeof TASK_LIST_FIELDS)[number] | undefined,
+  archived: (typeof TASK_ARCHIVED_FILTERS)[number] | undefined,
+): Page<WithTombstones<ListedTaskView | ListedTaskSummaryView>> {
+  const row = fields === 'slim' ? listedTaskSummary : listedTask;
+  return {
+    ...page,
+    data: page.data.map((view) =>
+      archived === undefined && view.archived_at !== null ? tombstone(view.id) : row(view),
+    ),
+  };
+}
+
 export interface TaskRouteOptions {
   db: Db;
   sqlite: Database.Database;
@@ -318,6 +344,9 @@ export function projectTaskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
     const { limit, cursor } = parsePageQuery(c.req.query());
     // `slim` leaves out the two texts (LAI-795); absent, the answer is unchanged.
     const fields = parseEnum(c.req.query('fields'), TASK_LIST_FIELDS, 'fields');
+
+    // The space's Archived view (LAI-1353).
+    const archived = parseEnum(c.req.query('archived'), TASK_ARCHIVED_FILTERS, 'archived');
 
     const rows = listTasks(db, actor, c.req.param('slug'), {
       limit,
@@ -340,6 +369,7 @@ export function projectTaskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
       assignee: c.req.query('assignee'),
       sprint: c.req.query('sprint'),
       ready: parseReady(c.req.query('ready')),
+      archived,
     });
 
     const page: Page<TaskView> = buildPage(rows, limit, (row) => ({
@@ -348,13 +378,7 @@ export function projectTaskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
     }));
 
     // Each row carries its own ETag (LAI-571), from the full view either way.
-    if (fields === 'slim') {
-      return c.json({
-        ...page,
-        data: page.data.map(listedTaskSummary),
-      } satisfies Page<ListedTaskSummaryView>);
-    }
-    return c.json({ ...page, data: page.data.map(listedTask) } satisfies Page<ListedTaskView>);
+    return c.json(listedPage(page, fields, archived));
   });
 
   app.post('/:slug/tasks', async (c) => {
@@ -380,6 +404,7 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
     const { limit, cursor } = parsePageQuery(query);
     const fields = parseEnum(query.fields, TASK_LIST_FIELDS, 'fields');
     const given = (raw: string | undefined) => (raw === '' ? undefined : raw);
+    const archived = parseEnum(query.archived, TASK_ARCHIVED_FILTERS, 'archived');
 
     const rows = listAllTasks(db, actor, {
       limit,
@@ -389,6 +414,7 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
       status: parseEnum(query.status, TASK_STATUSES, 'status'),
       assignee: given(query.assignee),
       sprint: given(query.sprint),
+      archived,
     });
 
     const page: Page<TaskView> = buildPage(rows, limit, (row) => ({
@@ -397,13 +423,7 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
     }));
 
     // Each row carries its own ETag (LAI-571), from the full view either way.
-    if (fields === 'slim') {
-      return c.json({
-        ...page,
-        data: page.data.map(listedTaskSummary),
-      } satisfies Page<ListedTaskSummaryView>);
-    }
-    return c.json({ ...page, data: page.data.map(listedTask) } satisfies Page<ListedTaskView>);
+    return c.json(listedPage(page, fields, archived));
   });
 
   // The figures for exactly what `GET /` pages through, with the same filters
@@ -421,6 +441,7 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
         status: parseEnum(query.status, TASK_STATUSES, 'status'),
         assignee: given(query.assignee),
         sprint: given(query.sprint),
+        archived: parseEnum(query.archived, TASK_ARCHIVED_FILTERS, 'archived'),
       }),
     );
   });
@@ -433,11 +454,26 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
 
   app.patch('/:id', async (c) => {
     const actor = requireActor(c);
-    const body = parseBody(UpdateBody, await c.req.json().catch(() => null));
+    const { archived, ...fields } = parseBody(UpdateBody, await c.req.json().catch(() => null));
     const expectedVersion = parseIfMatch(c.req.header('If-Match'));
 
+    // **Archiving is its own write** (LAI-1353), with its own right and its
+    // own verb, so it travels alone: an edit riding with it would be refused
+    // by the read-only rule on one side of it and not the other.
+    if (archived !== undefined) {
+      if (Object.keys(fields).length > 0) {
+        throw new ApiError('unprocessable', 'Send archived on its own, without other fields', {
+          field: 'archived',
+          reason: 'archived_alone',
+        });
+      }
+      const task = setTaskArchived(db, actor, c.req.param('id'), archived);
+      c.header('ETag', taskEtag(task));
+      return c.json(task);
+    }
+
     const task = updateTask(db, actor, c.req.param('id'), {
-      ...body,
+      ...fields,
       expected_version: expectedVersion,
     });
     c.header('ETag', taskEtag(task));

@@ -3,6 +3,7 @@ import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
 import { agentProjectGrants, agents, handoffOffers, projects, tasks, users } from '../db/schema.ts';
+import { liveTask } from '../db/live-task.ts';
 import { AGENT_NOT_FOUND, ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { claimInForce } from './claims.ts';
@@ -342,6 +343,9 @@ export function listOwnWorkRequests(
     inArray(tasks.projectId, readable),
     eq(handoffOffers.kind, 'work_request'),
     eq(handoffOffers.state, 'open'),
+    // Archiving cancels these (LAI-1353); this keeps one written before that
+    // out of the inbox all the same.
+    liveTask(),
   ];
   if (options.cursor !== null) {
     const key = Number(options.cursor.sortKey);

@@ -45,6 +45,8 @@ export interface WorkFilter {
   readonly space?: string;
   /** A sprint id, or `none` for work in no sprint. */
   readonly sprint?: string;
+  /** `only`: the archived tasks instead of the live ones (LAI-1353). */
+  readonly archived?: 'only';
 }
 
 /** The categories `GET /tasks?status=` takes, in board order, as the page names them. */
@@ -57,7 +59,15 @@ export const STATUS_FILTERS: readonly { readonly value: TaskStatus; readonly lab
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
-const KEYS = ['person', 'status', 'space', 'sprint'] as const;
+/**
+ * **Archived, as a choice of the Status filter** (LAI-1353). Not a status —
+ * a task keeps its status underneath — so it is its own key in the address,
+ * `?archived=only`, and the server's own filter; the dropdown just offers it
+ * last, where a reader looks for "where did it go".
+ */
+export const ARCHIVED_CHOICE = 'archived';
+
+const KEYS = ['person', 'status', 'space', 'sprint', 'archived'] as const;
 type WorkKey = (typeof KEYS)[number];
 
 function isStatus(value: string): value is TaskStatus {
@@ -73,6 +83,9 @@ export function readWorkFilter(params: URLSearchParams): WorkFilter {
       // An unknown category would be refused `400`; a hand-edited URL reads
       // as no status filter instead.
       if (isStatus(value)) filter.status = value;
+    } else if (key === 'archived') {
+      // `only` is the one value the server takes; anything else is no filter.
+      if (value === 'only') filter.archived = 'only';
     } else {
       filter[key] = value;
     }
@@ -114,6 +127,7 @@ export function allTasksFilter(
     ...(filter.status === undefined ? {} : { status: filter.status }),
     ...(filter.space === undefined ? {} : { project: filter.space }),
     ...(filter.sprint === undefined ? {} : { sprint: filter.sprint }),
+    ...(filter.archived === undefined ? {} : { archived: filter.archived }),
     limit: size,
   };
 }
@@ -124,6 +138,20 @@ export function allTasksFilter(
  * zero the rest and leave nothing to switch to; the chosen tile is pressed
  * instead, and the pager reads its count from `by_status`.
  */
+/**
+ * The Status dropdown's value and what choosing one changes (LAI-1353):
+ * *Archived* sets `archived` and clears the status, any status clears it.
+ */
+export function statusChoiceOf(filter: WorkFilter): string {
+  return filter.archived === 'only' ? ARCHIVED_CHOICE : (filter.status ?? '');
+}
+
+export function statusChoiceChange(value: string): { status: string; archived: string } {
+  return value === ARCHIVED_CHOICE
+    ? { status: '', archived: 'only' }
+    : { status: value, archived: '' };
+}
+
 export function summaryFilter(filter: WorkFilter): Omit<AllTasksFilter, 'limit' | 'cursor'> {
   const { status: _status, limit: _limit, ...rest } = allTasksFilter(filter);
   return rest;

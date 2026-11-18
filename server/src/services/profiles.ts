@@ -35,6 +35,7 @@ import {
   tokens,
   users,
 } from '../db/schema.ts';
+import { liveTask } from '../db/live-task.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { readLoggedKinds } from './analytics-views.ts';
@@ -743,32 +744,35 @@ interface TheirTask {
 
 /** Every task assigned to them, in-progress work oldest start first. */
 function loadTheirTasks(db: Db, userId: string): TheirTask[] {
-  return db
-    .select({
-      id: tasks.id,
-      number: tasks.number,
-      title: tasks.title,
-      status: tasks.status,
-      statusName: projectStatuses.name,
-      startedAt: tasks.startedAt,
-      completedAt: tasks.completedAt,
-      createdAt: tasks.createdAt,
-      dueOn: tasks.dueOn,
-      projectId: tasks.projectId,
-      projectSlug: projects.slug,
-      prefix: projects.prefix,
-    })
-    .from(tasks)
-    .innerJoin(projects, eq(projects.id, tasks.projectId))
-    .innerJoin(projectStatuses, eq(projectStatuses.id, tasks.statusId))
-    .where(eq(tasks.assigneeId, userId))
-    .all()
-    .sort(
-      (a, b) =>
-        (a.startedAt ?? Number.MAX_SAFE_INTEGER) - (b.startedAt ?? Number.MAX_SAFE_INTEGER) ||
-        a.prefix.localeCompare(b.prefix) ||
-        a.number - b.number,
-    );
+  return (
+    db
+      .select({
+        id: tasks.id,
+        number: tasks.number,
+        title: tasks.title,
+        status: tasks.status,
+        statusName: projectStatuses.name,
+        startedAt: tasks.startedAt,
+        completedAt: tasks.completedAt,
+        createdAt: tasks.createdAt,
+        dueOn: tasks.dueOn,
+        projectId: tasks.projectId,
+        projectSlug: projects.slug,
+        prefix: projects.prefix,
+      })
+      .from(tasks)
+      .innerJoin(projects, eq(projects.id, tasks.projectId))
+      .innerJoin(projectStatuses, eq(projectStatuses.id, tasks.statusId))
+      // The work they hold now: an archived task is put away (LAI-1353).
+      .where(and(eq(tasks.assigneeId, userId), liveTask()))
+      .all()
+      .sort(
+        (a, b) =>
+          (a.startedAt ?? Number.MAX_SAFE_INTEGER) - (b.startedAt ?? Number.MAX_SAFE_INTEGER) ||
+          a.prefix.localeCompare(b.prefix) ||
+          a.number - b.number,
+      )
+  );
 }
 
 function toProfileTask(task: TheirTask, reviewSince: number | null = null): ProfileTask {
@@ -1113,6 +1117,7 @@ function queueFor(db: Db, userId: string): ProfileQueue {
         ),
         eq(tasks.status, 'review'),
         or(isNull(tasks.assigneeId), ne(tasks.assigneeId, userId)),
+        liveTask(),
       ),
     )
     .all();

@@ -16,6 +16,9 @@ import { effectiveSelection, pageState, selectAll, toggleOne, togglePage } from 
 import { runBulkAction, statusChoices, type BulkAction, type BulkRun } from './list-bulk.ts';
 import { anchorOf, ListMenu, type MenuAnchor } from './ListMenu.tsx';
 import { BulkBar } from './BulkBar.tsx';
+import { setTaskArchived } from '../../../api/tasks.ts';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
+import { bulkArchivedToast } from '../task/archive-model.ts';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { agentDevice, agentProductName, selectedHarness } from '../../../api/selected-agent.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
@@ -61,6 +64,8 @@ export interface ListViewProps {
    */
   readonly mayEdit: boolean;
   readonly maySetSprint: boolean;
+  /** `task.archive` here (LAI-1353): the bulk bar's *Archive*. */
+  readonly mayArchive?: boolean | undefined;
   readonly onOpen: (taskId: string) => void;
   readonly onAdd: () => void;
   /**
@@ -132,6 +137,7 @@ export function ListView({
   canAdd,
   mayEdit,
   maySetSprint,
+  mayArchive = false,
   onOpen,
   onAdd,
   sort,
@@ -199,6 +205,7 @@ export function ListView({
   >(undefined);
   const menuTask = statusMenu === undefined ? undefined : byId.get(statusMenu.id);
 
+  const toast = useToast();
   const runBulk = (action: BulkAction): void => {
     const chosen = [...effective].flatMap((id) => {
       const task = byId.get(id);
@@ -206,8 +213,23 @@ export function ListView({
     });
     // One request per task, in selection order, the report by key — the
     // shared run (`runBulkAction`), so Work counts exactly as the List does.
-    void runBulkAction(action, chosen, onBulkRun).then(() => {
+    void runBulkAction(action, chosen, onBulkRun).then((outcome) => {
       onChanged();
+      // **Archived rows leave the List, and the bar and its report with
+      // them** (LAI-1353), so a toast says what went — and Undo brings each
+      // back. A refusal is still in the report, whose rows stayed.
+      if (action.kind !== 'archive' || outcome.done.length === 0) return;
+      const count = outcome.done.length;
+      toast.show({
+        text: bulkArchivedToast(count),
+        tone: 'info',
+        mark: 'data-archive-toast',
+        undo: async () => {
+          for (const id of outcome.done) await setTaskArchived(id, false);
+          onChanged();
+          return `${String(count)} ${count === 1 ? 'task is' : 'tasks are'} back on the board`;
+        },
+      });
     });
   };
 
@@ -627,6 +649,7 @@ export function ListView({
             sprints={sprints}
             sprintLabels={sprintLabels}
             maySetSprint={maySetSprint}
+            mayArchive={mayArchive}
             run={bulkRun}
             onAction={runBulk}
             onDismissReport={() => {
