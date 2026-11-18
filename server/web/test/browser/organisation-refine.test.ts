@@ -440,13 +440,15 @@ void describe('Roles & permissions is a summary, with the inventory on request',
 });
 
 void describe('a wide table says it scrolls', () => {
-  // At 768, not 390: since LAI-1210 a phone gets each person as a card and
-  // nothing to scroll (organisation-tabs.test.ts asserts that); a tablet still
-  // gets the wide table, so this is where the cue is needed.
-  void test('at 768 the People table is a focusable region with a hint, and arrows scroll it', async () => {
+  // At 640, not 390 or 768: since LAI-1210 a phone gets each person as a card
+  // and nothing to scroll (organisation-tabs.test.ts asserts that), and since
+  // LAI-1345 a 768 tablet's table fits by dropping two columns (682px of room
+  // against a 648px floor). A large phone still gets the wide table — 570px
+  // of room — so this is where the cue is needed.
+  void test('at 640 the People table is a focusable region with a hint, and arrows scroll it', async () => {
     const h = await open('/organisation?tab=people', OWNER(), {
       before: async (page) => {
-        await page.setViewportSize({ width: 768, height: 900 });
+        await page.setViewportSize({ width: 640, height: 900 });
       },
     });
     try {
@@ -469,9 +471,10 @@ void describe('a wide table says it scrolls', () => {
     }
   });
 
-  // The owner, 2026-11-18 (LAI-1345): below 1600 the hub's sections are one
-  // strip above the page, so a laptop's People table needs no sideways scroll.
-  void test('at 1280 People fits with no sideways scroll, and the strip reaches every section', async () => {
+  // The owner, 2026-11-18 (LAI-1345): "side menu, table adapts". A laptop
+  // keeps the hub's sections down the side, and People's table makes room
+  // for it rather than scroll sideways.
+  void test('at 1280 the sections are a side menu with their headings, People fits with no sideways scroll, and every section is reachable', async () => {
     const h = await open('/organisation?tab=people', OWNER(), {
       before: async (page) => {
         await page.setViewportSize({ width: 1280, height: 900 });
@@ -488,22 +491,47 @@ void describe('a wide table says it scrolls', () => {
       );
       assert.ok(sideways <= 0, `the page scrolls ${String(sideways)}px sideways`);
 
-      // A strip above the page, not a column beside it.
+      // A column beside the page, not a strip above it.
       const [nav, body] = await Promise.all([
         h.page.locator('.org-nav').boundingBox(),
         h.page.locator('.org-body').boundingBox(),
       ]);
       assert.ok(nav !== null && body !== null);
-      assert.ok(nav.y + nav.height <= body.y + 1, 'the sections are not above the page');
+      assert.ok(nav.x + nav.width <= body.x, 'the sections are not beside the page');
+      assert.ok(Math.abs(nav.y - body.y) <= 1, 'the sections do not start level with the page');
+      assert.ok(nav.height > nav.width, 'the sections are not a column');
 
-      // Every section in it is reachable: scrolled to, opened, and the page it
-      // names is the one shown — attached, since a page this fixture has no
-      // data for (Time) draws nothing to be seen.
+      // Each group's heading is in sight, and its items sit indented under it.
+      const groups = await h.page
+        .locator('.org-nav-group:has(.org-nav-heading)')
+        .evaluateAll((els) =>
+          els.map((el) => {
+            const heading = el.querySelector('.org-nav-heading')!.getBoundingClientRect();
+            const item = el.querySelector('.org-nav-item')!.getBoundingClientRect();
+            return {
+              name: el.querySelector('.org-nav-heading')!.textContent ?? '',
+              heading: { x: heading.x, width: heading.width, height: heading.height },
+              itemX: item.x,
+            };
+          }),
+        );
+      assert.deepEqual(
+        groups.map((g) => g.name),
+        ['Workspace', 'People & access', 'Connections', 'Records'],
+      );
+      for (const g of groups) {
+        assert.ok(g.heading.width > 40 && g.heading.height > 8, `${g.name}'s heading is hidden`);
+        assert.ok(g.itemX >= g.heading.x + 8, `${g.name}'s items are not indented under it`);
+      }
+
+      // Every section in it is reachable: opened, and the page it names is
+      // the one shown — attached, since a page this fixture has no data for
+      // (Time) draws nothing to be seen.
       const ids = await h.page
         .locator('.org-nav .page-tab')
         .evaluateAll((els) => els.map((el) => el.getAttribute('data-tab') ?? ''));
       for (const id of ['overview', 'general', 'people', 'integrations', 'ai', 'work']) {
-        assert.ok(ids.includes(id), `${id} is not in the strip: ${ids.join(', ')}`);
+        assert.ok(ids.includes(id), `${id} is not in the menu: ${ids.join(', ')}`);
       }
       for (const id of ids) {
         const item = h.page.locator(`.org-nav .page-tab[data-tab="${id}"]`);
@@ -523,11 +551,12 @@ void describe('a wide table says it scrolls', () => {
   });
 
   // LAI-1345 review: the strip is the one tab strip (LAI-1193) — a mouse sees
-  // where it scrolls, the keyboard has one stop and the arrow keys.
-  void test('at 1280 the strip fades where it scrolls, is one tab stop, and the arrows move between sections', async () => {
+  // where it scrolls, the keyboard has one stop and the arrow keys. At 800,
+  // below tablet (900px), where the side menu folds into the row.
+  void test('at 800 the strip fades where it scrolls, is one tab stop, and the arrows move between sections', async () => {
     const h = await open('/organisation', OWNER(), {
       before: async (page) => {
-        await page.setViewportSize({ width: 1280, height: 900 });
+        await page.setViewportSize({ width: 800, height: 900 });
       },
     });
     try {
@@ -582,4 +611,69 @@ void describe('a wide table says it scrolls', () => {
       await h.close();
     }
   });
+});
+
+// LAI-1345: beside the side menu, People's table answers to its own room.
+// At 1440 every column shows; narrower, Last sign-in steps out first, then
+// Tools running — out of sight, still read, and named in Last active's
+// tooltip.
+void describe("People's columns adapt to the room beside the side menu", () => {
+  const columns = async (h: Awaited<ReturnType<typeof open>>) =>
+    h.page.locator('.org-people-header [role="columnheader"]').evaluateAll((els) =>
+      els.map((el) => ({
+        name: (el.textContent ?? '').trim(),
+        shown: el.getBoundingClientRect().width > 1,
+      })),
+    );
+
+  for (const [width, out] of [
+    [1440, []],
+    [1366, ['Last sign-in']],
+    [1280, ['Tools running', 'Last sign-in']],
+  ] as const) {
+    void test(`at ${String(width)} ${out.length === 0 ? 'every column shows' : `${out.join(' and ')} ${out.length === 1 ? 'steps' : 'step'} out, still read`}`, async () => {
+      const h = await open('/organisation?tab=people', OWNER(), {
+        before: async (page) => {
+          await page.setViewportSize({ width, height: 900 });
+        },
+      });
+      try {
+        await ready(h);
+        await h.page.waitForTimeout(300);
+        const all = await columns(h);
+        // Every header is still in the table — the screen reader's view.
+        assert.deepEqual(
+          all.map((c) => c.name),
+          [
+            '',
+            'Person',
+            'Role',
+            'Spaces',
+            'Tools running',
+            'Last active',
+            'Last sign-in',
+            'Actions',
+          ],
+        );
+        assert.deepEqual(
+          all.filter((c) => !c.shown && c.name !== 'Actions').map((c) => c.name),
+          [...out],
+        );
+        assert.equal(
+          await h.page.locator('[data-scroll-region]').first().getAttribute('data-overflow'),
+          'false',
+        );
+
+        // What stepped out is still on the row, for hover and for a reader.
+        const tomas = h.page.locator(rows, { hasText: 'Tomas Nel' });
+        assert.equal(
+          await tomas.locator('[data-last-active]').getAttribute('title'),
+          'Tools running: 0\nLast sign-in: 3h ago',
+        );
+        assert.equal((await tomas.locator('[data-last-sign-in]').textContent())?.trim(), '3h ago');
+      } finally {
+        await h.close();
+      }
+    });
+  }
 });
