@@ -5,8 +5,9 @@ area: web
 assignee: chief
 priority: p2
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-18T07:47:00Z
+finished: 2026-11-18T07:55:00Z
 ---
 
 ## Goal
@@ -28,7 +29,19 @@ bigger, but not much. CHIEF dispatched it to builder session laika-c4.
 
 ## Acceptance criteria
 
-- [ ] No *Spaces /* crumb on any space page
-- [ ] The mark is one size larger and stays aligned with the name
-- [ ] Screenshots in light and dark, at 1440 and 390
-- [ ] CI green; CHIEF releases to master and Ksage
+- [x] No *Spaces /* crumb on any space page
+- [x] The mark is one size larger and stays aligned with the name
+- [x] Screenshots in light and dark, at 1440 and 390
+- [x] CI green; CHIEF releases to master and Ksage
+
+## Build notes
+
+- **On a phone the mark stays hidden.** Below 640px, `space.css` already hid `.space-icon` for
+  a compact title, before this change, and that rule is unchanged. So at 390 the change is the
+  crumb gone: the space's name starts the page.
+- **The crumb's styles are removed.** That is `.space-crumbs*`, and the phone rule that hid
+  it.
+- **The tests.** space-header now asserts no breadcrumb on all eight tabs, and that the
+  name's box is the same on each. header-actions asserts there is no breadcrumb nav and no
+  *Spaces* in the space bar, and that the identity row is the first thing in it. space-bar,
+  board-bands and loading-sweep needed no change and pass.
