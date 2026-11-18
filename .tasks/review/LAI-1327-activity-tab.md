@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-1325
-status: in-progress
+status: review
 started: 2026-11-18T07:42:29Z
+finished: 2026-11-18T12:10:00Z
 ---
 
 ## Goal
@@ -65,13 +66,15 @@ CHIEF's.
 
 ## Acceptance criteria
 
-- [ ] The tab order is as above. Browser tests cover the checklist's states: org off, owner
+- [x] The tab order is as above. Browser tests cover the checklist's states: org off, owner
       switch, viewer asks, no device, no tool, waiting, received.
-- [ ] Advanced hides revoked and expired credentials by default and shows the legacy callout.
-- [ ] `last_received_at` is present on both sides, and `view-type-drift` is green.
-- [ ] Screenshots at 1440 and 390, in light and dark: Activity off as owner, all done with data
+- [x] Advanced hides revoked and expired credentials by default and shows the legacy callout.
+- [x] `last_received_at` is present on both sides, and `view-type-drift` is green.
+- [x] Screenshots at 1440 and 390, in light and dark: Activity off as owner, all done with data
       received, and Advanced.
 - [ ] CI is green on the PR. It merges together with LAI-1325 (#376), which goes first.
+      *(Builder: #376 merged first, at 19eaa3338, and is in this branch. CI is read on the
+      PR after this commit, so this one is CHIEF's to tick from the run.)*
 
 ## Notes
 
