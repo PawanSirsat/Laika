@@ -609,8 +609,11 @@ describe("a registered agent's token, as `laika tool add` saves it (LAI-1325)", 
    * `laika tool add` — holds no personal token, only its tools' own: a
    * registered agent's token acting as the person who paired it. The CLI's
    * collector sends with that one (`cli/src/activity-sync.ts`,
-   * `machineCredentials`), so the board taking it for **exactly the
-   * collector's actions** — and no more — is a contract, held here.
+   * `machineCredentials`), so two things are a contract, held here: **the
+   * collector's routes take it**, and turning collection on, reading back and
+   * erasing stay session only, refused to it as to any token. (An agent's
+   * token keeps other org actions besides — `AGENT_TOKEN_ORG_ACTIONS` — which
+   * this does not assert.)
    */
   async function toolToken(): Promise<string> {
     const created = (await ok(
@@ -681,7 +684,7 @@ describe("a registered agent's token, as `laika tool add` saves it (LAI-1325)", 
     );
   });
 
-  it('is refused what is not the collector’s: consent, and reading back or erasing what was held', async () => {
+  it('is refused consent, and reading back or erasing what was held: session only', async () => {
     switchOn(true, false);
     const secret = await toolToken();
     for (const [path, method, body] of [

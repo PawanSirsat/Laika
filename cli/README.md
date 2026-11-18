@@ -684,7 +684,9 @@ shell-profile line. It writes six variables into `~/.claude/settings.json`'s
 `~/.laika/env` each time it runs — or, with no personal token for this board
 there, this machine's own Claude Code credential,
 `~/.laika/agents/claude-code.json` (LAI-1325) — and prints the `Authorization`
-header. **The token is never written**, into settings.json or the script. A key you already
+header. **The token is never written**, into settings.json or the script. A
+machine whose only tool is Codex or Cursor sends its activity but not these
+metrics, and `on` says so. A key you already
 set to another value is left as you set it, and `on` says so; `off` removes
 only what `on` added, each key only while it still holds `on`'s value.
 `laika activity status` says whether telemetry reaches the board — not set up,
@@ -760,16 +762,20 @@ one — `~/.laika/env`, `laika init`'s `~/.claude/settings.json`, or
 activity sends with **this machine's own connection**: the credential
 `laika tool add` saved for one of its tools, `~/.laika/agents/<tool>.json` —
 Claude Code's first, then the others by name — and only one for the board
-activity is on for. `on` says when it does. The board takes a tool's token for
-exactly the collector's actions — reading whether collection is on, sending
-reports and telemetry, Time's settings and drafts — and refuses it everything
-else: it can never turn collection on, nor read back or erase what was sent.
+activity is on for. `on` says when it does. The collector's routes take a
+tool's token — reading whether collection is on, sending reports and telemetry,
+Time's settings and drafts — while turning collection on, reading back and
+erasing are session only, refused to any token. A token that is a tool's own
+(`laika-claude` puts Claude Code's in `LAIKA_TOKEN`) is named as that tool's,
+and for the board a tool's file names, the file wins over an environment
+variable: that copy goes stale when the tool is added again.
 With neither, `on` names the fix: `laika device pair`, then
 `laika tool add claude-code`, or a personal token in `~/.laika/env`.
 
 **Which board.** The one `laika activity on` was run against, recorded in
-`state.json`, with that board's token (from `~/.laika/env` first, this
-machine's tool credential for it last). A session
+`state.json`, with that board's token (from `~/.laika/env` first, then
+`~/.claude/settings.json`, then this machine's tool credential for that board,
+then the environment). A session
 whose environment points at a different board sends nothing — neither to that
 board nor to the recorded one — and wipes nothing; `status` says why. Running
 `on` against another board starts over: what was counted for one board is never
