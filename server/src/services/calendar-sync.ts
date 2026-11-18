@@ -771,6 +771,10 @@ function reconcileAway(
       .all()
       .map((row) => [row.eventId, row]),
   );
+  // An all-day span is kept as Graph gives it: its start and end **assumed**
+  // to be UTC midnights standing for dates, under the read's
+  // `Prefer: outlook.timezone="UTC"` (§4.107). Capacity reads them as dates
+  // (`outlookAwayFor`); to be checked live on Ksage after release.
   const seen = new Set<string>();
   for (const e of away) {
     seen.add(e.id);

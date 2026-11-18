@@ -1,12 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { newId } from '../../src/db/ids.ts';
-import { calendarAway, timeEntries, users, userTimeSettings } from '../../src/db/schema.ts';
+import { CALENDAR_AWAY_RETENTION_DAYS, pruneTime } from '../../src/jobs/jobs.ts';
+import {
+  calendarAway,
+  orgCalendarSource,
+  timeEntries,
+  users,
+  userTimeSettings,
+} from '../../src/db/schema.ts';
 import {
   meetingMinutesThisWeek,
+  OUTLOOK_AWAY_STALE_MS,
   outlookAwayFor,
   weekOf,
 } from '../../src/services/capacity-calendar.ts';
-import { freshDb, seed, type TestDb } from '../helpers/db.ts';
+import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 
 /**
  * What Capacity reads of the calendar (LAI-1331): who Outlook shows out of
@@ -19,6 +27,25 @@ const NOW = Date.UTC(2026, 10, 18, 12);
 const H = 3_600_000;
 
 let t: TestDb;
+let s: Seed;
+
+/** The Outlook connection, saved and switched on unless said otherwise. */
+function connect(enabled = true): void {
+  t.db
+    .insert(orgCalendarSource)
+    .values({
+      orgId: s.orgId,
+      tenantId: 'contoso.onmicrosoft.com',
+      clientId: '00000000-0000-4000-8000-000000000000',
+      secretEnc: 'not-a-secret',
+      secretLast4: 'cret',
+      enabled: enabled ? 1 : 0,
+      configuredBy: s.userId,
+      configuredAt: NOW,
+      updatedAt: NOW,
+    })
+    .run();
+}
 
 function person(zone: string | null): string {
   const id = newId();
@@ -43,7 +70,7 @@ function span(
   userId: string,
   startsAt: number,
   endsAt: number,
-  extra: { allDay?: boolean; retiredAt?: number } = {},
+  extra: { allDay?: boolean; retiredAt?: number; lastSeenAt?: number } = {},
 ): void {
   t.db
     .insert(calendarAway)
@@ -53,7 +80,7 @@ function span(
       startsAt,
       endsAt,
       allDay: extra.allDay === true ? 1 : 0,
-      lastSeenAt: NOW,
+      lastSeenAt: extra.lastSeenAt ?? NOW,
       retiredAt: extra.retiredAt ?? null,
       createdAt: NOW,
     })
@@ -85,7 +112,7 @@ function entry(
 
 beforeEach(() => {
   t = freshDb();
-  seed(t.db, NOW);
+  s = seed(t.db, NOW);
 });
 afterEach(() => {
   t.close();
@@ -139,6 +166,10 @@ describe('meetingMinutesThisWeek', () => {
 });
 
 describe('outlookAwayFor', () => {
+  beforeEach(() => {
+    connect();
+  });
+
   it('names a timed span covering now by the day, in the person’s zone, it ends on', () => {
     // Ends at 23:30 UTC on the 18th: the 19th in Johannesburg.
     const ada = person('Africa/Johannesburg');
@@ -150,8 +181,14 @@ describe('outlookAwayFor', () => {
     // Leave Monday 16 to Friday 20: UTC midnights standing for those dates.
     const east = person('Pacific/Auckland');
     const west = person('America/Los_Angeles');
+    // Saturday the 21st in Auckland is already past the leave there, while
+    // Los Angeles is still on its Friday — and the sync saw both then.
+    const late = Date.UTC(2026, 10, 20, 12);
     for (const id of [east, west]) {
-      span(id, Date.UTC(2026, 10, 16), Date.UTC(2026, 10, 21), { allDay: true });
+      span(id, Date.UTC(2026, 10, 16), Date.UTC(2026, 10, 21), {
+        allDay: true,
+        lastSeenAt: late,
+      });
     }
     expect(outlookAwayFor(t.db, [east, west], NOW)).toEqual(
       new Map([
@@ -159,9 +196,6 @@ describe('outlookAwayFor', () => {
         [west, { until: '2026-11-20' }],
       ]),
     );
-    // Saturday the 21st in Auckland is already past the leave there, while
-    // Los Angeles is still on its Friday.
-    const late = Date.UTC(2026, 10, 20, 12);
     expect(outlookAwayFor(t.db, [east, west], late)).toEqual(
       new Map([[west, { until: '2026-11-20' }]]),
     );
@@ -177,5 +211,39 @@ describe('outlookAwayFor', () => {
     span(ada, NOW - H, Date.UTC(2026, 10, 19, 12));
     span(ada, NOW - H, Date.UTC(2026, 10, 25, 12));
     expect(outlookAwayFor(t.db, [ada], NOW)).toEqual(new Map([[ada, { until: '2026-11-25' }]]));
+  });
+
+  it('says nobody is away while the connection is switched off or missing (F1)', () => {
+    const ada = person('UTC');
+    span(ada, NOW - H, NOW + H);
+    expect(outlookAwayFor(t.db, [ada], NOW).has(ada)).toBe(true);
+    t.db.update(orgCalendarSource).set({ enabled: 0 }).run();
+    expect(outlookAwayFor(t.db, [ada], NOW)).toEqual(new Map());
+    t.db.delete(orgCalendarSource).run();
+    expect(outlookAwayFor(t.db, [ada], NOW)).toEqual(new Map());
+  });
+
+  it('stops naming a span the sync has not seen for a day — a mailbox it now skips (F1)', () => {
+    const fresh = person('UTC');
+    const skipped = person('UTC');
+    span(fresh, NOW - H, NOW + H, { lastSeenAt: NOW - OUTLOOK_AWAY_STALE_MS + 1 });
+    span(skipped, NOW - H, NOW + H, { lastSeenAt: NOW - OUTLOOK_AWAY_STALE_MS });
+    expect(outlookAwayFor(t.db, [fresh, skipped], NOW)).toEqual(
+      new Map([[fresh, { until: '2026-11-18' }]]),
+    );
+  });
+});
+
+describe('retention (§4.107, §11.6)', () => {
+  it('deletes a span 90 days after it ended, retired or not, and keeps a younger one', () => {
+    const ada = person('UTC');
+    const ended = NOW - CALENDAR_AWAY_RETENTION_DAYS * 24 * H;
+    span(ada, ended - 2 * H, ended - 1);
+    span(ada, ended - 2 * H, ended - 1, { retiredAt: ended - H });
+    span(ada, ended - 2 * H, ended);
+    expect(pruneTime(t.db, NOW).changed).toBe(2);
+    expect(t.db.select({ endsAt: calendarAway.endsAt }).from(calendarAway).all()).toEqual([
+      { endsAt: ended },
+    ]);
   });
 });

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { newId } from '../../src/db/ids.ts';
 import {
+  calendarAway,
   orgCalendarSource,
   orgTimeSettings,
   projects,
@@ -389,5 +390,26 @@ describe('sync now and disconnect', () => {
     expect(getCalendarSource(t.db, owner).configured).toBe(false);
     expect(t.db.select().from(orgCalendarSource).all()).toEqual([]);
     expect(t.db.select().from(timeEntries).all()).toHaveLength(1);
+  });
+
+  it('forgets every out-of-office span with the connection: nothing reads them any more (§4.107)', () => {
+    saveCalendarSource(t.db, owner, SECRET, SAVE);
+    for (const retiredAt of [null, NOW - 1]) {
+      t.db
+        .insert(calendarAway)
+        .values({
+          userId: owner.userId,
+          eventId: newId(),
+          startsAt: NOW - 3_600_000,
+          endsAt: NOW + 3_600_000,
+          lastSeenAt: NOW,
+          retiredAt,
+          createdAt: NOW,
+        })
+        .run();
+    }
+    expect(t.db.select().from(calendarAway).all()).toHaveLength(2);
+    disconnectCalendar(t.db, owner);
+    expect(t.db.select().from(calendarAway).all()).toEqual([]);
   });
 });

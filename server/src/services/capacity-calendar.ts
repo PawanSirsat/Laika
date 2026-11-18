@@ -1,6 +1,6 @@
 import { and, eq, gt, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { type Db } from '../db/client.ts';
-import { calendarAway, timeEntries } from '../db/schema.ts';
+import { calendarAway, orgCalendarSource, timeEntries } from '../db/schema.ts';
 import { zonesFor } from './availability.ts';
 import { addDays, dayIn } from './calendar-days.ts';
 
@@ -19,6 +19,15 @@ export interface OutlookAwaySpan {
 /** The furthest any zone is from UTC: fourteen hours, Kiribati's. */
 const ZONE_REACH_MS = 14 * 3_600_000;
 
+/**
+ * How long a span the sync stopped seeing still counts: a day. The sync runs
+ * every 15 minutes and stamps `last_seen_at` on every span it reads, so a
+ * standing one is never older than that while it works. A mailbox it skips
+ * (`403`, `404`, `400`) has nothing of its own retired, and a sync that keeps
+ * failing retires nothing at all — past a day, Capacity stops saying so.
+ */
+export const OUTLOOK_AWAY_STALE_MS = 24 * 3_600_000;
+
 /** The UTC calendar date of an instant: how an all-day span's midnights are read. */
 function utcDay(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
@@ -29,12 +38,19 @@ function utcDay(ms: number): string {
  * span standing), the last day of it as their own calendar day — the one
  * ending last when two cover now.
  *
+ * **Only while the sync reads it**: nobody while the Outlook connection is
+ * missing or switched off, and no span the sync has not seen for
+ * {@link OUTLOOK_AWAY_STALE_MS}.
+ *
  * - **Timed**: it covers now when it began and has not ended; its last day
  *   is the day, in their zone, of the instant before it ends.
  * - **All day**: its midnights stand for **dates** (the sync reads in UTC),
  *   so it covers now when their own today falls between its first and last
  *   date — never shifted by their zone, which would end a Friday's leave on
- *   Saturday for anyone east of UTC.
+ *   Saturday for anyone east of UTC. **This assumes Graph returns an all-day
+ *   event's start and end as UTC midnights under the sync's
+ *   `Prefer: outlook.timezone="UTC"`** (§4.107); it is to be checked live on
+ *   Ksage after release.
  */
 export function outlookAwayFor(
   db: Db,
@@ -43,6 +59,8 @@ export function outlookAwayFor(
 ): Map<string, OutlookAwaySpan> {
   const out = new Map<string, OutlookAwaySpan>();
   if (userIds.length === 0) return out;
+  const source = db.select({ enabled: orgCalendarSource.enabled }).from(orgCalendarSource).get();
+  if (source?.enabled !== 1) return out;
   const zones = zonesFor(db, userIds);
   for (const span of db
     .select({
@@ -56,6 +74,7 @@ export function outlookAwayFor(
       and(
         inArray(calendarAway.userId, [...userIds]),
         isNull(calendarAway.retiredAt),
+        gt(calendarAway.lastSeenAt, now - OUTLOOK_AWAY_STALE_MS),
         // Wide enough for an all-day date that is today in any zone.
         lte(calendarAway.startsAt, now + ZONE_REACH_MS),
         gt(calendarAway.endsAt, now - ZONE_REACH_MS),
