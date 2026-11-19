@@ -34,6 +34,8 @@ import { DeliversPanel } from '../task/DeliversPanel.tsx';
 import { DocumentField } from '../task/DocumentField.tsx';
 import { EvidenceSection } from '../task/EvidenceSection.tsx';
 import { mayDecideReview } from '../task/hero-derive.ts';
+import { useShelfActions } from '../task/use-shelf-actions.ts';
+import { ShelfBanner } from '../task/ShelfBanner.tsx';
 import { InlineEdit } from '../task/InlineEdit.tsx';
 import type { CardCandidate, MentionCandidate } from '../task/LazyRichEditor.tsx';
 import { reviewSince, statusSubline } from '../task/rail-derive.ts';
@@ -147,7 +149,13 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
   const titleId = useId();
   const { theme } = useTheme();
   const meId = me?.id;
-  const mayWrite = gates.project(task.project_id, 'task.write');
+  /*
+   * **A task put away is read-only here too** (LAI-1358): archived or in
+   * Trash, nothing on the page writes, as in the drawer. Restore — in the
+   * banner — is the one write left.
+   */
+  const putAway = task.archived_at != null || task.deleted_at != null;
+  const mayWrite = gates.project(task.project_id, 'task.write') && !putAway;
 
   // ---------------------------------------------------------------- reads
   const statuses = useProjectStatuses(slug);
@@ -165,6 +173,17 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
   const refresh = useCallback(() => {
     reloadProjectTasks(slug);
   }, [slug]);
+  /*
+   * **Archive and Delete, the drawer's own** (LAI-1358): the one shared hook,
+   * so the page asks the same rules and says the same words. A task put away
+   * leaves the live set; `WorkroomScreen` finds it on its shelf and keeps it
+   * open here, banner and all.
+   */
+  const shelf = useShelfActions(task, {
+    meId,
+    siblings: [...set.byId.values()],
+    onChanged: refresh,
+  });
   const review = useTaskReview(task.id, () => {
     refresh();
     detail.refresh();
@@ -393,7 +412,7 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
     .filter((c) => c !== '')
     .join(' ');
 
-  const mayDecide = mayDecideReview({ meId, assigneeId: task.assignee_id, leads });
+  const mayDecide = !putAway && mayDecideReview({ meId, assigneeId: task.assignee_id, leads });
   const textPending = full === undefined && text.error === null;
 
   // ---------------------------------------------------------------- parts
@@ -637,6 +656,7 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
         meId={meId}
         rounds={rounds?.rounds ?? []}
         leads={leads}
+        putAway={shelf.deleted ? 'trash' : shelf.archived ? 'archived' : undefined}
       />
     </section>
   );
@@ -846,6 +866,33 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
               {prefs.rightCollapsed ? 'Show details' : 'Hide details'}
             </button>
           )}
+          {/* Archive and Delete (LAI-1358): the drawer's, for whoever may. */}
+          {shelf.mayArchive && !shelf.putAway && (
+            <button
+              type="button"
+              className="wr-tool"
+              data-archive-action="archive"
+              onClick={() => {
+                void shelf.archive(true);
+              }}
+            >
+              <Icon name="archive" size="small" className="section-mark" />
+              Archive
+            </button>
+          )}
+          {shelf.mayDelete && !shelf.deleted && (
+            <button
+              type="button"
+              className="wr-tool wr-tool-danger"
+              data-trash-action="delete"
+              onClick={() => {
+                void shelf.trash(true);
+              }}
+            >
+              <Icon name="trash" size="small" className="section-mark" />
+              Delete…
+            </button>
+          )}
           <Tooltip
             content={focus ? 'Leave focus mode' : 'Focus mode — hide everything but the task'}
             shortcut="."
@@ -864,6 +911,13 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
           </Tooltip>
         </div>
       </header>
+
+      {/* Put away (LAI-1358): the drawer's banner, with Restore. */}
+      {shelf.putAway || shelf.error !== undefined ? (
+        <div className="wr-shelf">
+          <ShelfBanner task={task} members={members} actions={shelf} />
+        </div>
+      ) : null}
 
       {mode === 'one' && (
         // The shared tab strip (LAI-1193): roving focus, arrow keys, edge fade.

@@ -90,6 +90,10 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
     'React hooks moved unchanged out of TaskDrawerHost (LAI-1199); no renderer in this package — exercised by test/browser/task-drawer-host.test.ts and workroom.test.ts',
   ],
   [
+    'routes/screens/task/use-shelf-actions.ts',
+    'A React hook moved out of TaskDetailPanel to share with the Workroom (LAI-1358); no renderer in this package — exercised by test/browser/task-archive.test.ts, task-trash.test.ts and workroom-shelf.test.ts',
+  ],
+  [
     'routes/screens/task/use-task-review.ts',
     'React hooks moved unchanged out of TaskDetailPanel (LAI-1199); no renderer in this package — exercised by test/browser/task-hero.test.ts and workroom.test.ts',
   ],
