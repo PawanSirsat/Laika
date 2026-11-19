@@ -134,6 +134,22 @@
   border-color: var(--accent-border);
 }
 
+/* Delete… (LAI-1358): the one header tool that takes the task off the board. */
+.wr-tool.wr-tool-danger,
+.wr-tool.wr-tool-danger:hover,
+.wr-tool.wr-tool-danger:focus-visible {
+  color: var(--overdue);
+}
+
+/* A task put away (LAI-1358): the drawer's banner, under the header. */
+.wr-shelf {
+  padding: var(--space-3) var(--space-5) 0;
+}
+
+.wr-shelf .panel-archived {
+  margin: 0;
+}
+
 .wr-contents-anchor {
   position: relative;
 }
