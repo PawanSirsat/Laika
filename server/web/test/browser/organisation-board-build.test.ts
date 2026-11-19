@@ -113,7 +113,7 @@ void describe('the board build line', () => {
     }
   });
 
-  void test('a failed read shows no line, and the rest of the page stands', async () => {
+  void test('a failed read shows no line, and the rest of Overview stands', async () => {
     const h = await open('/organisation?tab=general', {
       ...stub('owner'),
       '/api/v1/developer/compatibility': refuse(500, 'internal', 'boom'),

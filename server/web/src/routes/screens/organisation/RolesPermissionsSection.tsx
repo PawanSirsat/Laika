@@ -161,7 +161,7 @@ function Matrix({
 }: {
   readonly id: string;
   readonly title: string;
-  /** One line under the title, read while the table is folded (LAI-1318). */
+  /** One line under the title, read while the table is folded (LAI-1345). */
   readonly description: string;
   readonly roles: readonly string[];
   readonly view: Permissions;
@@ -177,7 +177,7 @@ function Matrix({
   const explanation = explained === undefined ? undefined : explainRole(all, explained);
   const where = scope === 'project' ? 'space' : 'organisation';
   return (
-    // Folded to one row (LAI-1318): the tables are long, and read when asked.
+    // Folded to one row (LAI-1345): the tables are long, and read when asked.
     // A find in the box above opens both, so a match is never out of sight.
     <OrgAccordion
       name={`perm-${scope}`}

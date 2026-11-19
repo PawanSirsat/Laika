@@ -27,7 +27,7 @@ import {
   openSectionsByDefault,
 } from './harness.ts';
 
-// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1345).
 openSectionsByDefault('calendar');
 
 const MINUTE = 60_000;

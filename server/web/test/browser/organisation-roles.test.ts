@@ -41,7 +41,7 @@ import { DEACTIVATES, rowAction } from './row-menu.ts';
 import { capacityPerson } from './capacity-org.ts';
 import { optionsOf, pick } from './dropdown.ts';
 
-// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1345).
 openSectionsByDefault('ai', 'github');
 
 const user = (id: string, name: string, org_role: string, is_active = true) => ({
@@ -115,7 +115,7 @@ void describe('the org itself', () => {
       );
       assert.match(await card.innerText(), /recorded/i, 'presence state is not rendered');
 
-      // The AI provider is a connection: its own page, reached from the side (LAI-1318).
+      // The AI provider is an integration: its own tab, reached by its tab.
       await h.page.locator('.page-tab[data-tab="ai"]').click();
       const ai = h.page.locator('.org-card', { has: h.page.locator('#org-ai') });
       await ai.waitFor({ timeout: 20_000 });
@@ -150,8 +150,8 @@ void describe('the org itself', () => {
       '/api/v1/org': withheld,
     });
     try {
-      // The AI page is where the provider would be (LAI-796, LAI-1318); for a
-      // viewer its card is absent, not empty — Model prices are still there.
+      // Integrations is where the provider would be (LAI-796); for a viewer
+      // its card is absent, not empty.
       await h.page.locator('.page-tab[data-tab="ai"]').click();
       await h.page.locator('.org-body[data-tab="ai"]').waitFor({ timeout: 20_000 });
       await h.page.locator('.org-card').first().waitFor({ timeout: 20_000 });

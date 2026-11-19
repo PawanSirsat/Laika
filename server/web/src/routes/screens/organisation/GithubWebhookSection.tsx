@@ -112,7 +112,7 @@ export function GithubWebhookSection({ webhook, onChanged }: GithubWebhookSectio
   };
 
   return (
-    // Folded to one row that says its state (LAI-1318).
+    // Folded to one row that says its state (LAI-1345).
     <OrgAccordion
       name="github"
       id="org-github"

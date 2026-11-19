@@ -835,3 +835,49 @@
     padding-bottom: var(--space-4);
   }
 }
+
+/* ------------------------------------- the entry sheet, clearer (LAI-1362) */
+
+/* Only the body scrolls: the drawer around an editor holds still, so there
+   is one scrollbar, not two. */
+.myday-drawer-body:has(> .editor.inspector) {
+  overflow: hidden;
+}
+
+/* "No task" is a state, not a key: the body face, quieter. */
+.editor-task-none {
+  font-family: inherit;
+  color: var(--text-secondary);
+}
+
+/* Times read in the body face; tabular figures keep them from jumping. */
+.editor-when .editor-input {
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Footer: Delete on the left, the save note and Done on the right. */
+.editor-foot-gap {
+  flex: 1;
+}
+
+.editor-foot-hint {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.editor-act-quiet {
+  border-color: transparent;
+  background: transparent;
+}
+
+.editor-act-quiet:hover:not(:disabled),
+.editor-act-quiet:focus-visible {
+  border-color: var(--overdue-border);
+}
+
+@media (max-width: 390px) {
+  .editor-foot-hint {
+    display: none;
+  }
+}

@@ -27,7 +27,9 @@ function stub(): ApiStub {
       {
         id: 'o1',
         day: TODAY,
-        tz: 'UTC',
+        // Stored in a zone that is not the day's (LAI-1362): the head must
+        // still read in the day's zone, as the When fields do.
+        tz: 'Asia/Kolkata',
         started_at: START,
         ended_at: START + 45 * 60_000,
         minutes: 45,
@@ -121,13 +123,17 @@ void describe('a meeting from Outlook on My day (D-157)', () => {
         assert.match(await editor.locator('.inspector-kind').innerText(), /From Outlook$/);
         assert.match(
           await editor.locator('[data-editor-banner]').innerText(),
-          /Logged from your Outlook calendar\. Change or delete it here — once you do, later syncs leave it alone\./,
+          /Synced from your Outlook calendar\. Once you change or delete it here, later syncs leave it alone\./,
         );
-        assert.match(
-          await editor.innerText(),
-          /From your Outlook calendar · owners and admins can see it/,
-        );
+        // The source is said by the pill and the banner, not a third time
+        // in the sub line (LAI-1362).
+        const sub = await editor.locator('.editor-sub').innerText();
+        assert.match(sub, /Owners and admins can see it$/);
+        assert.doesNotMatch(sub, /Outlook/);
+        // The head's time is the day's, like the When fields under it.
+        assert.match(sub, /^4:20/, `head "${sub}" reads 4:20, the day's zone, not Kolkata's 9:50`);
         assert.equal(await editor.locator('[data-entry-delete]').count(), 1);
+        assert.equal(await editor.locator('[data-entry-done]').count(), 1);
         const history = editor.locator('[data-entry-history] .editor-history-row');
         await until(async () => (await history.count()) > 0);
         assert.match(await history.first().innerText(), /From Outlook · 45 min/);

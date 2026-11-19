@@ -290,7 +290,7 @@ export interface OverviewBentoProps {
 }
 
 /**
- * Organisation → Overview as a dashboard (LAI-1318): one glance at the week,
+ * Organisation → Overview as a dashboard (LAI-1345): one glance at the week,
  * the connections, the people, the spaces and what just happened — each tile
  * leading to the tab where its next step is. Every figure is a read the page
  * or its tabs already make; nothing here is new data.
@@ -515,7 +515,7 @@ const CONNECTION_LINES: Readonly<Record<string, string>> = {
 };
 
 /**
- * Organisation → Connections (LAI-1318): every connection this reader may
+ * Organisation → Connections (LAI-1345): every connection this reader may
  * configure, as a tile that says its state and opens its own page. Model
  * prices sit with the AI provider, whose page every reader may open.
  */

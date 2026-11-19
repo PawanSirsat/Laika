@@ -33,7 +33,7 @@ import {
   openSectionsByDefault,
 } from './harness.ts';
 
-// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1345).
 openSectionsByDefault('github');
 
 const NOW = Date.now();
@@ -229,7 +229,7 @@ void describe('the GitHub webhook card (LAI-753)', () => {
       },
     });
     try {
-      // GitHub's own page (LAI-1318), loaded: it says who sets it up instead.
+      // GitHub's own page (LAI-1345), for a member: it says so, with no card.
       await h.page.locator('[data-conn-refused]').waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('[data-section="github"]').count(), 0);
     } finally {
