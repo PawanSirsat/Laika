@@ -1,16 +1,20 @@
 import { inflateRawSync } from 'node:zlib';
 
 /**
- * The text inside a spreadsheet or a Word document, for the secret check
- * `laika attach` runs before an upload (D-162 item 4, LAI-1351).
+ * The text inside a spreadsheet, a Word document or a presentation — and the
+ * files inside any other zip — for the secret check `laika attach` runs
+ * before an upload (D-162 item 4, LAI-1351, LAI-1361).
  *
- * An `.xlsx` or `.docx` is a zip of XML parts. The credentials sheet D-162
- * was written about is exactly such a file, and it is binary on the outside,
- * so a text scan never sees inside it. This reads the zip with Node's own
- * `zlib` — **no new dependency** — and gives back each part's text, laid out
- * as the scanner reads tables: a sheet's rows as tab-separated lines, a
- * document's paragraphs as lines and its table rows tab-separated, with a
- * blank line where a table ends.
+ * An `.xlsx`, `.docx` or `.pptx` is a zip of XML parts. The credentials sheet
+ * D-162 was written about is exactly such a file, and it is binary on the
+ * outside, so a text scan never sees inside it. This reads the zip with
+ * Node's own `zlib` — **no new dependency** — and gives back each part's
+ * text, laid out as the scanner reads tables: a sheet's rows as tab-separated
+ * lines, a document's or a slide's paragraphs as lines and its table rows
+ * tab-separated, with a blank line where a table ends. **Any other zip, and
+ * an office file's embedded objects, are files** (`zipContents`), which the
+ * caller looks inside in turn — a zip in a zip included — against the same
+ * budget.
  *
  * It reads only what it needs and refuses what it cannot read rather than
  * guessing: a ZIP64 archive, an encrypted entry, a part that inflates past
@@ -42,7 +46,7 @@ class UnreadableXml extends Error {}
  * into text far larger than it. Spending past the end makes the file
  * unreadable before that text is built.
  */
-class Budget {
+export class Budget {
   // A field, not a parameter property: the CLI runs with Node's type
   // stripping, which refuses `constructor(public left …)`.
   left: number;
@@ -363,21 +367,61 @@ function documentText(xml: string, where: string, budget: Budget): PartText {
   return { where, text: lines.join('\n'), rows: lines.map((_, i) => i + 1) };
 }
 
-/**
- * The text of a spreadsheet's sheets or a Word document's parts, or `null`
- * for a zip that is neither, or `undefined` for one this cannot read.
- */
+/** The most inflated from one part, and from one file — every archive inside it included. */
 export interface OfficeLimits {
   readonly part: number;
   readonly total: number;
 }
 
+export const DEFAULT_LIMITS: OfficeLimits = { part: MAX_PART_BYTES, total: MAX_TOTAL_BYTES };
+
+/**
+ * The text of a spreadsheet's sheets, a Word document's parts or a
+ * presentation's slides, or `null` for a zip that is none of them, or
+ * `undefined` for one this cannot read.
+ */
 export function officeText(
   bytes: Uint8Array,
-  limits: OfficeLimits = { part: MAX_PART_BYTES, total: MAX_TOTAL_BYTES },
+  limits: OfficeLimits = DEFAULT_LIMITS,
 ): PartText[] | null | undefined {
+  const contents = zipContents(bytes, new Budget(limits.total), limits.part);
+  if (contents === undefined) return undefined;
+  return contents.office ? contents.parts : null;
+}
+
+/** A file inside a zip, by its path there, inflated. */
+export interface ZipFile {
+  readonly path: string;
+  readonly bytes: Buffer;
+}
+
+/** What one zip holds, for the scan. */
+export interface ZipContents {
+  /** Whether it is a spreadsheet, a Word document or a presentation. */
+  readonly office: boolean;
+  /** An office file's text: its sheets, its document's parts, its slides and notes. */
+  readonly parts: PartText[];
+  /**
+   * Every other file to look inside (LAI-1361): each entry of a plain zip,
+   * and an office file's embedded objects — a workbook in a document, a zip
+   * in a presentation — which may be archives themselves.
+   */
+  readonly files: ZipFile[];
+}
+
+/**
+ * Everything a zip holds that the scan reads, spending `budget` — which the
+ * caller shares with every archive found inside this one, so nesting never
+ * buys a second allowance — and inflating no entry past `part`. `undefined`
+ * for a zip this cannot read, as `officeText` says.
+ */
+export function zipContents(
+  bytes: Uint8Array,
+  budget: Budget,
+  part: number = MAX_PART_BYTES,
+): ZipContents | undefined {
   try {
-    return readOffice(bytes, limits);
+    return readZip(bytes, budget, part);
   } catch {
     // Unreadable XML, a budget spent, or anything else the reader throws —
     // a `RangeError` from a string too long among them: a file this could
@@ -386,27 +430,52 @@ export function officeText(
   }
 }
 
-function readOffice(bytes: Uint8Array, limits: OfficeLimits): PartText[] | null | undefined {
+/** An office file's embedded objects: `word/embeddings/…`, `xl/…`, `ppt/…`. */
+const EMBEDDED = /^(?:word|xl|ppt)\/embeddings\/[^/]/;
+
+/** The number in a part's name, `sheet12.xml` → 12, for sorting and naming. */
+function numberOf(name: string): number {
+  return Number(/(\d+)\.xml$/.exec(name)?.[1] ?? 0);
+}
+
+function readZip(bytes: Uint8Array, budget: Budget, part: number): ZipContents | undefined {
   const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const entries = zipEntries(buf);
   if (entries === undefined) return undefined;
   const byName = new Map(entries.map((e) => [e.name, e]));
-  // Every part read counts against one budget, so many small parts cannot
+  // Every entry read counts against one budget, so many small parts cannot
   // add up to what one large part is refused for.
-  const budget = new Budget(limits.total);
-  const read = (entry: ZipEntry): string | undefined => {
+  const read = (entry: ZipEntry): Buffer | undefined => {
     if (budget.left <= 0) return undefined;
-    const data = readEntry(buf, entry, Math.min(limits.part, budget.left));
+    const data = readEntry(buf, entry, Math.min(part, budget.left));
     if (data === undefined) return undefined;
     budget.spend(data.length);
-    return data.toString('utf8');
+    return data;
+  };
+  const xmlOf = (entry: ZipEntry): string | undefined => read(entry)?.toString('utf8');
+  /** The files `wanted` names, inflated — or `undefined` when one cannot be. */
+  const filesOf = (wanted: (name: string) => boolean): ZipFile[] | undefined => {
+    const files: ZipFile[] = [];
+    for (const entry of entries) {
+      // A directory is a name and no bytes.
+      if (entry.name.endsWith('/') || !wanted(entry.name)) continue;
+      const data = read(entry);
+      if (data === undefined) return undefined;
+      files.push({ path: entry.name, bytes: data });
+    }
+    return files;
+  };
+  const office = (parts: PartText[] | undefined): ZipContents | undefined => {
+    if (parts === undefined) return undefined;
+    const files = filesOf((name) => EMBEDDED.test(name));
+    return files === undefined ? undefined : { office: true, parts, files };
   };
 
   if (byName.has('xl/workbook.xml')) {
     const sharedEntry = byName.get('xl/sharedStrings.xml');
     let shared: string[] = [];
     if (sharedEntry !== undefined) {
-      const xml = read(sharedEntry);
+      const xml = xmlOf(sharedEntry);
       if (xml === undefined) return undefined;
       shared = [...elements(unprefixed(xml), 'si')].map((si) => {
         const text = texts(si.body);
@@ -417,15 +486,15 @@ function readOffice(bytes: Uint8Array, limits: OfficeLimits): PartText[] | null 
     const parts: PartText[] = [];
     const sheets = entries
       .filter((e) => /^xl\/worksheets\/sheet\d+\.xml$/.test(e.name))
-      .sort((a, b) => Number(/\d+/.exec(a.name)?.[0]) - Number(/\d+/.exec(b.name)?.[0]));
+      .sort((a, b) => numberOf(a.name) - numberOf(b.name));
     for (const entry of sheets) {
-      const xml = read(entry);
+      const xml = xmlOf(entry);
       if (xml === undefined) return undefined;
       parts.push(
-        sheetText(unprefixed(xml), shared, `sheet ${/\d+/.exec(entry.name)?.[0] ?? '?'}`, budget),
+        sheetText(unprefixed(xml), shared, `sheet ${String(numberOf(entry.name))}`, budget),
       );
     }
-    return parts;
+    return office(parts);
   }
 
   if (byName.has('word/document.xml')) {
@@ -434,13 +503,38 @@ function readOffice(bytes: Uint8Array, limits: OfficeLimits): PartText[] | null 
       /^word\/(document|header\d*|footer\d*|footnotes|endnotes|comments)\.xml$/.test(e.name),
     );
     for (const entry of wanted) {
-      const xml = read(entry);
+      const xml = xmlOf(entry);
       if (xml === undefined) return undefined;
       const name = /^word\/(\w+?)\d*\.xml$/.exec(entry.name)?.[1] ?? 'document';
       parts.push(documentText(xml, name === 'document' ? 'the document' : `its ${name}`, budget));
     }
-    return parts;
+    return office(parts);
   }
 
-  return null;
+  // A presentation (LAI-1361): DrawingML keeps a slide's text as a Word
+  // document keeps it — `a:p` paragraphs of `a:t` runs, `a:tbl` tables of
+  // `a:tr` rows of `a:tc` cells — so the same reader reads it.
+  if (byName.has('ppt/presentation.xml')) {
+    const parts: PartText[] = [];
+    const wanted = entries
+      .filter((e) => /^ppt\/(slides\/slide|notesSlides\/notesSlide)\d+\.xml$/.test(e.name))
+      .sort(
+        (a, b) =>
+          Number(a.name.includes('notes')) - Number(b.name.includes('notes')) ||
+          numberOf(a.name) - numberOf(b.name),
+      );
+    for (const entry of wanted) {
+      const xml = xmlOf(entry);
+      if (xml === undefined) return undefined;
+      const n = String(numberOf(entry.name));
+      parts.push(
+        documentText(xml, entry.name.includes('notes') ? `notes ${n}` : `slide ${n}`, budget),
+      );
+    }
+    return office(parts);
+  }
+
+  // Any other zip is a folder of files, every one of them looked inside.
+  const files = filesOf(() => true);
+  return files === undefined ? undefined : { office: false, parts: [], files };
 }

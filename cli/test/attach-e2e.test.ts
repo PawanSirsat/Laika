@@ -263,6 +263,26 @@ void describe('a secret is refused here, before anything is sent', () => {
     assert.ok(!JSON.stringify(answer).includes(token));
     assert.equal(attachmentCreates(), creates);
   });
+
+  void test('a .env inside a zip inside the zip is refused by its path, and nothing is sent (LAI-1361)', async () => {
+    const inner = zip({ '.env': 'NODE_ENV=production\nDATABASE_PASSWORD=s3cr3t-value\n' });
+    const bundle = file('bundle.zip', zip({ 'notes.txt': 'All green.\n', 'inner.zip': inner }));
+    const creates = attachmentCreates();
+    const puts = storePuts();
+
+    const ran = await run(['LAI-1', bundle, '--json']);
+
+    assert.equal(ran.code, 1);
+    const answer = JSON.parse(ran.out.join('\n')) as { ok: boolean; errors: string[] };
+    assert.equal(answer.ok, false);
+    assert.match(
+      answer.errors[0] ?? '',
+      /bundle\.zip: holds a secret in an environment line \(inner\.zip › \.env, line 2\)/,
+    );
+    assert.ok(!JSON.stringify(answer).includes('s3cr3t'));
+    assert.equal(attachmentCreates(), creates);
+    assert.equal(storePuts(), puts);
+  });
 });
 
 void describe('all or none', () => {
