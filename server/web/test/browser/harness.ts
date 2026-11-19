@@ -248,6 +248,8 @@ const PROJECT_ACTIONS_BY_ROLE: Readonly<Record<string, readonly string[]>> = {
     'task.delete',
     // LAI-1353: archiving, as editing — a lead's and a member's, on a session.
     'task.archive',
+    // LAI-1355: Delete now from Trash — a lead's alone, on a session.
+    'task.purge',
     'task.dependency.write',
     'task.watch',
     'project.read',

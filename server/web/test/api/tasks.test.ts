@@ -20,6 +20,7 @@ import {
   listAllTasks,
   listMembers,
   listTasks,
+  purgeTask,
   setTaskArchived,
   setTaskDeleted,
   SLIM_OMITS,
@@ -120,6 +121,15 @@ void describe('listTasks query string', () => {
     const listed = stub(page);
     await listTasks('p', { trash: 'only' });
     assert.equal(new URL(listed[0]?.url ?? '', 'http://x').searchParams.get('trash'), 'only');
+  });
+
+  void test('purgeTask posts to /purge and answers the ids scrubbed (LAI-1355)', async () => {
+    const calls = stub({ purged: ['t1', 't2'] });
+    assert.deepEqual(await purgeTask('t1'), { purged: ['t1', 't2'] });
+    assert.deepEqual(
+      calls.map((c) => [c.init.method, c.url]),
+      [['POST', '/api/v1/tasks/t1/purge']],
+    );
   });
 
   void test('setTaskArchived sends archived on its own (LAI-1353)', async () => {

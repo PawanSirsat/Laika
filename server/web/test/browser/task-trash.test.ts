@@ -1,8 +1,9 @@
 /**
  * Trash, in a real browser (LAI-1354): the drawer's Delete… with its confirm
  * and Undo, the read-only drawer of a task in Trash with the days left, the
- * board's Trash panel with Restore, the List's bulk Delete with its confirm,
- * and no Delete offered to a member on a task they did not create.
+ * board's Trash panel with Restore and a space admin's Delete now (LAI-1355),
+ * the List's bulk Delete with its confirm, and no Delete offered to a member
+ * on a task they did not create.
  *
  * The stub keeps one set of tasks and which are in Trash, so the board's live
  * read and the panel's `?trash=only` read answer from the state `DELETE` and
@@ -107,8 +108,14 @@ function space(deleted: Readonly<Record<string, number>> = {}, me: typeof ME = M
     gone.delete(id);
     return view(id);
   };
+  // Delete now: scrubbed, it is in no list at all — the Trash included.
+  const purged = new Set<string>();
+  const purge = (id: string) => () => {
+    purged.add(id);
+    return { purged: [id] };
+  };
   const list = (trash: boolean) => () => ({
-    data: [...tasks.keys()].filter((id) => gone.has(id) === trash).map(view),
+    data: [...tasks.keys()].filter((id) => gone.has(id) === trash && !purged.has(id)).map(view),
     next_cursor: null,
   });
   return {
@@ -133,6 +140,7 @@ function space(deleted: Readonly<Record<string, number>> = {}, me: typeof ME = M
       [...tasks.keys()].flatMap((id): [string, unknown][] => [
         [`/api/v1/tasks/${id}`, one(id)],
         [`/api/v1/tasks/${id}/restore`, back(id)],
+        [`/api/v1/tasks/${id}/purge`, purge(id)],
         [`/api/v1/tasks/${id}/comments`, { data: [], next_cursor: null }],
         [`/api/v1/tasks/${id}/watchers`, { watchers: [] }],
       ]),
@@ -160,8 +168,21 @@ function space(deleted: Readonly<Record<string, number>> = {}, me: typeof ME = M
 /** The writes the page made to Trash, in order: `[method, path]`. */
 const trashWrites = (calls: readonly StubCall[]) =>
   calls
-    .filter((c) => c.method === 'DELETE' || (c.method === 'POST' && c.path.endsWith('/restore')))
+    .filter(
+      (c) =>
+        c.method === 'DELETE' ||
+        (c.method === 'POST' && (c.path.endsWith('/restore') || c.path.endsWith('/purge'))),
+    )
     .map((c) => [c.method, c.path]);
+
+/** The board's Trash panel, open on its tab. */
+async function trashPanel(h: Awaited<ReturnType<typeof open>>) {
+  await h.page.locator('[data-board-action="shelves"]').click({ timeout: 20_000 });
+  await h.page.locator('[data-shelf-tab="trash"]').click({ timeout: 10_000 });
+  const shelf = h.page.locator('[data-board-shelf="trash"]');
+  await shelf.waitFor({ timeout: 10_000 });
+  return shelf;
+}
 
 void after(async () => {
   await closeBrowser();
@@ -256,6 +277,52 @@ void describe('the Trash panel (LAI-1354)', () => {
       await shelf.getByText('Trash is empty.').waitFor({ timeout: 10_000 });
     } finally {
       await h.close();
+    }
+  });
+
+  void test('a space admin’s Delete now asks first, then the row leaves for good, with no Undo', async () => {
+    const h = await open('/board?project=laika-core', space({ t2: Date.now() - 3 * DAY }));
+    try {
+      const shelf = await trashPanel(h);
+      const row = shelf.locator('[data-shelf-row="LC-2"]');
+      await row.getByRole('button', { name: 'Delete LC-2 now' }).click({ timeout: 10_000 });
+      await confirmSettled(h.page);
+      assert.deepEqual(trashWrites(h.calls), []);
+      assert.match(await answerConfirm(h.page, true), /Delete LC-2 for good\?/);
+
+      await row.waitFor({ state: 'detached', timeout: 10_000 });
+      assert.deepEqual(trashWrites(h.calls), [['POST', '/api/v1/tasks/t2/purge']]);
+      const toast = h.page.locator('[data-toast]', { hasText: 'LC-2 deleted for good' });
+      await toast.waitFor({ timeout: 10_000 });
+      assert.equal(await toast.getByRole('button', { name: 'Undo' }).count(), 0);
+      await shelf.getByText('Trash is empty.').waitFor({ timeout: 10_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Keep in Delete now’s confirm sends nothing, and a member is never offered it', async () => {
+    const lead = await open('/board?project=laika-core', space({ t2: Date.now() - DAY }));
+    try {
+      const shelf = await trashPanel(lead);
+      await shelf.getByRole('button', { name: 'Delete LC-2 now' }).click({ timeout: 10_000 });
+      await confirmSettled(lead.page);
+      await answerConfirm(lead.page, false);
+      await shelf.locator('[data-shelf-row="LC-2"]').waitFor({ timeout: 10_000 });
+      assert.deepEqual(trashWrites(lead.calls), []);
+    } finally {
+      await lead.close();
+    }
+
+    // A member is never offered it, whoever's task it is (§3.2).
+    const member = await open('/board?project=laika-core', space({ t2: Date.now() - DAY }, MEMBER));
+    try {
+      const shelf = await trashPanel(member);
+      const row = shelf.locator('[data-shelf-row="LC-2"]');
+      await row.waitFor({ timeout: 10_000 });
+      assert.equal(await shelf.locator('[data-shelf-purge]').count(), 0);
+    } finally {
+      await member.close();
     }
   });
 

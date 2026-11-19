@@ -87,4 +87,6 @@ export const STREAM_TYPES: readonly string[] = [
   // Into the space's Trash and back out (LAI-1354), live for the same reason.
   'task.deleted',
   'task.undeleted',
+  // Scrubbed from Trash (LAI-1355), so an open Trash list loses the row.
+  'task.purged',
 ];

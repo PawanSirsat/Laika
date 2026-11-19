@@ -1300,6 +1300,8 @@ export function BoardScreen({
                 gates.project(project.id, 'task.delete') &&
                 (mayConfigure || task.created_by === me?.id))
           }
+          // `task.purge`: a space admin, signed in (§3.2, LAI-1355).
+          mayPurge={project !== undefined && gates.project(project.id, 'task.purge')}
           nameOf={(id) => members.get(id)?.name}
           onOpen={(taskId) => {
             setShelfOpen(undefined);

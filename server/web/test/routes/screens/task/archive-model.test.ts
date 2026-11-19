@@ -13,6 +13,8 @@ import {
   bulkTrashedToast,
   daysLeftLabel,
   deleteConfirm,
+  purgeConfirm,
+  purgedToast,
   restoredToast,
   TRASH_DAYS,
   trashBanner,
@@ -113,6 +115,20 @@ void describe('Trash (LAI-1354)', () => {
     assert.equal(bulkTrashedToast(3), '3 tasks moved to Trash');
     assert.equal(untrashedToast('LAI-12', false), 'LAI-12 is back on the board');
     assert.equal(untrashedToast('LAI-12', true), 'LAI-12 is back in the archive');
+  });
+
+  void test('Delete now says what goes for good, what stays, and that it cannot come back (LAI-1355)', () => {
+    assert.deepEqual(purgeConfirm('LAI-12', 0), {
+      title: 'Delete LAI-12 for good?',
+      body: 'Its title, description, comments and files are erased now, and it cannot be restored. Its key, history and logged time stay.',
+    });
+    assert.equal(
+      purgeConfirm('LAI-12', 2).body,
+      'Its title, description, comments and files are erased now, and its 2 subtasks with it, and it cannot be restored. Its key, history and logged time stay.',
+    );
+    assert.equal(purgedToast('LAI-12', 0), 'LAI-12 deleted for good');
+    assert.equal(purgedToast('LAI-12', 1), 'LAI-12 and 1 subtask deleted for good');
+    assert.equal(archiveRefusal(new Error('network'), 'purge'), 'The task could not be deleted.');
   });
 
   void test('the confirm says what goes and that it can come back', () => {

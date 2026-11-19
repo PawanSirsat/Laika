@@ -243,6 +243,8 @@ const LABELS: Readonly<Record<string, string>> = {
   // LAI-1354: into the space's Trash, and back out of it.
   'task.deleted': 'moved this task to Trash',
   'task.undeleted': 'restored this task from Trash',
+  // LAI-1355: what was written on it erased — at once, or after 30 days.
+  'task.purged': 'deleted this task for good',
 
   'project.created': 'created this space',
   'project.updated': 'changed space settings',

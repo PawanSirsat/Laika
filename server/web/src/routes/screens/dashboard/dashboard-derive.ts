@@ -234,6 +234,8 @@ const PROJECT_LABELS: Readonly<Record<string, string>> = {
   // Into the space's Trash and back out (LAI-1354).
   'task.deleted': 'moved a task to Trash',
   'task.undeleted': 'restored a task from Trash',
+  // Scrubbed from Trash (LAI-1355).
+  'task.purged': 'deleted a task for good',
 };
 
 /**

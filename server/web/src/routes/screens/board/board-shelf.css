@@ -50,7 +50,8 @@
 }
 
 .bshelf-open:focus-visible,
-.bshelf-restore:focus-visible {
+.bshelf-restore:focus-visible,
+.bshelf-purge:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
@@ -93,6 +94,29 @@
 }
 
 .bshelf-restore:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Delete now (LAI-1355): Restore's shape, in the colour that says it is final. */
+.bshelf-purge {
+  flex: none;
+  border: 1px solid var(--border-default);
+  background: var(--bg-card);
+  color: var(--overdue);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-2-5);
+  cursor: pointer;
+}
+
+.bshelf-purge:hover:not(:disabled) {
+  border-color: var(--overdue);
+}
+
+.bshelf-purge:disabled {
   cursor: default;
   opacity: 0.6;
 }

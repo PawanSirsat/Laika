@@ -829,6 +829,17 @@ export function setTaskDeleted(taskId: string, deleted: boolean): Promise<Task> 
 }
 
 /**
+ * **Delete now** (`POST /tasks/:id/purge`, §6.4, LAI-1355): a task in Trash
+ * scrubbed at once — a space admin, signed in. Answers the ids scrubbed, its
+ * subtasks in Trash with it; each is `404` from then on.
+ */
+export function purgeTask(taskId: string): Promise<{ readonly purged: readonly string[] }> {
+  return request<{ purged: string[] }>(`/tasks/${encodeURIComponent(taskId)}/purge`, {
+    method: 'POST',
+  });
+}
+
+/**
  * Watching (`PUT`/`DELETE /tasks/:id/watch`, §6.4).
  *
  * `PUT` rather than `POST` because watching is **idempotent state, not an

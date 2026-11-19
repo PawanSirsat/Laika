@@ -56,12 +56,13 @@ export function archivedRowMeta(archivedAt: number, by: string | undefined, now:
 }
 
 /** What was being done when the server refused it. */
-export type ShelfAction = 'archive' | 'restore' | 'delete';
+export type ShelfAction = 'archive' | 'restore' | 'delete' | 'purge';
 
 const REFUSED: Readonly<Record<ShelfAction, string>> = {
   archive: 'The task could not be archived.',
   restore: 'The task could not be restored.',
   delete: 'The task could not be moved to Trash.',
+  purge: 'The task could not be deleted.',
 };
 
 /**
@@ -84,9 +85,9 @@ export function archiveRefusal(cause: unknown, action: ShelfAction): string {
 /* ---------------------------------------------------------------- Trash */
 
 /**
- * How long a task stays restorable in Trash (§6.4, LAI-1354); LAI-1355
- * scrubs it after. The server's figure, said here because the shelf counts
- * the days down.
+ * How long a task stays restorable in Trash (§6.4, LAI-1354); the server's
+ * daily job scrubs it after (LAI-1355). The server's figure, said here
+ * because the shelf counts the days down.
  */
 export const TRASH_DAYS = 30;
 const DAY_MS = 86_400_000;
@@ -131,6 +132,30 @@ export function deleteConfirm(
     title: `Move ${key} to Trash?`,
     body: `It leaves the board${withThem}. You can restore it from Trash for ${String(TRASH_DAYS)} days.`,
   };
+}
+
+/**
+ * The confirm before *Delete now* (LAI-1355): what goes for good, what stays,
+ * and that nothing brings it back.
+ */
+export function purgeConfirm(
+  key: string,
+  subtasks: number,
+): { readonly title: string; readonly body: string } {
+  const withThem =
+    subtasks === 0
+      ? ''
+      : `, and its ${String(subtasks)} ${subtasks === 1 ? 'subtask' : 'subtasks'} with it`;
+  return {
+    title: `Delete ${key} for good?`,
+    body: `Its title, description, comments and files are erased now${withThem}, and it cannot be restored. Its key, history and logged time stay.`,
+  };
+}
+
+/** The toast after *Delete now*: no Undo, because there is none. */
+export function purgedToast(key: string, subtasks: number): string {
+  if (subtasks === 0) return `${key} deleted for good`;
+  return `${key} and ${String(subtasks)} ${subtasks === 1 ? 'subtask' : 'subtasks'} deleted for good`;
 }
 
 /** The bulk bar's confirm, in place: `Move 3 tasks to Trash?` */
