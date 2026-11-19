@@ -462,3 +462,45 @@ void describe('Integrations: each card says its state', () => {
     }
   });
 });
+
+// LAI-1345 review: the connection tiles each keep their page's gate.
+void describe('Overview and All connections ask nothing a reader may not set up', () => {
+  const READS = ['/api/v1/org/hr', '/api/v1/org/teams', '/api/v1/org/calendar'];
+  const EMAIL = { enabled: true, configured: true };
+  const emailTile = 'a[href="/organisation?tab=email"]:is(.bento-conn, .conn-tile)';
+
+  for (const [path, ready] of [
+    ['/organisation', '.org-bento'],
+    ['/organisation?tab=integrations', '.conn-index'],
+  ] as const) {
+    void test(`a member on ${path}: no HR, Teams or Outlook read, and no Email tile`, async () => {
+      const h = await open(path, MEMBER({ '/api/v1/org': { ...ORG, email: EMAIL } }));
+      try {
+        await h.page.locator(ready).waitFor({ timeout: 20_000 });
+        await h.page.waitForTimeout(600);
+        const asked = h.calls.filter((c) => READS.includes(c.path)).map((c) => c.path);
+        assert.deepEqual(asked, [], 'asked for a connection the member may not set up');
+        assert.equal(await h.page.locator(emailTile).count(), 0, 'offered the Email tile');
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  void test('an owner given org.email.configure is offered the Email tile', async () => {
+    const h = await open(
+      '/organisation?tab=integrations',
+      OWNER({
+        '/api/v1/org': { ...ORG, email: EMAIL },
+        '/api/v1/permissions': permissions('owner', [...OWNER_ACTIONS, 'org.email.configure']),
+      }),
+    );
+    try {
+      await h.page.locator('.conn-index').waitFor({ timeout: 20_000 });
+      await h.page.locator(emailTile).waitFor({ timeout: 10_000 });
+      assert.equal(await h.page.locator(emailTile).count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+});
