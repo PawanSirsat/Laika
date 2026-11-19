@@ -169,12 +169,13 @@ export function WorkroomScreen({ taskKey, navigate }: WorkroomScreenProps) {
    * shelf read is in flight the page keeps the task it had — archiving from
    * the page must not flash a loading state between the two reads.
    */
-  const shown = useRef<TaskSummary | undefined>(undefined);
+  const shown = useRef<{ key: string; task: TaskSummary } | undefined>(undefined);
   const found = inSet ?? (shelved.kind === 'ready' ? shelved.task : undefined);
-  // Let go of it only once the shelves have answered without it.
-  if (found !== undefined) shown.current = found;
-  else if (shelved.kind === 'ready') shown.current = undefined;
-  const task = found ?? shown.current;
+  // Let go of it once the shelves have answered without it — and never show
+  // one key's task under another's address (LAI-1358 review note).
+  if (found !== undefined) shown.current = { key: taskKey, task: found };
+  else if (shelved.kind === 'ready' || shown.current?.key !== taskKey) shown.current = undefined;
+  const task = found ?? shown.current?.task;
 
   useEffect(() => {
     if (task === undefined) return;
