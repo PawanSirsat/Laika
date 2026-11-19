@@ -58,6 +58,11 @@ import {
 } from './http/routes/email-inbound.ts';
 import { orgTeamsRoutes, projectTeamsRoutes } from './http/routes/teams.ts';
 import { calendarRoutes } from './http/routes/calendar.ts';
+import {
+  orgPeopleSyncRoutes,
+  peopleDirectoryRoutes,
+  userPhotoRoutes,
+} from './http/routes/people-sync.ts';
 import { ssoRoutes } from './http/routes/sso.ts';
 import { githubWebhookRoutes } from './http/routes/webhooks.ts';
 import { checkpointRoutes, taskCheckpointRoutes } from './http/routes/checkpoints.ts';
@@ -94,6 +99,7 @@ import { unlistedRoutes } from './http/routes/unlisted.ts';
 import { heartbeatRoutes } from './http/routes/heartbeats.ts';
 import { capacityRoutes, presenceRoutes } from './http/routes/presence.ts';
 import { setupGate } from './http/middleware/setup-gate.ts';
+import { trashGate } from './http/middleware/trash-gate.ts';
 import { stoppingGate } from './http/middleware/stopping.ts';
 import { setupRequired } from './services/setup.ts';
 import { AUTH_BASE_PATH, SSO_ONLY_MESSAGE, type Auth } from './auth/auth.ts';
@@ -118,6 +124,7 @@ import { setTokenUsageLogger } from './services/token-usage.ts';
 import { type HrSyncDeps } from './services/hr-sync.ts';
 import { type TeamsPostingDeps } from './services/teams-posting.ts';
 import { type CalendarSyncDeps } from './services/calendar-sync.ts';
+import { type PeopleSyncDeps } from './services/people-sync.ts';
 import { type AttachmentsDeps } from './services/attachments.ts';
 import { type MailTransport, noTransport } from './services/email-transport.ts';
 
@@ -254,6 +261,11 @@ export interface CreateAppOptions {
    * passes nothing and the real `fetch` is used.
    */
   calendarSync?: CalendarSyncDeps;
+  /**
+   * The people sync's `fetch`, clock and waits (D-161, LAI-1330): injected by
+   * the tests so **none of them calls Microsoft**; `index.ts` passes nothing.
+   */
+  peopleSync?: PeopleSyncDeps;
 }
 
 /**
@@ -367,8 +379,9 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   );
   // Immediately after cors: response headers, so they apply to everything the
   // chain produces, including errors and the SPA document (SPEC §13.1).
-  // The store's origin joins `img-src` and `connect-src` only when attachments
-  // are on: the browser shows its images and uploads to it (D-150).
+  // The store's origin joins `img-src`, `media-src` and `connect-src` only when
+  // attachments are on: the browser shows its images, plays its recordings
+  // (D-162) and uploads to it (D-150).
   app.use(
     '*',
     createSecurityHeaders(
@@ -420,6 +433,13 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   // loop on a stored 201 becomes a free unlimited request.
   if (options.db !== undefined) {
     app.use('*', idempotencyMiddleware(options.db));
+  }
+
+  // After auth: a task in Trash is `404` to a token under every `/tasks/:id`
+  // route (LAI-1354), asked once here rather than by each route.
+  if (options.db !== undefined) {
+    app.use(`${API_BASE}/tasks/:id`, trashGate(options.db));
+    app.use(`${API_BASE}/tasks/:id/*`, trashGate(options.db));
   }
 
   // Routes before the static handler: whoever matches first wins, and the SPA
@@ -514,6 +534,13 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // The profile's heatmap (D-079, LAI-751), by day; a person's day and local
     // activity read for them, and who looked (D-102, LAI-957).
     app.route(`${API_BASE}/people`, peopleRoutes({ db, sqlite: options.sqlite }));
+    // Everyone's title, department, manager and photo version, and each
+    // photo's bytes, from Microsoft's directory (D-161, LAI-1330).
+    app.route(
+      `${API_BASE}/people`,
+      peopleDirectoryRoutes({ db, attachments: options.attachments }),
+    );
+    app.route(`${API_BASE}/users`, userPhotoRoutes({ db, attachments: options.attachments }));
     app.route(`${API_BASE}/me`, meAnalyticsViewRoutes({ db }));
     // Your own profile and heatmap, every role (D-139 item 1, LAI-1150).
     app.route(`${API_BASE}/me`, meProfileRoutes({ db }));
@@ -569,6 +596,17 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
         calendarSync: options.calendarSync,
       }),
     );
+    // The people sync's switches on the same card (D-161, LAI-1330).
+    app.route(
+      `${API_BASE}/org`,
+      orgPeopleSyncRoutes({
+        db,
+        serverSecret: options.serverSecret ?? '',
+        attachments: options.attachments,
+        peopleSync: options.peopleSync,
+      }),
+    );
+
     // How people sign in, for Organisation → Security (LAI-1239).
     app.route(
       `${API_BASE}/org`,
@@ -674,7 +712,15 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // already excludes `/mcp` from the SPA fallback while `rate-limit.ts`
     // already counts it as a reserved API prefix — the routing hole was
     // pre-cut for this.
-    app.route('/mcp', mcpRoutes({ version: options.version, db, sqlite: options.sqlite }));
+    app.route(
+      '/mcp',
+      mcpRoutes({
+        version: options.version,
+        db,
+        sqlite: options.sqlite,
+        attachments: options.attachments,
+      }),
+    );
   }
 
   // better-auth owns everything under /api/v1/auth (§6.4). Mounted with `on`

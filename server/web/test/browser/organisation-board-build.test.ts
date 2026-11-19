@@ -1,5 +1,6 @@
 /**
- * Organisation → Overview names the board's build (LAI-1069, plan §J E3): the
+ * Organisation → General names the board's build (LAI-1069, plan §J E3; on
+ * General since the settings hub, LAI-1318): the
  * server version, the commit and the helper protocol from
  * `GET /developer/compatibility`, as one quiet line, to owners and admins only.
  *
@@ -84,11 +85,12 @@ void describe('the board build line', () => {
     void test(`${role}: no line, though the page has the build in hand`, async () => {
       const h = await open('/organisation?tab=general', stub(role));
       try {
-        await h.page.locator('.org-stat', { hasText: 'Members' }).waitFor({ timeout: 20_000 });
-        await h.page.locator('.org-pulse').waitFor({ timeout: 20_000 });
+        // General, loaded: the line would sit under its settings.
+        await h.page.locator('#org-name').waitFor({ timeout: 20_000 });
         // The shell reads the same answer for its own mode, so the build was
         // there to show: its absence is the role check, not a slow read.
         await until(() => h.calls.some((c) => c.path === '/api/v1/developer/compatibility'));
+        assert.ok(h.calls.some((c) => c.path === '/api/v1/developer/compatibility'));
         await new Promise((resolve) => setTimeout(resolve, 300));
         assert.equal(await h.page.locator(LINE).count(), 0);
       } finally {
@@ -117,8 +119,9 @@ void describe('the board build line', () => {
       '/api/v1/developer/compatibility': refuse(500, 'internal', 'boom'),
     });
     try {
-      await h.page.locator('.org-pulse').waitFor({ timeout: 20_000 });
+      await h.page.locator('#org-name').waitFor({ timeout: 20_000 });
       await until(() => h.calls.some((c) => c.path === '/api/v1/developer/compatibility'));
+      assert.ok(h.calls.some((c) => c.path === '/api/v1/developer/compatibility'));
       assert.equal(await h.page.locator(LINE).count(), 0);
     } finally {
       await h.close();

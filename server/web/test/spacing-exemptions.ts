@@ -472,6 +472,9 @@ export const SPACING_EXEMPT: Readonly<Record<string, readonly string[]>> = {
     'padding: 0 var(--space-3) 0 1.875rem',
     'padding: 0.0625rem var(--space-1)',
     'padding: 0.3125rem var(--space-2-5)',
+    // Yashraaj's sub-item in the hub's side menu (LAI-1345, ksage-2.0#11),
+    // kept exactly at the owner's word: the nearest step is 0.375rem.
+    'padding: 0.4rem var(--space-2)',
     'padding: 0.4375rem var(--space-2)',
     'padding: 0.5625rem var(--space-5)',
     'padding: 0.6875rem var(--space-3-5)',

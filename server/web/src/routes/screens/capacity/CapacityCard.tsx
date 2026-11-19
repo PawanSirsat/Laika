@@ -10,11 +10,11 @@ import { Chip } from '../../../components/chip/Chip.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { timeLabel } from '../../../api/time-label.ts';
 import { PersonLink } from '../../../components/PersonLink.tsx';
+import { PersonFacts } from '../../../components/person-facts/PersonFacts.tsx';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
-import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
-import { initials } from '../../../theme/initials.ts';
 import {
   barSegments,
   LOAD_LABEL,
@@ -24,6 +24,7 @@ import {
   statusText,
   workloadIn,
 } from './capacity-derive.ts';
+import { AwayAndMeetings } from './AwayAndMeetings.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export const ROLE_LABEL: Readonly<Record<CapacityEntry['org_role'], string>> = {
@@ -61,6 +62,8 @@ export const HOVER = {
     'Sprint moves and card reorders, by them or their agents. Tidying, not work: counted in neither figure before it.',
   never: 'No sign-in, board action or agent signal has ever been recorded for them.',
   presence_off: 'Presence is off for this organisation, so nobody’s status or last seen is kept.',
+  spaces:
+    'The spaces they are in that you can see. The number is their committed work there, in progress plus to do; a greyed space has no open work of theirs.',
 } as const;
 
 /** Thousands separated: "2,547" reads at a glance, "2547" does not. */
@@ -68,6 +71,7 @@ export const count = (n: number): string => n.toLocaleString('en-US');
 
 /** What a space chip says on hover: committed is the figure, the rest is here. */
 export function spaceTitle(s: CapacitySpace): string {
+  if (s.open === 0) return `In ${s.name}, with no open work of theirs there`;
   return `${count(s.committed)} committed in ${s.name} (in progress and to do) · ${count(s.backlog)} in backlog, ${count(s.in_review)} waiting on reviewers`;
 }
 
@@ -104,7 +108,6 @@ export interface CapacityCardProps {
 export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
   const [details, setDetails] = useState(false);
   const detailsId = useId();
-  const ink = avatarColor(person.user_id, theme);
   const status = statusText(person, now);
   const ring = person.status ?? 'off';
   const work = workloadIn(person, space);
@@ -123,12 +126,14 @@ export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
     <li className="cap-card" data-status={person.status ?? 'off'} data-load={load}>
       <div className="cap-card-head">
         <span className={`cap-avatar-wrap cap-ring-${ring}`} aria-hidden="true">
-          <span
+          <Avatar
+            name={person.name}
+            userId={person.user_id}
+            theme={theme}
+            size={36}
+            label={null}
             className="cap-avatar"
-            style={{ background: ink.background, color: ink.foreground }}
-          >
-            {initials(person.name)}
-          </span>
+          />
           {person.status !== null && <span className={`cap-dot cap-dot-${person.status}`} />}
         </span>
         <span className="cap-who">
@@ -158,9 +163,11 @@ export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
               )}
             </span>
           </span>
+          <PersonFacts userId={person.user_id} className="cap-facts" />
         </span>
         <LoadBadges load={load} overdue={work.overdue} />
       </div>
+      <AwayAndMeetings person={person} card />
 
       {/* What matters at a glance (LAI-1222): one bar of committed work, its
           two figures, and how long the oldest has been going. */}
@@ -319,9 +326,11 @@ export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
             <div className="cap-block cap-spaces-block">
               <span className="cap-label">
                 Spaces
-                <span className="cap-label-note">
-                  {count(person.spaces.length)} {person.spaces.length === 1 ? 'space' : 'spaces'}
-                </span>
+                <Tooltip content={HOVER.spaces}>
+                  <span className="cap-label-note">
+                    {count(person.spaces.length)} {person.spaces.length === 1 ? 'space' : 'spaces'}
+                  </span>
+                </Tooltip>
               </span>
               {person.spaces.length === 0 ? (
                 <span className="cap-quiet">No spaces</span>
@@ -388,19 +397,31 @@ export function LoadBadges({
 }
 
 /**
- * A space the person has open work in: its mark (LAI-1311), its name and its
- * **committed** count. The pipeline and the review queue are on hover, and
- * read aloud (D-092).
+ * A space the person is in or has open work in: its mark (LAI-1311), its name
+ * and its **committed** count. The pipeline and the review queue are on
+ * hover, and read aloud (D-092). A space they are in with no open work of
+ * theirs is greyed, with no count (LAI-1334) — and says so aloud.
  */
 export function SpaceChip({ space, on }: { readonly space: CapacitySpace; readonly on: boolean }) {
+  const idle = space.open === 0;
   const aside = `${count(space.backlog)} in backlog, ${count(space.in_review)} waiting on reviewers`;
   return (
     <Tooltip content={spaceTitle(space)}>
-      <li className={on ? 'cap-space cap-space-on' : 'cap-space'}>
+      <li
+        className={`cap-space${on ? ' cap-space-on' : ''}${idle ? ' cap-space-idle' : ''}`}
+        data-space={space.slug}
+        data-idle={idle ? '' : undefined}
+      >
         <ProjectMark project={space} size="xs" />
         {space.name}
-        <span className="cap-space-n">{count(space.committed)}</span>
-        <span className="visually-hidden"> committed, {aside}</span>
+        {idle ? (
+          <span className="visually-hidden">, no open work</span>
+        ) : (
+          <>
+            <span className="cap-space-n">{count(space.committed)}</span>
+            <span className="visually-hidden"> committed, {aside}</span>
+          </>
+        )}
       </li>
     </Tooltip>
   );

@@ -186,6 +186,7 @@ function emailServer(role: string, initial: Record<string, unknown> = UNSET) {
   };
 }
 
+/** The Email page (LAI-1318), where the card is. */
 async function integrations(stub: ApiStub, ready = '[data-section="email"]'): Promise<Harness> {
   const h = await openPage('/organisation?tab=email', stub);
   await h.page.locator(ready).waitFor({ timeout: 20_000 });
@@ -307,7 +308,8 @@ void describe('Email: the owner’s three steps', () => {
 void describe('Email: who sees it, and what an invite says', () => {
   void test('a member is shown no Email card', async () => {
     const server = emailServer('member');
-    const h = await integrations(server.stub, '[data-section="prices"]');
+    // Its page says who sets it up, rather than drawing an empty card.
+    const h = await integrations(server.stub, '[data-conn-refused]');
     try {
       await h.page.waitForTimeout(300);
       assert.equal(await card(h).count(), 0);

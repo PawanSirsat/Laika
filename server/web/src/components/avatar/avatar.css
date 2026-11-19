@@ -19,11 +19,26 @@
 .avatar-20 {
   --avatar-size: 1.25rem;
 }
+.avatar-22 {
+  --avatar-size: 1.375rem;
+}
 .avatar-24 {
   --avatar-size: 1.5rem;
 }
+.avatar-26 {
+  --avatar-size: 1.625rem;
+}
+.avatar-28 {
+  --avatar-size: 1.75rem;
+}
 .avatar-32 {
   --avatar-size: 2rem;
+}
+.avatar-36 {
+  --avatar-size: 2.25rem;
+}
+.avatar-60 {
+  --avatar-size: 3.75rem;
 }
 
 .avatar-disc {
@@ -45,6 +60,25 @@
 /* Initials at 16px are one letter's room: the tiny step, no tracking. */
 .avatar-16 .avatar-disc {
   letter-spacing: 0;
+}
+
+/*
+ * The people surfaces' sizes (D-161) keep the initials they drew by hand: the
+ * small step, heavy, from 26 up, and a heading's at a profile's 60.
+ */
+.avatar-26 .avatar-disc,
+.avatar-28 .avatar-disc,
+.avatar-32 .avatar-disc,
+.avatar-36 .avatar-disc {
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+}
+
+.avatar-60 .avatar-disc {
+  font-size: var(--text-heading-md);
+  font-weight: var(--weight-heavy);
+  line-height: 1;
 }
 
 .avatar-img {
@@ -122,4 +156,23 @@
 /* `+128` widens into a lozenge rather than shrinking its digits. */
 .avatar-more .avatar-disc {
   padding: 0 var(--space-1);
+}
+
+/* ---------------------------------------------------------------- ring */
+
+/*
+ * A status ring on a face drawn alone (LAI-1349): green online, amber away,
+ * as Capacity's and the header's who's-here. Outside the disc, so it moves
+ * nothing; the words are the person's status elsewhere, never colour alone.
+ */
+.avatar-ring {
+  border-radius: var(--radius-round);
+}
+
+.avatar-ring-online {
+  box-shadow: 0 0 0 2px var(--chip-green);
+}
+
+.avatar-ring-away {
+  box-shadow: 0 0 0 2px var(--chip-orange);
 }

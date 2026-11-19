@@ -382,7 +382,13 @@ void describe('a reader without it (D-102 rule 6)', () => {
     try {
       await h.page.locator('.state-forbidden').waitFor({ timeout: 20_000 });
       assert.match(await h.page.locator('.state-forbidden').innerText(), /do not have access/);
-      assert.ok(!h.calls.some((c) => c.path.startsWith('/api/v1/people/')), 'her day was asked');
+      // Her day, under `/people/:id/` — not the directory every avatar reads (D-161).
+      assert.ok(
+        !h.calls.some(
+          (c) => c.path.startsWith('/api/v1/people/') && c.path !== '/api/v1/people/directory',
+        ),
+        'her day was asked',
+      );
       assert.equal(await h.page.locator('[data-myday-ready]').count(), 0);
     } finally {
       await h.close();

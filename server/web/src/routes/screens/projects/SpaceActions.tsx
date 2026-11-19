@@ -2,8 +2,7 @@ import { NavIcon } from '../../../components/sidebar/NavIcon.tsx';
 import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import type { Project } from '../../../api/projects.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import type { Theme } from '../../../theme/theme.ts';
 import { progressLine, progressOf } from './spaces-model.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
@@ -110,19 +109,18 @@ export function SpaceFaces({ space, theme }: { space: Project; theme: Theme }) {
   }`;
   return (
     <span className="space-faces" role="img" aria-label={label}>
-      {shown.map((member) => {
-        const colour = avatarColor(member.user_id, theme);
-        return (
-          <Tooltip key={member.user_id} content={member.name}>
-            <span
-              className="space-face"
-              style={{ background: colour.background, color: colour.foreground }}
-            >
-              {initials(member.name)}
-            </span>
-          </Tooltip>
-        );
-      })}
+      {/* Each face the shared avatar (LAI-1336) — a photo, or initials — named
+          on hover by its own tooltip; the stack's label speaks for them all. */}
+      {shown.map((member) => (
+        <Avatar
+          key={member.user_id}
+          name={member.name}
+          userId={member.user_id}
+          theme={theme}
+          size={28}
+          className="space-face"
+        />
+      ))}
       {overflow > 0 && <span className="space-face space-face-more">+{overflow}</span>}
     </span>
   );

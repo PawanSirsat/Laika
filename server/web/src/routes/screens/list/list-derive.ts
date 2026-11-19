@@ -51,7 +51,6 @@ export interface ListRow {
    * every row, which is precisely what an avatar colour exists to prevent.
    */
   readonly assigneeId: string;
-  readonly initials: string;
   /**
    * The agent the work is meant for (LAI-538), or null — **a column of its
    * own**, never folded into *who*: an agent is not a person, and the
@@ -93,17 +92,6 @@ export interface ListRow {
    * needs saying: the flag is about heartbeats and commits, not this date.
    */
   readonly updatedNote: string;
-}
-
-/** `Mira Kellner` → `MK`; a single word gives one letter. */
-function initialsOf(name: string): string {
-  const parts = name
-    .trim()
-    .split(/\s+/)
-    .filter((p) => p !== '');
-  if (parts.length === 0) return '—';
-  if (parts.length === 1) return (parts[0] ?? '').charAt(0).toUpperCase();
-  return `${(parts[0] ?? '').charAt(0)}${(parts[parts.length - 1] ?? '').charAt(0)}`.toUpperCase();
 }
 
 function statusTone(status: TaskSummary['status']): Tone {
@@ -217,7 +205,6 @@ export function listRows({
       who: member?.name ?? 'Unassigned',
       assigned: member !== undefined,
       assigneeId: task.assignee_id ?? '',
-      initials: member === undefined ? '—' : initialsOf(member.name),
       agent: agentOf(task),
       agentLabel: (() => {
         const agent = agentOf(task);

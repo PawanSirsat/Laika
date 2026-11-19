@@ -120,9 +120,10 @@ export interface CapacityWorkload {
 }
 
 /**
- * One space a person has open work in, with the same counts and **that
- * space's load** by the server's rule — what the badge shows while the space
- * is selected (D-092, LAI-818).
+ * One space a person is in or has open work in, with the same counts and
+ * **that space's load** by the server's rule — what the badge shows while the
+ * space is selected (D-092, LAI-818). A space they are in with no open work
+ * of theirs has every count `0` (LAI-1334).
  */
 export interface CapacitySpace extends CapacityWorkload {
   readonly project_id: string;
@@ -179,6 +180,7 @@ export interface CapacityEntry {
   readonly status: PersonStatus | null;
   readonly workload: CapacityWorkload;
   readonly load: LoadLevel;
+  /** Open-work spaces first, most committed first; then the rest A–Z (LAI-1334). */
   readonly spaces: readonly CapacitySpace[];
   /** Running now for everyone; every agent they use for an owner or admin. */
   readonly agents: readonly CapacityAgent[];
@@ -196,11 +198,57 @@ export interface CapacityEntry {
   readonly activity_14d?: readonly number[];
   /** The same days by who did them, bookkeeping apart. Gated with `activity_14d`. */
   readonly activity_14d_split?: ActivitySplit;
+  /**
+   * Away now (LAI-1331), for a person whose availability the reader sees
+   * (D-137); `null` when neither is so. **Absent, not null**, for anyone else:
+   * render on the key being present.
+   */
+  readonly away?: CapacityAway | null;
+  /**
+   * Their meetings this week, in minutes, Monday to Sunday of their own week
+   * (LAI-1331). **Their time** (D-102): present only for *See everyone's
+   * analytics* — each one a logged look — and on the reader's own row.
+   */
+  readonly meeting_minutes_week?: number;
+}
+
+/**
+ * Why a person is away now (LAI-1331): the away period they set covering
+ * their today, and an Outlook out-of-office span covering now — each the last
+ * day of it, a calendar day in their own zone.
+ */
+export interface CapacityAway {
+  readonly own: { readonly until: string } | null;
+  readonly outlook: { readonly until: string } | null;
 }
 
 export interface CapacityView {
   readonly enabled: boolean;
   readonly people: readonly CapacityEntry[];
+}
+
+/** One person the header's *who's here* names (LAI-1348): online or away now. */
+export interface PresencePerson {
+  readonly user_id: string;
+  readonly name: string;
+  readonly status: 'online' | 'away';
+  readonly last_seen: number;
+  readonly last_seen_via: SeenVia;
+}
+
+/**
+ * `GET /presence/people` (SPEC §9.3, LAI-1348): Capacity's status for everyone
+ * online or away, read cheaply for the top bar. `enabled: false` is presence
+ * switched off — not an empty org, and never drawn as one.
+ */
+export interface PresencePeopleView {
+  readonly enabled: boolean;
+  /** Online first, then the most recently seen. */
+  readonly people: readonly PresencePerson[];
+}
+
+export function getPresencePeople(signal?: AbortSignal): Promise<PresencePeopleView> {
+  return request<PresencePeopleView>('/presence/people', signal === undefined ? {} : { signal });
 }
 
 export function getPresence(signal?: AbortSignal): Promise<PresenceView> {

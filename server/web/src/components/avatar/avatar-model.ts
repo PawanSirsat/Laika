@@ -3,8 +3,14 @@
  * `node --test` can pin them.
  */
 
-/** The four sizes, in px: rail rows, list rows, cards, headers. */
-export const AVATAR_SIZES = [16, 20, 24, 32] as const;
+/**
+ * The sizes, in px: rail rows, list rows, cards and headers (LAI-1206), and
+ * the three the people surfaces drew by hand before D-161 converged them —
+ * a row's and the header's 28, a Capacity card's or a comment's 36, and a
+ * profile's 60 — and the two the last hand-drawn discs had (LAI-1336): a
+ * task row's, a dropdown's and a swimlane's 22, and a picker row's 26.
+ */
+export const AVATAR_SIZES = [16, 20, 22, 24, 26, 28, 32, 36, 60] as const;
 export type AvatarSize = (typeof AVATAR_SIZES)[number];
 
 /**
@@ -46,4 +52,16 @@ export function groupOverflow(count: number, max: number): GroupOverflow {
  */
 export function overflowWords(names: readonly string[]): string {
   return `and ${String(names.length)} more: ${names.join(', ')}`;
+}
+
+/** The two states a face is ringed for (LAI-1349): offline and unknown wear none. */
+export type Ring = 'online' | 'away';
+
+/**
+ * The class that rings a face by its status — green online, amber away, as
+ * Capacity's cards and the header's who's-here — or `''` for no ring. For a
+ * face drawn alone (a picker row); a stack's button rings its own border.
+ */
+export function ringClass(ring: Ring | undefined): string {
+  return ring === undefined ? '' : `avatar-ring avatar-ring-${ring}`;
 }

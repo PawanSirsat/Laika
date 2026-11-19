@@ -992,6 +992,18 @@ export function launchPrompt(
   ].join('\n');
 }
 
+/**
+ * Rules 7 and 8 of the repo block (revision 3, D-162), word for word as the
+ * web's `connect-copy.ts` writes them — `SHOW_THE_RESULT` and
+ * `ONE_PARENT_PER_FEATURE` there, LAI-1352 — on one line each.
+ * `agent-launcher.test.ts` reads the web's copy and holds these to it.
+ */
+export const SHOW_THE_RESULT =
+  '**Show the result.** When a person needs to see what you did — a UI change, a generated file — attach screenshots or outputs with `laika attach` or `request_upload`, each with a caption, and pass them to `finish_task` as `outputs`. Skip it when tests are the whole proof. Never upload a secret: attach a masked copy, and say where the real file is kept.';
+
+export const ONE_PARENT_PER_FEATURE =
+  "**One parent per feature.** A new feature with several parts gets one parent task, with each part as a child task (`create_task` with `parent`). Work on an existing feature becomes a new child of its parent. A genuinely small one-off may stand alone. The main outputs go on the parent, a child's own outputs on the child.";
+
 /** A project slug as the board makes one (`slugify`): lower-case words and hyphens. */
 const SLUG = /^[a-z0-9][a-z0-9-]{0,79}$/;
 
@@ -1029,6 +1041,10 @@ export function workRequestPrompt(f: WorkPrompt): string {
     `   git push -u origin ${b}. Never push master or main; never force-push.`,
     '4. Open a pull request, then finish_task with commit, branch, PR and each test',
     '   command with its exit code. Never mark the task done.',
+    // D-162 (LAI-1351): repo block revision 3's rules 7 and 8, in its words
+    // (connect-copy.ts, LAI-1352), one line each.
+    `   ${SHOW_THE_RESULT}`,
+    `   ${ONE_PARENT_PER_FEATURE}`,
     '5. If you cannot finish: add_comment why, and stop.',
     '',
   ].join('\n');

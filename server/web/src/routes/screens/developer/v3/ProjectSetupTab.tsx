@@ -49,6 +49,7 @@ import { DesignWizard } from './DesignWizard.tsx';
 import { DetailTiles } from './DetailTiles.tsx';
 import { DxIcon } from './DxIcon.tsx';
 import { NoteBlock } from './NoteBlock.tsx';
+import { OutputsNote } from './OutputsNote.tsx';
 import { OVERVIEW_ADDRESSES } from './overview-state.ts';
 import { SectionTitle } from './SectionTitle.tsx';
 import { UpdateCliHelp } from './UpdateCliGuide.tsx';
@@ -1296,6 +1297,7 @@ function PromptStep({ origin, tool, project, granted, onGrant }: PromptStepProps
         The block is optional: your tool reaches the board without it. It is needed when your local
         activity counts <em>only repos set up for Laika</em>, which look for this block.
       </p>
+      <OutputsNote />
       {REPO_MCP_CONFIG_TOOLS.has(tool.client) && (
         <div data-step="repo-mcp">
           <NoteBlock title="Project-scoped configuration" note="repo-mcp">

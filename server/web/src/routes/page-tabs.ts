@@ -34,6 +34,13 @@ export interface PageTab {
    */
   readonly badge?: string;
   /**
+   * A shorter word a page may draw at a phone's width instead of `label` —
+   * V3's *Setup* for *Project setup* (LAI-1327), so its tabs still fit 390px.
+   * The label stays the link's name to a screen reader, hidden for the eye
+   * only; a page that does not ask for the swap draws `label` alone.
+   */
+  readonly short?: string;
+  /**
    * The heading a tab sits under on a page whose sections are a side
    * navigation rather than a strip — the Organisation's settings hub
    * (LAI-1345). Absent: it stands on its own, above every group.
@@ -131,7 +138,7 @@ export const ORGANISATION_TABS: readonly PageTab[] = [
   { id: 'hr', label: 'HR system', group: 'Connections' },
   { id: 'email', label: 'Email', group: 'Connections' },
   { id: 'teams', label: 'Microsoft Teams', group: 'Connections' },
-  { id: 'calendar', label: 'Outlook calendar', group: 'Connections' },
+  { id: 'calendar', label: 'Microsoft 365', group: 'Connections' },
   { id: 'ai', label: 'AI & model prices', group: 'Connections' },
   // Everyone's work across every space (LAI-952), a tab since D-147
   // (LAI-1170): ungated, as the sidebar entry it replaces was — the server

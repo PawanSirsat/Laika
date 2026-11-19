@@ -291,6 +291,13 @@
   color: var(--text-primary);
 }
 
+/* Delete… (LAI-1354): the one item that takes work off the board for good. */
+.panel-overflow button.panel-overflow-danger,
+.panel-overflow button.panel-overflow-danger:hover,
+.panel-overflow button.panel-overflow-danger:focus-visible {
+  color: var(--overdue);
+}
+
 /* ------------------------------------------------------------- claim lock */
 
 .claim-lock {
@@ -1505,19 +1512,16 @@
   margin-bottom: var(--space-4-5);
 }
 
-/* Solid, 36px, white initials — a face in a thread, not a badge on a row. */
+/*
+ * Solid, 36px, white initials — a face in a thread, not a badge on a row. The
+ * disc is the shared Avatar (D-161), solid; this holds it and the bot mark.
+ */
 .cmt-avatar {
   position: relative;
   display: flex;
   flex: none;
   width: 36px;
   height: 36px;
-  border-radius: var(--radius-pill);
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
-  line-height: 1;
 }
 
 .cmt-bot {

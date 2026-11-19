@@ -106,6 +106,27 @@ const PAIRS: readonly Pair[] = [
     client: 'CapacityView',
     clientFile: 'presence.ts',
   },
+  // LAI-1348: the header's who's here — the view and each person in it.
+  {
+    server: 'PresencePeopleView',
+    serverFile: 'services/presence.ts',
+    client: 'PresencePeopleView',
+    clientFile: 'presence.ts',
+  },
+  {
+    server: 'PresencePersonView',
+    serverFile: 'services/presence.ts',
+    client: 'PresencePerson',
+    clientFile: 'presence.ts',
+  },
+  // LAI-1331: why a person is away, nested in each Capacity entry. The pair
+  // above sees `people` and nothing inside it; this one sees the shape.
+  {
+    server: 'CapacityAwayView',
+    serverFile: 'services/presence.ts',
+    client: 'CapacityAway',
+    clientFile: 'presence.ts',
+  },
   {
     // Paired the moment the mirror existed (LAI-459), the same way the presence
     // rows were. Both are real `*View` exports, so neither hits the census wall
@@ -1164,6 +1185,72 @@ const PAIRS: readonly Pair[] = [
     server: 'CalendarSyncResultView',
     serverFile: 'services/calendar-sync.ts',
     client: 'CalendarSyncResult',
+    clientFile: 'calendar.ts',
+  },
+  // The people sync on the same card (D-161, LAI-1330): its view, and each
+  // named shape inside it — the last run's counts, its error and its leaver
+  // review, down to one leaver.
+  {
+    server: 'PeopleSyncView',
+    serverFile: 'services/people-sync-settings.ts',
+    client: 'PeopleSync',
+    clientFile: 'people-sync.ts',
+  },
+  {
+    server: 'PeopleSyncErrorView',
+    serverFile: 'services/people-sync-settings.ts',
+    client: 'PeopleSyncError',
+    clientFile: 'people-sync.ts',
+  },
+  {
+    server: 'PeopleSyncResultView',
+    serverFile: 'services/people-sync.ts',
+    client: 'PeopleSyncResult',
+    clientFile: 'people-sync.ts',
+  },
+  {
+    server: 'LeaverReviewView',
+    serverFile: 'services/people-sync.ts',
+    client: 'LeaverReview',
+    clientFile: 'people-sync.ts',
+  },
+  {
+    server: 'LeaverView',
+    serverFile: 'services/people-sync.ts',
+    client: 'Leaver',
+    clientFile: 'people-sync.ts',
+  },
+  {
+    server: 'ChangedAccountView',
+    serverFile: 'services/people-sync.ts',
+    client: 'ChangedAccount',
+    clientFile: 'people-sync.ts',
+  },
+  // Everyone's photo version, title, department and manager (D-161).
+  {
+    server: 'PeopleDirectoryView',
+    serverFile: 'services/people-directory.ts',
+    client: 'PeopleDirectory',
+    clientFile: 'people-directory.ts',
+  },
+  {
+    server: 'PersonDirectoryView',
+    serverFile: 'services/people-directory.ts',
+    client: 'PersonDirectory',
+    clientFile: 'people-directory.ts',
+  },
+  // The backfill's answer (LAI-1335): its counts and the connection after it,
+  // and the backfill the connection says is running (review F1).
+  {
+    server: 'CalendarBackfillView',
+    serverFile: 'services/calendar-source.ts',
+    client: 'CalendarBackfill',
+    clientFile: 'calendar.ts',
+  },
+  {
+    server: 'CalendarBackfillRunningView',
+    serverFile: 'services/calendar-source.ts',
+    client: 'CalendarBackfillRunning',
     clientFile: 'calendar.ts',
   },
   {

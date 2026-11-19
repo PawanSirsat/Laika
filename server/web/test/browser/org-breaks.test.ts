@@ -100,8 +100,9 @@ const permissions = (role: string, actions: readonly string[]) => ({
   },
 });
 
+/** Organisation → Time & breaks, where the schedule is (LAI-1318). */
 async function organisation(stub: ApiStub): Promise<Harness> {
-  const h = await openPage('/organisation', stub);
+  const h = await openPage('/organisation?tab=time', stub);
   await h.page.locator('[data-fact="time"]').waitFor({ timeout: 20_000 });
   return h;
 }

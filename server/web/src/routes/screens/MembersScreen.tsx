@@ -7,7 +7,7 @@ import { Skeleton, SkeletonAvatar, SkeletonText } from '../../components/Skeleto
 import { Button } from '../../components/forms/Button.tsx';
 import { Dropdown } from '../../components/Dropdown.tsx';
 import { ProjectMark } from '../../components/ProjectMark.tsx';
-import { avatarColor } from '../../theme/avatar-color.ts';
+import { Avatar } from '../../components/avatar/Avatar.tsx';
 import { useTheme } from '../../theme/use-theme.ts';
 import { useMembers } from '../../api/use-members.ts';
 import {
@@ -20,7 +20,6 @@ import { getProject, type Project } from '../../api/projects.ts';
 import type { MeProfile } from '../../api/me.ts';
 import { useGates } from '../../api/permissions.ts';
 import './members.css';
-import { initials } from '../../theme/initials.ts';
 
 export interface MembersScreenProps {
   /** `?project=<slug>` — the same mechanism the board uses (LAI-058). */
@@ -169,23 +168,19 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
       ) : (
         <ul className="members-list">
           {members.members.map((member) => {
-            const colour = avatarColor(member.user_id, theme);
             const busy = members.pendingId === member.user_id;
             const isSelf = me?.id === member.user_id;
 
             return (
               <li key={member.user_id} className="member">
-                <span
+                <Avatar
+                  name={member.name}
+                  userId={member.user_id}
+                  theme={theme}
+                  size={32}
+                  label={null}
                   className="member-avatar"
-                  style={{
-                    background: colour.background,
-                    color: colour.foreground,
-                    borderColor: colour.border,
-                  }}
-                  aria-hidden="true"
-                >
-                  {initials(member.name)}
-                </span>
+                />
 
                 <div className="member-who">
                   <span className="member-name">

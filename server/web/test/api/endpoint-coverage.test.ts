@@ -62,6 +62,9 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
   // markdown carries — never read as JSON through `request()`.
   'api/v1/attachments/*/content':
     'markdown embeds it; the browser follows its 302 from an img or a link, never through request()',
+  // D-161 (LAI-1330): a person's synced photo, drawn by `Avatar` as an <img>.
+  'api/v1/users/*/photo':
+    'Avatar draws it as an <img src> at its ?v= version, never read through request()',
   'webhooks/transcript': 'a meeting bot or script posts here (D-052); signed, not session-authed',
   // D-155 (LAI-1315): Brevo's inbound parsing, proved by its bearer token.
   'webhooks/email': 'Brevo’s inbound parsing posts here (D-155); no browser is involved',

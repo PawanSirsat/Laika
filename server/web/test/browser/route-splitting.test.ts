@@ -371,7 +371,8 @@ void describe('lazy screens under the production CSP (LAI-1219)', () => {
       await orgLink.hover();
       await orgLink.click();
       await page.waitForURL(/\/organisation/);
-      await page.locator('.page-tab').first().waitFor({ timeout: 10_000 });
+      // The screen's own header: its sections draw once its people are read.
+      await page.locator('.org .screen-page-title').waitFor({ timeout: 10_000 });
       // A space tab: the frame and the board, side by side.
       await goWithoutWarming(page, '/board?project=laika');
       await page.locator('.view-tabs').first().waitFor({ timeout: 10_000 });

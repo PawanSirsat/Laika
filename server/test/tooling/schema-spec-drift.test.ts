@@ -601,6 +601,9 @@ describe('the parser itself', () => {
       'agent_time_buckets',
       'agent_time_days',
       'board_activity_days',
+      // LAI-1331: keyed by (person, Graph's event id), as `calendar_events`'
+      // link is unique on — the row is found again by that id at every sync.
+      'calendar_away',
       // LAI-1313: one row per source the email job reads, keyed by its name.
       'email_watermarks',
       'github_checks',
@@ -617,6 +620,8 @@ describe('the parser itself', () => {
       // LAI-1181: one row per organisation, keyed by `org_id`, as its Time setting.
       'org_hr_source',
       'org_model_prices',
+      // LAI-1330: one row per organisation, keyed by `org_id`: its people sync.
+      'org_people_sync',
       'org_role_grants',
       // LAI-1314: one row per organisation, keyed by `org_id`, as its Time setting.
       'org_teams_settings',
@@ -646,6 +651,8 @@ describe('the parser itself', () => {
       'token_usage_zones',
       // LAI-1130: one row per person, keyed by `user_id`, as their time settings.
       'user_availability',
+      // LAI-1330: one row per person, keyed by `user_id`: what the directory says.
+      'user_directory',
       // LAI-1313: one row per person, keyed by `user_id`, as their availability.
       'user_email_prefs',
       'user_time_settings',

@@ -4,6 +4,7 @@ import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { activity, projects, tasks, users } from '../db/schema.ts';
+import { liveTask } from '../db/live-task.ts';
 import { ApiError } from '../errors.ts';
 import { can } from '../policy/can.ts';
 import { addComment } from './comments.ts';
@@ -116,6 +117,8 @@ export function listReviewQueue(db: Db, actor: ResolvedActor): ReviewQueueView {
           actable.map((p) => p.id),
         ),
         eq(tasks.status, 'review'),
+        // An archived task waits on nobody's review (LAI-1353).
+        liveTask(),
       ),
     )
     .all();

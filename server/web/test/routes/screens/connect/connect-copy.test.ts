@@ -16,8 +16,9 @@ import {
   manualCommands,
   PLACEHOLDER_TOKEN,
   projectBlock,
-  projectPrompt,
+  projectHandover,
 } from '../../../../src/routes/screens/connect/connect-copy.ts';
+import { instructionsTarget } from '../../../../src/routes/screens/connect/connect-agents.ts';
 
 const ORIGIN = 'http://board.example.test:9999';
 const SECRET = 'lai_ThisIsTheWholeSecretAndMustNotEscape';
@@ -94,24 +95,23 @@ void describe('the machine prompt (LAI-507; was the setup prompt)', () => {
   });
 });
 
-void describe('the project prompt (LAI-507)', () => {
-  const block = projectBlock(ORIGIN, PROJECT);
-  const prompt = projectPrompt({ origin: ORIGIN, project: PROJECT, path: 'CLAUDE.md', block });
+void describe('the classic Projects tab’s prompt (LAI-507, the Project setup prompt since LAI-1352)', () => {
+  const claude = projectHandover(ORIGIN, PROJECT, instructionsTarget('claude-code'));
+  const prompt = claude.prompt ?? '';
 
-  void test('it writes the block into the named file, and nothing else', () => {
-    assert.match(prompt, /CLAUDE\.md/);
-    assert.ok(prompt.includes(block), 'the block is not in the prompt');
-    assert.match(prompt, /once per project/);
+  void test('it writes the current block into the named file, and nothing else', () => {
+    assert.ok(prompt.length > 1000, 'no prompt was handed over');
+    assert.match(prompt, /\.\/CLAUDE\.md/);
+    assert.ok(prompt.includes(claude.block), 'the block is not in the prompt');
     assert.match(prompt, /Change nothing else/);
     assert.match(prompt, /do not commit/);
   });
 
-  void test('it looks for the marker line before writing, so a second paste is a no-op', () => {
+  void test('a second paste is a no-op, and an older block is brought up to date in place', () => {
     assert.ok(prompt.includes(BLOCK_MARKER));
-    assert.ok(
-      block.includes(BLOCK_MARKER),
-      'the block does not carry the marker it is looked up by',
-    );
+    assert.ok(claude.block.includes(BLOCK_MARKER), 'the block does not carry its marker');
+    assert.match(prompt, /it is already up to date/);
+    assert.match(prompt, /show me the exact old and new text\s+as a diff/);
   });
 
   void test('CONTROL: it installs nothing and carries no token', () => {
@@ -121,7 +121,7 @@ void describe('the project prompt (LAI-507)', () => {
   });
 
   void test('it follows the agent’s file', () => {
-    const agents = projectPrompt({ origin: ORIGIN, project: PROJECT, path: 'AGENTS.md', block });
+    const agents = projectHandover(ORIGIN, PROJECT, instructionsTarget('codex')).prompt ?? '';
     assert.match(agents, /AGENTS\.md/);
     assert.doesNotMatch(agents, /CLAUDE\.md/);
   });

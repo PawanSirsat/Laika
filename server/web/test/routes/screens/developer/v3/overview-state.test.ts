@@ -11,6 +11,7 @@ import type { RegisteredAgent } from '../../../../../src/api/agents.ts';
 import type { Device } from '../../../../../src/api/devices.ts';
 import type { ProjectSetup } from '../../../../../src/api/project-setups.ts';
 import type { TokenView } from '../../../../../src/api/tokens.ts';
+import { PROJECT_BLOCK_REVISION } from '../../../../../src/routes/screens/connect/connect-copy.ts';
 import { deviceCounts } from '../../../../../src/routes/screens/developer/v3/devices-view.ts';
 import {
   ADVANCED_ADDRESS,
@@ -110,7 +111,8 @@ const setup = (over: Partial<ProjectSetup> & { id: string }): ProjectSetup => ({
   repo_key: '',
   instructions_path: 'CLAUDE.md',
   block_found: true,
-  template_revision: 2,
+  // A current record: whatever the template's revision is (3 since LAI-1352).
+  template_revision: PROJECT_BLOCK_REVISION,
   project_match: null,
   prefix_match: null,
   source: 'self_reported_browser',

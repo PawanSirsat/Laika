@@ -5,13 +5,18 @@ import { type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
 import { appendActivity } from '../../src/db/activity.ts';
 import {
+  analyticsViews,
+  calendarAway,
   heartbeats,
+  orgCalendarSource,
   orgs,
   projects,
   sessions,
   tasks,
+  timeEntries,
   tokens,
   unlistedWork,
+  userAwayPeriods,
   users,
 } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
@@ -21,8 +26,10 @@ import {
   capacityNow,
   loadOf,
   presenceNow,
+  presencePeopleNow,
   PRESENCE_WINDOW_MS,
   statusOf,
+  type CapacitySpace,
   type CapacityWorkload,
 } from '../../src/services/presence.ts';
 import { addMember, createProject } from '../../src/services/projects.ts';
@@ -271,6 +278,193 @@ describe('agent sessions are distinguishable from humans (§11.4.2)', () => {
 
     // Two tokens beating is two sessions; two beats from one token is one.
     expect(mine?.active_sessions).toBe(2);
+  });
+});
+
+describe('away and meetings on Capacity (LAI-1331)', () => {
+  /** 15 January 2027, a Friday: everyone here keeps UTC. */
+  const TODAY = '2027-01-15';
+  let ada: string;
+  let bea: string;
+  let cal: string;
+
+  beforeEach(() => {
+    ada = makeUser('member', 'Ada');
+    bea = makeUser('member', 'Bea');
+    cal = makeUser('member', 'Cal');
+    // Ada and Cal share Laika with the admin; Bea shares no space with anyone.
+    addMember(t.db, actor(adminId), 'laika', ada, 'member');
+    addMember(t.db, actor(adminId), 'laika', cal, 'member');
+    // The Outlook connection, on: out of office is told only while it is read.
+    const org = t.db.select({ id: orgs.id }).from(orgs).get();
+    t.db
+      .insert(orgCalendarSource)
+      .values({
+        orgId: org?.id ?? '',
+        tenantId: 'contoso.onmicrosoft.com',
+        clientId: '00000000-0000-4000-8000-000000000000',
+        secretEnc: 'not-a-secret',
+        secretLast4: 'cret',
+        enabled: 1,
+        configuredBy: adminId,
+        configuredAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+  });
+
+  const read = (reader: ResolvedActor, at = NOW) =>
+    new Map(capacityNow(t.db, reader, at).people.map((p) => [p.user_id, p]));
+  const withToken = (userId: string): ResolvedActor => ({
+    ...actor(userId),
+    token: { id: 'tok_x', scope: 'full', projectIds: null },
+  });
+  const looks = () =>
+    t.db
+      .select({
+        viewer: analyticsViews.viewerId,
+        subject: analyticsViews.subjectId,
+        kind: analyticsViews.kind,
+      })
+      .from(analyticsViews)
+      .all();
+  const meeting = (userId: string, day: string, minutes: number) =>
+    t.db
+      .insert(timeEntries)
+      .values({
+        id: newId(),
+        userId,
+        day,
+        tz: 'UTC',
+        minutes,
+        source: 'calendar',
+        sourceRef: newId(),
+        kind: 'meeting',
+        createdAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+
+  it('says who is away — their own period and Outlook’s — to whoever sees their availability (D-137)', () => {
+    t.db
+      .insert(userAwayPeriods)
+      .values({
+        id: newId(),
+        userId: cal,
+        fromDay: '2027-01-14',
+        toDay: '2027-01-20',
+        createdAt: NOW,
+      })
+      .run();
+    t.db
+      .insert(calendarAway)
+      .values({
+        userId: cal,
+        eventId: 'oof-1',
+        startsAt: Date.UTC(2027, 0, 11),
+        endsAt: Date.UTC(2027, 0, 23),
+        allDay: 1,
+        lastSeenAt: NOW,
+        createdAt: NOW,
+      })
+      .run();
+    t.db
+      .insert(calendarAway)
+      .values({
+        userId: bea,
+        eventId: 'oof-2',
+        startsAt: NOW - 3_600_000,
+        endsAt: NOW + 3_600_000,
+        lastSeenAt: NOW,
+        createdAt: NOW,
+      })
+      .run();
+
+    // A member: the people who share a space with them, and themselves.
+    const asAda = read(actor(ada));
+    expect(asAda.get(cal)?.away).toEqual({
+      own: { until: '2027-01-20' },
+      outlook: { until: '2027-01-22' },
+    });
+    expect(asAda.get(ada)?.away).toBeNull();
+    expect(asAda.get(adminId)?.away).toBeNull();
+    // Bea shares no space with Ada: not *not away* — not told at all.
+    expect('away' in (asAda.get(bea) ?? {})).toBe(false);
+
+    // *See everyone's analytics*: everyone.
+    const asAdmin = read(actor(adminId));
+    expect(asAdmin.get(bea)?.away).toEqual({ own: null, outlook: { until: TODAY } });
+    expect(asAdmin.get(cal)?.away?.outlook).toEqual({ until: '2027-01-22' });
+
+    // Bea sees herself, and nobody she shares no space with.
+    const asBea = read(actor(bea));
+    expect(asBea.get(bea)?.away).toEqual({ own: null, outlook: { until: TODAY } });
+    expect('away' in (asBea.get(cal) ?? {})).toBe(false);
+  });
+
+  it('tells an agent’s token nobody’s away, its own person’s included: reading availability is session only (D-131)', () => {
+    t.db
+      .insert(calendarAway)
+      .values({
+        userId: cal,
+        eventId: 'oof-1',
+        startsAt: NOW - 3_600_000,
+        endsAt: NOW + 3_600_000,
+        lastSeenAt: NOW,
+        createdAt: NOW,
+      })
+      .run();
+    // The same owner signed in is told — so the token's silence is the gate.
+    expect(read(actor(adminId)).get(cal)?.away).toEqual({
+      own: null,
+      outlook: { until: TODAY },
+    });
+    const asToken = read(withToken(adminId));
+    expect(asToken.size).toBeGreaterThan(0);
+    for (const id of [adminId, ada, bea, cal]) {
+      expect('away' in (asToken.get(id) ?? {})).toBe(false);
+    }
+  });
+
+  it('gives everyone’s meetings this week to *See everyone’s analytics*, each a logged time look (D-102)', () => {
+    meeting(ada, '2027-01-11', 90);
+    meeting(ada, '2027-01-15', 30);
+    // Last week's: not this week's.
+    meeting(ada, '2027-01-10', 600);
+
+    const asAdmin = read(actor(adminId));
+    expect(asAdmin.get(ada)?.meeting_minutes_week).toBe(120);
+    expect(asAdmin.get(bea)?.meeting_minutes_week).toBe(0);
+    expect(asAdmin.get(adminId)?.meeting_minutes_week).toBe(0);
+    // One look at each other person's time — none at the admin's own.
+    expect(
+      looks()
+        .map((l) => [l.viewer, l.subject, l.kind])
+        .sort(),
+    ).toEqual([ada, bea, cal].map((id) => [adminId, id, 'time']).sort());
+    // Read again within the dedupe window: no second row.
+    read(actor(adminId), NOW + 60_000);
+    expect(looks()).toHaveLength(3);
+  });
+
+  it('gives a member only their own meetings, and logs nothing', () => {
+    meeting(ada, '2027-01-12', 45);
+    meeting(cal, '2027-01-12', 60);
+    const asAda = read(actor(ada));
+    expect(asAda.get(ada)?.meeting_minutes_week).toBe(45);
+    for (const id of [adminId, bea, cal]) {
+      expect('meeting_minutes_week' in (asAda.get(id) ?? {})).toBe(false);
+    }
+    expect(looks()).toEqual([]);
+  });
+
+  it('gives a token nobody else’s meetings: reading another person’s time is session only (D-102)', () => {
+    meeting(ada, '2027-01-12', 45);
+    const asToken = read(withToken(adminId));
+    for (const id of [ada, bea, cal]) {
+      expect('meeting_minutes_week' in (asToken.get(id) ?? {})).toBe(false);
+    }
+    expect(looks()).toEqual([]);
   });
 });
 
@@ -1060,6 +1254,92 @@ describe('capacity per person (LAI-767)', () => {
       expect(partial.spaces.map((s) => [s.slug, s.load])).toEqual([['laika', 'light']]);
       expect(partial.in_progress_tasks).toEqual([seen]);
     });
+
+    // LAI-1334: "0 No spaces" for someone between tasks who is in three.
+    describe('the spaces a person is in, not only where they have open work', () => {
+      const space = (name: string, slug: string, prefix: string) =>
+        createProject(t.sqlite, t.db, actor(adminId), { name, slug, prefix });
+      const row = (s: CapacitySpace) => [s.slug, s.committed, s.open, s.load];
+
+      it('lists every space they are in with no open work, A–Z, every count 0', () => {
+        const ada = makeUser('member', 'Ada');
+        space('Zeta', 'zeta', 'ZET');
+        const alpha = space('Alpha', 'alpha', 'ALP');
+        for (const slug of ['zeta', 'laika', 'alpha']) {
+          addMember(t.db, actor(adminId), slug, ada, 'member');
+        }
+
+        const mine = entry(ada);
+        expect(mine).toMatchObject({ load: 'none', workload: { open: 0 } });
+        expect(mine.spaces.map(row)).toEqual([
+          ['alpha', 0, 0, 'none'],
+          ['laika', 0, 0, 'none'],
+          ['zeta', 0, 0, 'none'],
+        ]);
+        expect(mine.spaces[0]).toEqual({
+          project_id: alpha.id,
+          slug: 'alpha',
+          name: 'Alpha',
+          in_progress: 0,
+          todo: 0,
+          backlog: 0,
+          in_review: 0,
+          committed: 0,
+          overdue: 0,
+          due_soon: 0,
+          open: 0,
+          load: 'none',
+        });
+      });
+
+      it('puts a space with open work first, with its counts, and the one without after it', () => {
+        const ada = makeUser('member', 'Ada');
+        space('Alpha', 'alpha', 'ALP');
+        addMember(t.db, actor(adminId), 'alpha', ada, 'member');
+        addMember(t.db, actor(adminId), 'laika', ada, 'member');
+        assigned(ada, 'todo', null, 'laika');
+        // Open but not committed still counts as open work: before the idle one.
+        space('Mid', 'mid', 'MID');
+        addMember(t.db, actor(adminId), 'mid', ada, 'member');
+        assigned(ada, 'review', null, 'mid');
+
+        expect(entry(ada).spaces.map(row)).toEqual([
+          ['laika', 1, 1, 'light'],
+          ['mid', 0, 1, 'none'],
+          ['alpha', 0, 0, 'none'],
+        ]);
+      });
+
+      it('never lists a space the reader cannot see', () => {
+        const ada = makeUser('member', 'Ada');
+        const reader = makeUser('member', 'Reader');
+        space('Secret', 'secret', 'SEC');
+        addMember(t.db, actor(adminId), 'laika', ada, 'member');
+        addMember(t.db, actor(adminId), 'secret', ada, 'member');
+        addMember(t.db, actor(adminId), 'laika', reader, 'member');
+
+        // Control: whoever reads both sees both.
+        expect(entry(ada).spaces.map((s) => s.slug)).toEqual(['laika', 'secret']);
+        expect(entry(ada, reader).spaces.map((s) => s.slug)).toEqual(['laika']);
+      });
+
+      it('leaves out an archived space, unless open work of theirs is still in it', () => {
+        const ada = makeUser('member', 'Ada');
+        space('Old', 'old', 'OLD');
+        addMember(t.db, actor(adminId), 'laika', ada, 'member');
+        addMember(t.db, actor(adminId), 'old', ada, 'member');
+        t.db.update(projects).set({ archivedAt: NOW }).where(eq(projects.slug, 'old')).run();
+        expect(entry(ada).spaces.map((s) => s.slug)).toEqual(['laika']);
+
+        t.db.update(projects).set({ archivedAt: null }).where(eq(projects.slug, 'old')).run();
+        assigned(ada, 'todo', null, 'old');
+        t.db.update(projects).set({ archivedAt: NOW }).where(eq(projects.slug, 'old')).run();
+        expect(entry(ada).spaces.map(row)).toEqual([
+          ['old', 1, 1, 'light'],
+          ['laika', 0, 0, 'none'],
+        ]);
+      });
+    });
   });
 
   describe('the load rule', () => {
@@ -1319,6 +1599,126 @@ describe('capacity per person (LAI-767)', () => {
         signIn(id, NOW - i * MIN);
         token(id, { lastMcpAt: NOW - i * MIN });
         assigned(id, 'in_progress');
+      }
+
+      expect(countFor()).toBe(few);
+    });
+  });
+
+  // The header's who's here (LAI-1348): Capacity's status, read cheaply.
+  describe('who is here, for the header (presencePeopleNow)', () => {
+    const here = (at = NOW) =>
+      presencePeopleNow(t.db, actor(adminId), at).people.map((p) => [
+        p.name,
+        p.status,
+        p.last_seen_via,
+      ]);
+
+    it('names who is online and who is away by Capacity’s signals, online first, and agrees with Capacity', () => {
+      const ada = makeUser('member', 'Ada');
+      const bea = makeUser('member', 'Bea');
+      const cal = makeUser('member', 'Cal');
+      const dee = makeUser('member', 'Dee');
+      const eli = makeUser('member', 'Eli');
+      makeUser('member', 'Fay');
+      signIn(ada, NOW - 2 * MIN);
+      act(bea, NOW - 20 * MIN);
+      token(cal, { lastMcpAt: NOW - MIN, client: 'claude-code' });
+      beat(dee, NOW - 40 * MIN);
+      signIn(eli, NOW - 2 * 60 * MIN);
+
+      expect(here()).toEqual([
+        ['Cal', 'online', 'agent'],
+        ['Ada', 'online', 'web'],
+        ['Bea', 'away', 'board'],
+        ['Dee', 'away', 'web'],
+      ]);
+
+      // The drift guard: whatever Capacity calls online or away, this does,
+      // and whoever it leaves out Capacity calls offline or never.
+      const named = new Map(
+        presencePeopleNow(t.db, actor(adminId), NOW).people.map((p) => [p.user_id, p.status]),
+      );
+      for (const person of capacityNow(t.db, actor(adminId), NOW).people) {
+        const status = person.status;
+        if (status === 'online' || status === 'away') {
+          expect(named.get(person.user_id), person.name).toBe(status);
+        } else {
+          expect(named.has(person.user_id), person.name).toBe(false);
+        }
+      }
+    });
+
+    it('holds Capacity’s edges: five minutes is away, the hour is gone', () => {
+      const ada = makeUser('member', 'Ada');
+      const bea = makeUser('member', 'Bea');
+      const cal = makeUser('member', 'Cal');
+      signIn(ada, NOW - 5 * MIN);
+      signIn(bea, NOW - 60 * MIN + 1);
+      signIn(cal, NOW - 60 * MIN);
+
+      expect(here()).toEqual([
+        ['Ada', 'away', 'web'],
+        ['Bea', 'away', 'web'],
+      ]);
+    });
+
+    it('names nobody on a revoked token or deactivated, and each person once at their newest', () => {
+      const gus = makeUser('member', 'Gus');
+      const revoked = token(gus, { lastMcpAt: NOW - MIN, revokedAt: NOW - 1000 });
+      act(gus, NOW - MIN, 'agent', revoked);
+      const hal = makeUser('member', 'Hal');
+      signIn(hal, NOW - MIN);
+      t.db.update(users).set({ isActive: 0 }).where(eq(users.id, hal)).run();
+      const ivy = makeUser('member', 'Ivy');
+      signIn(ivy, NOW - 50 * MIN);
+      act(ivy, NOW - 3 * MIN);
+
+      expect(here()).toEqual([['Ivy', 'online', 'board']]);
+    });
+
+    it('is enabled:false and nobody while presence is off — not an empty org', () => {
+      const ada = makeUser('member', 'Ada');
+      signIn(ada, NOW - MIN);
+      expect(presencePeopleNow(t.db, actor(adminId), NOW)).toEqual({
+        enabled: true,
+        people: [expect.objectContaining({ name: 'Ada', status: 'online' })],
+      });
+      t.db.update(orgs).set({ presenceEnabled: 0 }).run();
+      expect(presencePeopleNow(t.db, actor(adminId), NOW)).toEqual({ enabled: false, people: [] });
+    });
+
+    it('reads only the last hour, through the time indexes, and writes nothing', () => {
+      const ada = makeUser('member', 'Ada');
+      act(ada, NOW - MIN);
+      beat(ada, NOW - MIN);
+      const read = () => presencePeopleNow(t.db, actor(adminId), NOW);
+
+      // A range on the time, not the org's whole history through its prefix.
+      const activityPlan = queryPlansOf(t.sqlite, 'activity', read).join('\n');
+      expect(activityPlan).toMatch(/activity_org_created_at_idx \(org_id=\? AND created_at>\?\)/);
+      expect(activityPlan).not.toMatch(/SCAN activity\b/);
+      const beatPlan = queryPlansOf(t.sqlite, 'heartbeats', read).join('\n');
+      expect(beatPlan).toMatch(/heartbeats_created_at_idx \(created_at>\?\)/);
+      expect(beatPlan).not.toMatch(/SCAN heartbeats\b/);
+
+      const statements = preparedDuring(t.sqlite, read);
+      expect(statements.length).toBeGreaterThan(0);
+      expect(statements.filter((sql) => !/^\s*select\b/i.test(sql))).toEqual([]);
+    });
+
+    it('prepares the same statements for two people as for twelve', () => {
+      const countFor = (): number =>
+        preparedDuring(t.sqlite, () => presencePeopleNow(t.db, actor(adminId), NOW)).length;
+
+      signIn(makeUser('member', 'One'), NOW - MIN);
+      const few = countFor();
+      for (let i = 0; i < 10; i += 1) {
+        const id = makeUser('member', `Person ${String(i)}`);
+        signIn(id, NOW - i * MIN);
+        token(id, { lastMcpAt: NOW - i * MIN });
+        act(id, NOW - i * MIN);
+        beat(id, NOW - i * MIN);
       }
 
       expect(countFor()).toBe(few);

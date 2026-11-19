@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  backfillCalendarSource,
   calendarRefusal,
   calendarSyncErrorWords,
   disconnectCalendarSource,
@@ -8,6 +9,7 @@ import {
   saveCalendarSource,
   syncCalendarSource,
   testCalendarSource,
+  type CalendarBackfill,
   type CalendarRuleKind,
   type CalendarSource,
 } from '../../../api/calendar.ts';
@@ -20,14 +22,21 @@ import { IconButton } from '../../../components/forms/IconButton.tsx';
 import { PasswordInput } from '../../../components/forms/PasswordInput.tsx';
 import { TextInput } from '../../../components/forms/TextInput.tsx';
 import { Switch } from '../../../components/Switch.tsx';
+import { PeopleSyncPanel } from './PeopleSyncPanel.tsx';
 import {
+  backfillConfirm,
+  backfillDays,
+  backfillLine,
+  backfillRunningLine,
   blankRule,
   countsLine,
+  DEFAULT_BACKFILL_DAYS,
   formChanged,
   formOf,
   GRANT_STEP,
   hasProblems,
   inputOf,
+  MAX_BACKFILL_DAYS,
   MAX_RULES,
   problemsOf,
   rolesLine,
@@ -45,9 +54,12 @@ export interface CalendarSourceSectionProps {
 }
 
 /** Which control is waiting on the server, so only that one spins. */
-type Busy = 'save' | 'switch' | 'test' | 'sync' | 'disconnect';
+type Busy = 'save' | 'switch' | 'test' | 'sync' | 'backfill' | 'disconnect';
 
 const MINUTE = 60_000;
+
+/** How often the card asks again while a backfill runs, to learn it is done. */
+const BACKFILL_POLL_MS = 10_000;
 
 const RULE_KINDS: readonly DropdownOption<CalendarRuleKind>[] = [
   { value: 'title', label: 'Title contains' },
@@ -55,8 +67,10 @@ const RULE_KINDS: readonly DropdownOption<CalendarRuleKind>[] = [
 ];
 
 /**
- * The organisation's Outlook calendar (D-157, LAI-1316), a card on
- * Organisation → Integrations after the HR system: an owner or admin saves
+ * The organisation's Microsoft 365 connection, a card on Organisation →
+ * Integrations after the HR system — its Outlook calendar (D-157, LAI-1316)
+ * and, through the same app, its people (D-161, LAI-1330, `PeopleSyncPanel`),
+ * each with its own switch: an owner or admin saves
  * the Microsoft Entra app's tenant, client id and secret, tests whether
  * Microsoft grants it `Calendars.Read`, says which meetings go to which
  * space, and turns the switch on. Shown only to a holder of
@@ -70,6 +84,12 @@ const RULE_KINDS: readonly DropdownOption<CalendarRuleKind>[] = [
  * **The switch saves the moment it is flipped**, with everything else as
  * saved, as Developer insights' does: an owner who turns it on is not left
  * with a page that looks on and a server that is off.
+ *
+ * **Backfill the last N days** (LAI-1335), while the switch is on: a number
+ * from 1 to 90, a confirm, then the counts on a line of their own. While one
+ * runs — this page's, or one the server says is going after a proxy gave up
+ * on the request — Backfill waits, and the card asks again every ten seconds
+ * until it is done (review F1).
  */
 export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
   const confirm = useConfirm();
@@ -83,6 +103,9 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
     undefined,
   );
   const [now, setNow] = useState(() => Date.now());
+  const [daysText, setDaysText] = useState(DEFAULT_BACKFILL_DAYS);
+  const [daysChecked, setDaysChecked] = useState(false);
+  const [backfilled, setBackfilled] = useState<CalendarBackfill | undefined>(undefined);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -99,6 +122,25 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
       controller.abort();
     };
   }, []);
+
+  // A backfill going: ask again until it is done, so Backfill comes back and
+  // the last sync shows its counts.
+  const backfillGoing = view?.backfill_running != null;
+  useEffect(() => {
+    if (!backfillGoing) return undefined;
+    const controller = new AbortController();
+    const stop = startTicker(() => {
+      getCalendarSource(controller.signal)
+        .then((answer) => {
+          if (!controller.signal.aborted) setView(answer);
+        })
+        .catch(() => undefined);
+    }, BACKFILL_POLL_MS);
+    return () => {
+      stop();
+      controller.abort();
+    };
+  }, [backfillGoing]);
 
   // "4 min ago" keeps up with the clock while the page is open.
   useEffect(
@@ -119,7 +161,7 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
     return (
       <section className="org-card org-cal" aria-labelledby="org-cal" data-section="calendar">
         <header className="org-card-head">
-          <h2 id="org-cal">Outlook calendar</h2>
+          <h2 id="org-cal">Microsoft 365</h2>
         </header>
         <p className="org-fact-error" role="alert">
           The calendar connection could not be read. {readFailed}
@@ -184,10 +226,42 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
     void run('switch', () => saveCalendarSource(switchInput(view, on)));
   };
 
+  const asked = backfillDays(daysText);
+  const daysProblem = daysChecked && 'problem' in asked ? asked.problem : undefined;
+
+  const backfill = (): void => {
+    setDaysChecked(true);
+    if ('problem' in asked) return;
+    const { days } = asked;
+    void confirm({ ...backfillConfirm(days), confirmLabel: 'Backfill' }).then((yes) => {
+      if (!yes) return;
+      setBusy('backfill');
+      setError(undefined);
+      setBackfilled(undefined);
+      backfillCalendarSource(days)
+        .then((answer) => {
+          setView(answer.connection);
+          setBackfilled(answer);
+          setNow(Date.now());
+        })
+        .catch((cause: unknown) => {
+          setError(calendarRefusal(cause));
+          // A proxy that gave up on a long request leaves the backfill
+          // running: read the card again, so it says so and waits for it.
+          getCalendarSource()
+            .then(setView)
+            .catch(() => undefined);
+        })
+        .finally(() => {
+          setBusy(undefined);
+        });
+    });
+  };
+
   const disconnect = (): void => {
     void confirm({
-      title: 'Disconnect Outlook?',
-      body: 'Laika forgets the tenant, client ID and secret, and stops reading calendars. Meetings already logged stay on people’s days as their time.',
+      title: 'Disconnect Microsoft 365?',
+      body: 'Laika forgets the tenant, client ID and secret, stops reading calendars and people, and stops showing anyone out of office from Outlook. Meetings already logged stay on people’s days as their time; photos and titles already synced stay, and Deactivate leavers goes off.',
       confirmLabel: 'Disconnect',
       danger: true,
     }).then((yes) => {
@@ -219,17 +293,18 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
     keywords: p.slug,
   }));
   const test = view.last_test;
+  const running = view.backfill_running;
 
   return (
     // Folded to one row that says its state (LAI-1345).
     <OrgAccordion
       name="calendar"
       id="org-cal"
-      title="Outlook calendar"
+      title="Microsoft 365"
       className="org-cal"
       section="calendar"
       hooks={{ 'data-calendar-status': statusWord(view) }}
-      description="Accepted meetings logged on each person’s My day as confirmed time."
+      description="Meetings people have not declined, logged on My day as confirmed time; and their photos, titles and managers."
       meta={
         <span
           className="org-status-badge"
@@ -241,20 +316,21 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
       }
     >
       <p className="org-note org-hr-lead" data-calendar-lead>
-        Every {String(view.sync_every_minutes)} minutes, the meetings each person accepted an
-        invitation to, and the Teams meetings they organised, are logged on their My day as
-        confirmed time, as meetings — yesterday, today and tomorrow. Something they put in their own
-        calendar that is not a Teams meeting, like lunch or focus time, is left off. Laika keeps the
-        subject and the times only, never join links, the meeting’s text or who else was invited; a
-        private meeting is logged as “Busy”. Tentative, declined, cancelled, free, out-of-office and
-        all-day ones are left out. Anyone can change or delete their own, and once they do, later
-        syncs leave it alone.
+        Every {String(view.sync_every_minutes)} minutes, the meetings each person was invited to and
+        has not declined — accepted, tentative or not answered — and the Teams meetings they
+        organised, are logged on their My day as confirmed time, as meetings — yesterday, today and
+        tomorrow. Something they put in their own calendar that is not a Teams meeting, like lunch
+        or focus time, is left off. Laika keeps the subject and the times only, never join links,
+        the meeting’s text or who else was invited; a private meeting is logged as “Busy”. Declined,
+        cancelled, free, out-of-office and all-day ones are left out. Anyone can change or delete
+        their own — a meeting they did not go to, say — and once they do, later syncs leave it
+        alone.
       </p>
 
       <div className="org-hr-body">
         <span className="org-cal-switch" data-calendar-switch>
           <span className="org-cal-switch-label" id="org-cal-switch-label">
-            Log meetings automatically
+            Calendar
           </span>
           <Switch
             checked={view.enabled}
@@ -274,9 +350,11 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
           </span>
         </span>
 
+        <PeopleSyncPanel connected={view.configured} now={now} />
+
         <form
           className="org-hr-form org-cal-form"
-          aria-label="Outlook calendar settings"
+          aria-label="Microsoft 365 settings"
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
@@ -507,10 +585,17 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
                     Last sync {ago(view.last_attempt_at)} failed:{' '}
                     {calendarSyncErrorWords(view.last_error)}.
                   </span>
-                  {view.last_success_at !== null && view.last_result !== null && (
-                    <span className="org-fact-note">
-                      Last good sync {ago(view.last_success_at)}: {countsLine(view.last_result)}.
+                  {view.last_error.code === 'stopped_partway' && view.last_result !== null ? (
+                    <span className="org-fact-note" data-calendar-stopped-counts>
+                      Before it stopped: {countsLine(view.last_result)}.
                     </span>
+                  ) : (
+                    view.last_success_at !== null &&
+                    view.last_result !== null && (
+                      <span className="org-fact-note">
+                        Last good sync {ago(view.last_success_at)}: {countsLine(view.last_result)}.
+                      </span>
+                    )
                   )}
                 </>
               ) : (
@@ -542,6 +627,68 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
                 Disconnect
               </Button>
             </span>
+          </div>
+        )}
+
+        {view.configured && view.enabled && (
+          <div className="org-cal-check" data-calendar-backfill>
+            <span className="org-cal-check-head">Backfill</span>
+            <span className="org-fact-note" id="org-cal-backfill-note">
+              Log the meetings of days already past for everyone, by the same rules. Days in the
+              closed period and days already full are held back, and what anyone changed or deleted
+              stays as they left it. Running it again adds nothing.
+            </span>
+            <span className="org-cal-backfill">
+              <span className="org-cal-backfill-words" aria-hidden="true">
+                The last
+              </span>
+              <input
+                className="input org-cal-backfill-days"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={MAX_BACKFILL_DAYS}
+                step={1}
+                value={daysText}
+                aria-label={`Days to backfill, 1 to ${String(MAX_BACKFILL_DAYS)}`}
+                aria-describedby="org-cal-backfill-note"
+                aria-invalid={daysProblem === undefined ? undefined : true}
+                disabled={busy !== undefined || running !== null}
+                onChange={(event) => {
+                  setDaysText(event.target.value);
+                  setDaysChecked(false);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && running === null) backfill();
+                }}
+              />
+              <span className="org-cal-backfill-words" aria-hidden="true">
+                days
+              </span>
+              <Button
+                variant="secondary"
+                busy={busy === 'backfill'}
+                disabled={busy !== undefined || running !== null}
+                onClick={backfill}
+              >
+                Backfill
+              </Button>
+            </span>
+            {running !== null && busy !== 'backfill' && (
+              <span className="org-hr-sync" data-calendar-backfill-running>
+                {backfillRunningLine(running.days, ago(running.started_at))}
+              </span>
+            )}
+            {daysProblem !== undefined && (
+              <span className="org-fact-error" data-calendar-backfill-problem>
+                {daysProblem}
+              </span>
+            )}
+            {backfilled !== undefined && (
+              <span className="org-hr-sync" data-calendar-backfilled>
+                {backfillLine(backfilled)}
+              </span>
+            )}
           </div>
         )}
 

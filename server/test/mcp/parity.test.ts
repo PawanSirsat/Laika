@@ -6,9 +6,10 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
-import { activity, timeDrafts, timeEntries, users } from '../../src/db/schema.ts';
+import { activity, attachments, timeDrafts, timeEntries, users } from '../../src/db/schema.ts';
 import { applyCheckpointDelivery } from '../../src/services/checkpoints.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../helpers/auth.ts';
+import { browserPut, fakeAttachments, fakeS3, type FakeS3 } from '../helpers/fake-s3.ts';
 
 /**
  * An MCP tool and its REST twin write identical activity (SPEC §13.3, LAI-409).
@@ -61,6 +62,8 @@ interface Side {
   baseUrl: URL;
   cookie: string;
   secret: string;
+  /** Its own fake file store (D-150), for the upload tools' pairs (D-162). */
+  fake: FakeS3;
 }
 
 const open: Side[] = [];
@@ -77,7 +80,8 @@ const open: Side[] = [];
 const SIDE_BUDGET_MS = 30_000;
 
 async function makeSide(): Promise<Side> {
-  const h = authHarness();
+  const fake = fakeS3();
+  const h = authHarness({ attachments: { config: fakeAttachments(), fetchImpl: fake.fetchImpl } });
 
   const setup = await h.app.request('/api/v1/setup', {
     method: 'POST',
@@ -96,7 +100,7 @@ async function makeSide(): Promise<Side> {
     const server = serve({ fetch: h.app.fetch, port: 0, hostname: '127.0.0.1' }, (info) => {
       resolve(new URL(`http://127.0.0.1:${String(info.port)}`));
     });
-    open.push({ h, server, baseUrl: new URL('http://placeholder'), cookie, secret: '' });
+    open.push({ h, server, baseUrl: new URL('http://placeholder'), cookie, secret: '', fake });
   });
 
   const side = open[open.length - 1]!;
@@ -458,6 +462,47 @@ const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
       },
     },
   ],
+  [
+    'request_upload',
+    {
+      note: 'Its twin is `POST /projects/:slug/attachments` (§6.4, D-162, LAI-1302): the same `createAttachment`, the task named by its key on the tool and by its id on the route. Asking writes no `activity` row — a `pending` file is nobody’s yet — so each half also asserts the one pending file it asked for, or the comparison of two empty feeds would prove nothing.',
+      rest: async (s) => {
+        const task = await seedTask(s);
+        await askUpload(s, task);
+        expectOnePending(s);
+      },
+      mcp: async (s, c) => {
+        await seedTask(s);
+        await callTool(c, 'request_upload', { task: 'COR-1', ...SHOT });
+        expectOnePending(s);
+      },
+    },
+  ],
+  [
+    'complete_upload',
+    {
+      note: 'Its twin is `POST /attachments/:id/complete` (§6.4, D-162, LAI-1302): the same `completeAttachment`, after the same presigned `PUT` to the store, and a file that named its task writes `attachment.added` on both.',
+      rest: async (s) => {
+        const task = await seedTask(s);
+        const asked = await askUpload(s, task);
+        expect((await browserPut(s.fake, asked.upload, PNG)).status).toBe(200);
+        await must(
+          s,
+          `/api/v1/attachments/${asked.attachment.id}/complete`,
+          { method: 'POST' },
+          200,
+        );
+      },
+      mcp: async (s, c) => {
+        await seedTask(s);
+        const asked = (
+          await c.callTool({ name: 'request_upload', arguments: { task: 'COR-1', ...SHOT } })
+        ).structuredContent as Asked;
+        expect((await browserPut(s.fake, asked.upload, PNG)).status).toBe(200);
+        await callTool(c, 'complete_upload', { attachment: asked.attachment.id });
+      },
+    },
+  ],
   ['list_projects', { rest: readsNothingRest, mcp: readsNothingMcp('list_projects', {}) }],
   ['list_ready_tasks', { rest: readsNothingRest, mcp: readsNothingMcp('list_ready_tasks', {}) }],
   [
@@ -651,6 +696,34 @@ async function seedTask(side: Side): Promise<string> {
     body: JSON.stringify({ title: 'A task', priority: 'p1' }),
   });
   return ((await res.json()) as { id: string }).id;
+}
+
+/** A PNG's first bytes: what both halves of an upload pair send (D-162). */
+const PNG = new Uint8Array([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+]);
+const SHOT = { filename: 'shot.png', content_type: 'image/png', size_bytes: PNG.length };
+
+interface Asked {
+  attachment: { id: string };
+  upload: { url: string; headers: Record<string, string> };
+}
+
+/** `POST /projects/core/attachments` for the side's task, as a person's browser asks. */
+async function askUpload(side: Side, task: string): Promise<Asked> {
+  const res = await must(side, '/api/v1/projects/core/attachments', {
+    method: 'POST',
+    body: JSON.stringify({ ...SHOT, task_id: task }),
+  });
+  return (await res.json()) as Asked;
+}
+
+/** Exactly one file asked for on the side's task, and nothing ready. */
+function expectOnePending(side: Side): void {
+  const rows = side.h.db.select().from(attachments).all();
+  expect(rows.map((r) => [r.state, r.filename, r.taskId !== null])).toEqual([
+    ['pending', 'shot.png', true],
+  ]);
 }
 
 /** One save, the same on both sides (§4.70): names and counts only. */

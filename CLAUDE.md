@@ -1086,6 +1086,20 @@ Every session working in this repo:
    and the test commands with their exit codes. Only Pawan moves a card to Done.
 6. **Stray findings** — a broken script, a stale dependency — go to
    `log_unlisted_work` so they are triaged rather than lost.
+7. **Show the result.** When a person needs to see what you did — a UI
+   change, a generated file — attach screenshots or outputs with
+   `laika attach` or `request_upload`, each with a caption, and pass them to
+   `finish_task` as `outputs`. Skip it when tests are the whole proof. Never
+   upload a secret: attach a masked copy, and say where the real file is kept.
+8. **One parent per feature.** A new feature with several parts gets one
+   parent task, with each part as a child task (`create_task` with
+   `parent`). Work on an existing feature becomes a new child of its parent.
+   A genuinely small one-off may stand alone. The main outputs go on the
+   parent, a child's own outputs on the child.
+
+   In this repo each child is still its own task file and its own `LAI-NNN`
+   card (§2). The parent can be a board-only card whose `external_ref` is the
+   decision id, as `D-162` is for LAIKA-1153 (owner, 2026-11-19).
 
 No Laika tools in this session? Say so once in your report and keep working
 under §2.

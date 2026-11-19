@@ -1,8 +1,15 @@
 import { and, eq, inArray } from 'drizzle-orm';
-import { activityActor, type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
+import {
+  activityActor,
+  isSystemPrincipal,
+  type ResolvedActor,
+  type ServiceCaller,
+  withProject,
+} from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { projects, tasks, users } from '../db/schema.ts';
+import { liveTask } from '../db/live-task.ts';
 import { ApiError } from '../errors.ts';
 import { assertAgentsMay, can } from '../policy/can.ts';
 import { assertClaimFenceAll } from './claims.ts';
@@ -68,6 +75,8 @@ export function openTasksHeldBy(db: Db, userId: string, projectId?: string): Ope
       and(
         eq(tasks.assigneeId, userId),
         inArray(tasks.status, [...OPEN_STATUSES]),
+        // Archived work is nobody's to hand over (LAI-1353).
+        liveTask(),
         ...(projectId === undefined ? [] : [eq(tasks.projectId, projectId)]),
       ),
     )
@@ -157,7 +166,7 @@ export function assertOffboardingChoice(
  */
 export function applyOffboardingChoice(
   db: Db,
-  actor: ResolvedActor,
+  actor: ServiceCaller,
   leavingUserId: string,
   open: readonly OpenTask[],
   choice: OpenTasksChoice | undefined,
@@ -169,9 +178,13 @@ export function applyOffboardingChoice(
   // The caller's org authority decides whether these tasks move, but not
   // through which credential (LAI-976 review): an agent token may not change
   // a task in a space whose agents are off, so one such task refuses the
-  // whole move — asked of every task before the first is written.
-  for (const t of open) {
-    assertAgentsMay(withProject(actor, t.projectId), 'task.write', { projectId: t.projectId });
+  // whole move — asked of every task before the first is written. §3.4's
+  // principal is no agent: the people sync handing back a leaver's work
+  // (D-161) is asked by nothing here, and passes the fence below.
+  if (!isSystemPrincipal(actor)) {
+    for (const t of open) {
+      assertAgentsMay(withProject(actor, t.projectId), 'task.write', { projectId: t.projectId });
+    }
   }
   // And the claim fence, for every task before the first moves (LAI-541): a
   // token may not reassign work an agent session holds. A person may.

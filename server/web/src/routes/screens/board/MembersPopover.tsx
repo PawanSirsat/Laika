@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import type { Member } from '../../../api/tasks.ts';
+import { usePresenceStatuses } from '../../../api/use-presence-people.ts';
+import { ringClass } from '../../../components/avatar/avatar-model.ts';
 import type { Theme } from '../../../theme/theme.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface MembersPopoverProps {
@@ -41,6 +42,7 @@ export function MembersPopover({
   onClose,
 }: MembersPopoverProps) {
   const [query, setQuery] = useState('');
+  const statuses = usePresenceStatuses();
   const search = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLUListElement>(null);
 
@@ -114,7 +116,6 @@ export function MembersPopover({
       ) : (
         <ul ref={list} className="bt-mp-list">
           {shown.map((member) => {
-            const colour = avatarColor(member.user_id, theme);
             const on = assignee === member.user_id;
             return (
               <li key={member.user_id}>
@@ -128,13 +129,15 @@ export function MembersPopover({
                       onClose();
                     }}
                   >
-                    <span
-                      className="bt-mp-avatar t-avatar"
-                      style={{ background: colour.background, color: colour.foreground }}
-                      aria-hidden="true"
-                    >
-                      {initials(member.name)}
-                    </span>
+                    <Avatar
+                      name={member.name}
+                      userId={member.user_id}
+                      theme={theme}
+                      size={26}
+                      label={null}
+                      // Ringed by their status, online or away (LAI-1349).
+                      className={`bt-mp-avatar ${ringClass(statuses?.get(member.user_id))}`.trim()}
+                    />
                     <span className="bt-mp-text">
                       <span className="bt-mp-name">{member.name}</span>
                       <span className="bt-mp-email">{member.email}</span>

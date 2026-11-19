@@ -1,0 +1,129 @@
+/* The board's shelves — Archived and Trash (LAI-1353, LAI-1354): Insights' panel, wider, with rows. Tokens only. */
+
+.bshelf {
+  width: min(26rem, calc(100vw - 2rem));
+  max-height: min(32rem, calc(100vh - 6rem));
+  display: flex;
+  flex-direction: column;
+}
+
+.bshelf-count {
+  font-weight: var(--weight-normal);
+  color: var(--text-muted);
+}
+
+.bshelf-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.bshelf-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1-5) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.bshelf-open {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: var(--space-2);
+  row-gap: var(--space-0-5);
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--text-primary);
+  padding: var(--space-1) var(--space-1-5);
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+}
+
+.bshelf-open:hover {
+  background: var(--bg-column);
+}
+
+.bshelf-open:focus-visible,
+.bshelf-restore:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.bshelf-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.bshelf-title {
+  font-size: var(--text-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bshelf-meta {
+  grid-column: 2;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.bshelf-restore {
+  flex: none;
+  border: 1px solid var(--border-default);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-2-5);
+  cursor: pointer;
+}
+
+.bshelf-restore:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.bshelf-restore:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.bshelf-tabs {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.bshelf-tab {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-bold);
+  color: var(--text-muted);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+}
+
+.bshelf-tab[aria-selected='true'] {
+  color: var(--text-primary);
+  background: var(--bg-column);
+}
+
+.bshelf-tab:hover {
+  color: var(--text-primary);
+}
+
+.bshelf-tab:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}

@@ -157,6 +157,9 @@ export const PROJECT_ACTIONS = [
   'attachment.create',
   'attachment.delete',
   'task.delete',
+  // LAI-1353: put a task away and bring it back — *Edit / move any task*'s
+  // holders, signed in (SESSION_ONLY_ACTIONS below).
+  'task.archive',
   'task.dependency.write',
   'task.watch',
   'project.read',
@@ -243,6 +246,10 @@ export const SYSTEM_ACTIONS = [
   // §11.6: an inbound mail's attachments fetched from Brevo and stored, every
   // 30 seconds (D-155 item 6, LAI-1315) — each written as the mail's sender.
   'system.email.attachments',
+  // §11.6: people's photos, job titles, departments and managers read from
+  // Microsoft every hour, and leavers deactivated behind guards (D-161,
+  // LAI-1330).
+  'system.people.sync',
   // §11.6: every enabled Member of the Microsoft directory added as a member,
   // every 15 minutes, when directory sync is on (D-158, LAI-1239, LAI-1317).
   'system.directory.sync',
@@ -484,6 +491,10 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // calendar** (D-157, LAI-1316): an agent's token must neither set it, nor
   // turn the sync on, nor send a meeting's time to a space.
   'org.calendar.configure',
+  // **Archiving takes a task off every board and every agent's queue**
+  // (LAI-1353): a person decides that, signed in. An agent that could
+  // archive could make work it was asked to do disappear.
+  'task.archive',
 ]);
 
 /**

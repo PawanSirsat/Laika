@@ -5,6 +5,8 @@ import type { ProjectStatus } from '../../../api/statuses.ts';
 import {
   assignTask,
   changeStatus,
+  setTaskArchived,
+  setTaskDeleted,
   updateTask,
   type TaskSummary,
   type TaskPriority,
@@ -137,7 +139,18 @@ export type BulkAction =
    * (§6.4); `cancelled` is the status the board hides, and the server refuses
    * it from `done`, which the report shows rather than hides.
    */
-  | { readonly kind: 'cancel' };
+  | { readonly kind: 'cancel' }
+  /**
+   * Put away, whole (LAI-1353): off the board, its history kept, restorable
+   * from the space's Archived panel. A parent takes its subtasks with it.
+   */
+  | { readonly kind: 'archive' }
+  /**
+   * Into the space's Trash (LAI-1354), restorable for 30 days. The server
+   * refuses a member's delete of a task they did not create, and the report
+   * names each refusal.
+   */
+  | { readonly kind: 'delete' };
 
 export interface BulkPlan {
   /** The tasks that need a request, in selection order. */
@@ -153,6 +166,10 @@ function alreadyThere(action: BulkAction, task: TaskSummary): boolean {
       return task.status_id === action.statusId;
     case 'cancel':
       return task.status === 'cancelled';
+    case 'archive':
+      return task.archived_at != null;
+    case 'delete':
+      return task.deleted_at != null;
     case 'priority':
       return task.priority === action.priority;
     case 'assignee':
@@ -203,6 +220,14 @@ export function applyAction(action: BulkAction, task: TaskSummary): Promise<unkn
       // The kind, not a status: the server files it under the project's
       // first cancelled status, whatever this board calls it.
       return changeStatus(task.id, { status: 'cancelled' });
+    case 'archive':
+      // A subtask selected with its parent is already archived by the time
+      // its own request lands; the server writes nothing and answers 200.
+      return setTaskArchived(task.id, true);
+    case 'delete':
+      // A subtask selected with its parent is already in Trash by then; the
+      // server writes nothing and answers 200, as for archive.
+      return setTaskDeleted(task.id, true);
     case 'priority':
       return updateTask(task.id, { priority: action.priority });
     case 'assignee':

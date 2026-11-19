@@ -269,6 +269,19 @@ export const ACTIVITY_TYPES = [
   // (CLAUDE.md §4.4): §4.8's row, this, and the web mirror, in one change.
   'attachment.added',
   'attachment.removed',
+  // LAI-1353: a task put away and brought back. Their own verbs, not
+  // `task.updated` with a field: "who archived this, and when" is the
+  // question, and it is not a status change — the status stays underneath.
+  // A parent's subtasks each get their own row, naming the parent. Three
+  // owners (CLAUDE.md §4.4): §4.8's row, this, and the web mirror, in one change.
+  'task.archived',
+  'task.restored',
+  // LAI-1354: a task moved into the space's Trash and brought back out —
+  // not the archive's pair, because "who deleted this" and "who archived
+  // this" are different questions with different consequences (a deleted
+  // task is scrubbed after 30 days). Three owners, as above.
+  'task.deleted',
+  'task.undeleted',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
@@ -741,6 +754,27 @@ export const CALENDAR_SYNC_ERROR_CODES = [
   'bad_answer',
 ] as const;
 export type CalendarSyncErrorCode = (typeof CALENDAR_SYNC_ERROR_CODES)[number];
+
+/**
+ * Why a people sync from Microsoft changed nothing (D-161, LAI-1330): the
+ * calendar's four, since both read Graph through the one Microsoft 365
+ * connection — and `not_connected`, a switch on with no connection saved.
+ */
+export const PEOPLE_SYNC_ERROR_CODES = [
+  'not_connected',
+  'credentials_rejected',
+  'not_granted',
+  'unreachable',
+  'bad_answer',
+] as const;
+export type PeopleSyncErrorCode = (typeof PEOPLE_SYNC_ERROR_CODES)[number];
+
+/**
+ * The image types a person's synced photo may be (D-161, LAI-1330): a space
+ * icon's three, proved by their first bytes. Never SVG.
+ */
+export const USER_PHOTO_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
+export type UserPhotoType = (typeof USER_PHOTO_TYPES)[number];
 
 /**
  * A calendar mapping rule's `kind` (D-157, LAI-1316): a keyword in the

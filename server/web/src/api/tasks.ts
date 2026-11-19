@@ -173,6 +173,21 @@ export interface TaskSummary {
    * schedule.
    */
   readonly stale_flagged_at: number | null;
+  /**
+   * When the task was put away, and by whom (LAI-1353) — null while it is
+   * live. An archived task is in no list but the Archived view and is
+   * read-only until restored. Optional only because fixtures written before
+   * it leave it out; the server always sends both.
+   */
+  readonly archived_at?: number | null;
+  readonly archived_by?: string | null;
+  /**
+   * When the task was moved into the space's Trash, and by whom (LAI-1354) —
+   * null otherwise. Read-only there, restorable for 30 days. Optional for the
+   * same fixtures' reason as `archived_at`.
+   */
+  readonly deleted_at?: number | null;
+  readonly deleted_by?: string | null;
   readonly blocked_by: readonly string[];
   /**
    * Ids this task **blocks** — the reverse edge of `blocked_by`.
@@ -384,6 +399,10 @@ export interface TaskFilter {
   readonly updated_since?: number | undefined;
   /** A task id: only its subtasks (§6.4, D-066). */
   readonly parent?: string | undefined;
+  /** `only`: the archived tasks instead of the live ones — a space's Archived view (LAI-1353). */
+  readonly archived?: 'only' | undefined;
+  /** `only`: the space's Trash instead (LAI-1354). Never with `archived`. */
+  readonly trash?: 'only' | undefined;
   readonly limit?: number | undefined;
   readonly cursor?: string | undefined;
 }
@@ -401,10 +420,29 @@ function toQuery(filter: TaskFilter): string {
   if (filter.tag !== undefined) params.set('tag', filter.tag);
   if (filter.updated_since !== undefined) params.set('updated_since', String(filter.updated_since));
   if (filter.parent !== undefined) params.set('parent', filter.parent);
+  if (filter.archived !== undefined) params.set('archived', filter.archived);
+  if (filter.trash !== undefined) params.set('trash', filter.trash);
   if (filter.limit !== undefined) params.set('limit', String(filter.limit));
   if (filter.cursor !== undefined) params.set('cursor', filter.cursor);
 
   return `?${params.toString()}`;
+}
+
+/**
+ * A task that left a list since `updated_since` — archived (§6.3, LAI-1353).
+ * The server sends it so a client reading only changes learns it went; every
+ * list here reads whole pages, which already leave it out, so it is dropped.
+ */
+interface TaskTombstone {
+  readonly id: string;
+  readonly deleted: true;
+}
+
+function withoutTombstones(page: Page<TaskSummary | TaskTombstone>): Page<TaskSummary> {
+  return {
+    ...page,
+    data: page.data.filter((row): row is TaskSummary => !('deleted' in row)),
+  };
 }
 
 /** A page of the project's tasks, without their texts — {@link TaskSummary}. */
@@ -413,10 +451,10 @@ export function listTasks(
   filter: TaskFilter = {},
   signal?: AbortSignal,
 ): Promise<Page<TaskSummary>> {
-  return request<Page<TaskSummary>>(
+  return request<Page<TaskSummary | TaskTombstone>>(
     `/projects/${encodeURIComponent(slug)}/tasks${toQuery(filter)}`,
     signal === undefined ? {} : { signal },
-  );
+  ).then(withoutTombstones);
 }
 
 /**
@@ -432,6 +470,8 @@ export interface AllTasksFilter {
   readonly assignee?: string | undefined;
   /** A sprint id, or the literal `none` for tasks in no sprint. */
   readonly sprint?: string | undefined;
+  /** `only`: the archived tasks instead of the live ones (LAI-1353). */
+  readonly archived?: 'only' | undefined;
   readonly limit?: number | undefined;
   readonly cursor?: string | undefined;
 }
@@ -449,18 +489,19 @@ export function listAllTasks(
   setAllTasksFilters(params, filter);
   if (filter.limit !== undefined) params.set('limit', String(filter.limit));
   if (filter.cursor !== undefined) params.set('cursor', filter.cursor);
-  return request<Page<TaskSummary>>(
+  return request<Page<TaskSummary | TaskTombstone>>(
     `/tasks?${params.toString()}`,
     signal === undefined ? {} : { signal },
-  );
+  ).then(withoutTombstones);
 }
 
-/** The four filters `GET /tasks` and `GET /tasks/summary` share. */
+/** The filters `GET /tasks` and `GET /tasks/summary` share. */
 function setAllTasksFilters(params: URLSearchParams, filter: AllTasksFilter): void {
   if (filter.project !== undefined) params.set('project', filter.project);
   if (filter.status !== undefined) params.set('status', filter.status);
   if (filter.assignee !== undefined) params.set('assignee', filter.assignee);
   if (filter.sprint !== undefined) params.set('sprint', filter.sprint);
+  if (filter.archived !== undefined) params.set('archived', filter.archived);
 }
 
 /**
@@ -764,6 +805,27 @@ export function isOutsideId(value: string): boolean {
 
 export function updateTask(taskId: string, edit: TaskEdit): Promise<Task> {
   return request<Task>(`/tasks/${encodeURIComponent(taskId)}`, { method: 'PATCH', body: edit });
+}
+
+/**
+ * Archive a task, or restore it (LAI-1353): `PATCH { archived }`, which the
+ * server takes only on its own. Its subtasks go and come back with it.
+ */
+export function setTaskArchived(taskId: string, archived: boolean): Promise<Task> {
+  return request<Task>(`/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'PATCH',
+    body: { archived },
+  });
+}
+
+/**
+ * Into the space's Trash, or back out (LAI-1354): `DELETE /tasks/:id` and
+ * `POST /tasks/:id/restore`. Each answers the task as it then is.
+ */
+export function setTaskDeleted(taskId: string, deleted: boolean): Promise<Task> {
+  return deleted
+    ? request<Task>(`/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' })
+    : request<Task>(`/tasks/${encodeURIComponent(taskId)}/restore`, { method: 'POST' });
 }
 
 /**

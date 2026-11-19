@@ -448,8 +448,9 @@ slug's `404`. The posting job acts as §3.4's `system.teams.post`.
 **"Connect the organisation's Outlook calendar" is `org.calendar.configure`**
 (D-157, LAI-1316), behind §6.4's `/org/calendar` routes: save the Entra app's
 tenant, client id and secret, the rules that send a meeting to a space and the
-switch, test whether `Calendars.Read` has been granted, sync now, disconnect.
-Session only, because the secret reads every member's calendar. **The meetings
+switch, test whether `Calendars.Read` has been granted, sync now, backfill the
+last 1 to 90 days (LAI-1335), disconnect. Session only, because the secret
+reads every member's calendar. **The meetings
 it logs are each member's own time** (§4.48), read and changed under
 `time_entries.*_own` like an entry they typed.
 
@@ -645,6 +646,7 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Attach a file | ✓ | ✓ | — |
 | Remove an attachment | own + any | own | — |
 | Cancel / delete task | ✓ | own-created | — |
+| Archive or restore a task | ✓ (session only) | ✓ (session only) | — |
 | Add / remove dependencies | ✓ | ✓ | — |
 | Read tasks, comments, activity, capacity | ✓ | ✓ | ✓ |
 | Watch / unwatch a task | ✓ | ✓ | ✓ |
@@ -815,8 +817,9 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.email.notify` | §11.6: every 30 seconds, assignment and @mention mail queued and daily digests collected and sent, read from `activity` and `member_notices` (§4.97 – §4.100, D-153, LAI-1313) |
 | `system.teams.post` | §11.6: every minute, each space's Teams stand-ups, nightly digest and instant notices, and the record of posts kept 90 days (§4.94 – §4.96, D-154, LAI-1314) |
 | `system.email.receive` | §10.3: an inbound mail's space address and sender resolved — the reads made before anyone is known. **Everything it writes is the matched sender's own `can()`** (§4.103 – §4.106, D-155, LAI-1315) |
-| `system.calendar.sync` | §11.6: members' Outlook meetings — invitations accepted, Teams meetings organised — logged as their time, every 15 minutes while the switch is on (§4.101, §4.102, D-157, LAI-1316) |
+| `system.calendar.sync` | §11.6: members' Outlook meetings — invitations not declined (D-157 item 3 amended, LAI-1335), Teams meetings organised — logged as their time, and their out-of-office spans kept as away, never time, every 15 minutes while the switch is on (§4.101, §4.102, §4.107, D-157, LAI-1316, LAI-1331) |
 | `system.email.attachments` | §11.6: every 30 seconds, an inbound mail's queued attachments fetched from Brevo and stored — each stored as the mail's sender, under their own `attachment.create` (§4.106, D-155 item 6, LAI-1315) |
+| `system.people.sync` | §11.6: every hour, each member's photo, job title, department and manager read from Microsoft and kept (§4.108), and — with *Leavers* on — a person Microsoft says has left deactivated behind its guards, as `user.deactivated` with no human actor (§4.109, D-161, LAI-1330) |
 | `system.directory.sync` | §11.6: every enabled Member of the Microsoft directory added as a `member`, every 15 minutes and once at boot, while `LAIKA_MICROSOFT_DIRECTORY_SYNC` is on; *Sync now* runs the same code after asking the person `org.settings.edit` (D-158, LAI-1239, LAI-1317) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
@@ -996,6 +999,10 @@ which is the check working on the document it exists to pin.
 | `estimate_hash` | nullable — a hash of everything the model read for the current estimate (title, description, acceptance, tags, what blocks it, its children and the project's model version), so a recompute that would change nothing costs nothing |
 | `selected_agent_id` | nullable FK `agents` (§4.63), `ON DELETE SET NULL` — the registered agent **meant to do the work** (D-114 item 7, LAI-535). Not the assignee and not a claim: selecting one opens a **work request** addressed to it, and changes neither `assignee_id`, `status` nor anything a claim holds; a task can stay human-only. Set by `PATCH /tasks/:id` and `update_task`, and in the create by `POST /projects/:slug/tasks` (`selected_agent_id`) and `create_task` (`agent`) (§6.4, §7.1, LAI-1027), by anyone who may edit the task, to **their own** agent only — active, granted `full` on the project, in a space whose agents may write (the hand-off policy's defaults, proposal §4.5; other members' agents wait for LAI-546). `null` withdraws the request. Under a live claim it may move only to the claim's own holder (§6.4). Served on `TaskView` as `selected_agent` |
 | `handoff_count` | integer, default `0` — **completed** hand-offs of the task: an accepted `handoff` or `recovery` offer adds one in the accept's transaction (§4.73); a work request does not. Compared with the project policy's `max_handoffs` (§4.74). Never decremented (LAI-546) |
+| `archived_at` | nullable — when the task was **archived** (LAI-1353): put away whole, null while it is live. Archiving a parent stamps its subtasks with the same instant, so a restore brings back exactly those. Served on `TaskView` |
+| `archived_by` | nullable FK `users`, `ON DELETE SET NULL` — who archived it; null while it is live. Set and cleared together with `archived_at`. Served on `TaskView` |
+| `deleted_at` | nullable — when the task was moved into the space's **Trash** (LAI-1354): a soft delete, restorable for 30 days; null otherwise. A parent's subtasks are stamped with the same instant. Independent of `archived_at` — an archived task deleted and restored comes back archived. Served on `TaskView`; a token never reads a task with one (`404`) |
+| `deleted_by` | nullable FK `users`, `ON DELETE SET NULL` — who deleted it; null otherwise. Set and cleared together with `deleted_at` |
 
 **`started_at`** is set the first time a task enters `in_progress` and is never
 moved again. **`completed_at`** is set on **every** arrival at `done`, and is
@@ -1129,7 +1136,8 @@ Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `task.claim_reclaimed`, `task.checkpoint_saved`, `task.handoff_offered`,
 `task.handoff_approved`, `task.handoff_accepted`, `task.handoff_declined`,
 `task.handoff_cancelled`, `task.handoff_expired`, `task.recovered`,
-`agent.capacity_requested`, `attachment.added`, `attachment.removed`.
+`agent.capacity_requested`, `attachment.added`, `attachment.removed`,
+`task.archived`, `task.restored`, `task.deleted`, `task.undeleted`.
 
 **`task.agent_selected`** (D-114 item 7, LAI-535) is a task's selected agent
 set, changed or cleared — one verb for every direction, payload `{ from, to }`,
@@ -1204,6 +1212,25 @@ was never added, and a file nothing linked belonged to no task. Their own verbs
 because *"who put this file on the task, and when"* is the question. Three
 owners (CLAUDE.md §4.4): this row, the enum and CHECK in migration 0082, and the
 web mirror and its wording — one change (LAI-1300).
+
+**`task.archived` and `task.restored`** (LAI-1353) are a task put away and
+brought back (`PATCH /tasks/:id { archived }`, §6.4). Actor: the person who did
+it — never a token (§3.2). Task-scoped, one row **per task**: archiving a parent
+writes one for each subtask that went with it, payload `{ with_parent }` naming
+the parent; the task asked about writes `{}`. Their own verbs, not
+`task.updated` with a field, because *"who archived this, and when"* is the
+question — and not `task.status_changed`, because the status stays underneath.
+Three owners (CLAUDE.md §4.4): this row, the enum and CHECK in migration 0093,
+and the web mirror and its wording — one change.
+
+**`task.deleted` and `task.undeleted`** (LAI-1354) are a task moved into its
+space's Trash and brought back out (`DELETE /tasks/:id`, `POST
+/tasks/:id/restore`, §6.4) — by a person, never a token. One row per task,
+`{ with_parent }` on a subtask that went with its parent, as archiving writes.
+Not the archive's pair: *"who deleted this"* is a different question with a
+different end — a task left in Trash is scrubbed after 30 days (LAI-1355).
+Three owners: this row, the enum and CHECK in migration 0094, and the web
+mirror and its wording.
 
 **The nine verbs added 2026-09-01 are the same argument, four more times.**
 Sprints, the project context document, unlisted-work triage and deactivation
@@ -1439,6 +1466,12 @@ creation with `created_via: 'mcp'` provenance preserved on the resulting task.
 
 Same privacy rule as heartbeats (D-005): `note` is agent-authored prose, `repo`
 is a name. No file contents, no diffs, no prompt text.
+
+**A finding can hold files the agent chose to show** (D-162 item 8, LAI-1302):
+its own ready uploads, linked by §4.92's `unlisted_work_id` and embedded in
+`note` as captioned links. Promoting the finding moves them to the new task;
+dismissing it removes them. A deliberate output, not file contents swept up —
+D-005 still governs anything automatic.
 
 ### 4.15 `sprints`
 
@@ -2413,7 +2446,7 @@ row.
 | `tz` | IANA zone, stored per entry; the board stays UTC |
 | `started_at`, `ended_at` | nullable, together, end after start (CHECK) — a confirmed block keeps its span |
 | `minutes` | 1–1440 (CHECK); a person's live entries on one day sum to at most 1440 (`422 day_full`) |
-| `source` | `draft` \| `manual` \| `import` \| `calendar` — an `import` came from Solidtime and is read-only here: changed in Solidtime, and taken by the next pull (LAI-788); a `calendar` entry is a meeting the Outlook sync logged (§4.102, D-157), `kind` `meeting`, the person's to change or delete as a typed one, and never pushed to Solidtime |
+| `source` | `draft` \| `manual` \| `import` \| `calendar` — an `import` came from Solidtime and is read-only here: changed in Solidtime, and taken by the next pull (LAI-788); a `calendar` entry is a meeting the Outlook sync logged (§4.102, D-157) — an invitation the person has not declined (accepted, tentative or not answered: D-157 item 3 amended, LAI-1335) or a Teams meeting they organised — `kind` `meeting`, the person's to change or delete as a typed one, and never pushed to Solidtime |
 | `source_ref` | nullable — the draft it came from, an import's own id (LAI-788), or a calendar meeting's Graph event id (D-157); unique per `(user_id, source)` where set |
 | `note` | nullable, ≤ 280 characters |
 | `kind` | nullable — what the person said it was (D-108, LAI-897; the design's eight since LAI-516): `work` \| `meeting` \| `thinking` \| `research` \| `pairing` \| `review` \| `support` \| `admin` — validated by the API on every path (no CHECK here: SQLite cannot add one without rebuilding a table that carries retention triggers; `time_timers.kind` carries it). Null on a confirmed draft, an import, and an entry nobody typed a kind for; the Timeline colours a block by it. Migration 0060 mapped the first eight: call → meeting, planning → thinking, learning → research, other → work |
@@ -3990,7 +4023,8 @@ periods (§4.86) are untouched by it: they stay the person's own (D-149 item 3).
 
 ### 4.92 `attachments`
 
-A file on a project, a task and a comment (D-150, LAI-1300). **The bytes are
+A file on a project, a task and a comment — or, an agent's, an unlisted
+finding (D-162, LAI-1302) — (D-150, LAI-1300). **The bytes are
 never in the database, and never pass through Laika**: they live in the
 operator's S3-compatible store (§11.7), uploaded and read by the browser
 through URLs Laika signs (§6.4). This row is what Laika knows of the object.
@@ -4001,21 +4035,22 @@ through URLs Laika signs (§6.4). This row is what Laika knows of the object.
 | `project_id` | FK `projects`, cascade — a file belongs to a project from the start |
 | `task_id` | nullable, FK `tasks`, set null — the task it belongs to: named at upload, or filled when text on the task first links it; **never changed after** |
 | `comment_id` | nullable, FK `comments`, set null — the comment whose text first linked it: set only by the save that also fills `task_id`, so never on a file that reached the task by its upload or by the task's text |
+| `unlisted_work_id` | nullable, FK `unlisted_work`, set null — the unlisted finding `log_unlisted_work` attached it to (D-162 item 8, LAI-1302): only the uploader's own ready file with no task. Linked, as far as the sweep is concerned, until the finding is promoted — the file moves to the new task, and to its project when it was uploaded in another, with `attachment.added` — or dismissed — the file is removed with it. Until then it is read only by its uploader and by who reads the pile (`audit_log.export`), and **text that embeds it links nothing**: the promotion is the only way it reaches a task. Kept after a promotion, as provenance |
 | `uploaded_by` | FK `users` — who asked for the upload; the only one who may complete it, and the `own` of *Remove an attachment* (§3.2) |
 | `filename` | 1–255 (CHECK), no `/`, `\` or control character — **display only**, never a path or a key |
 | `content_type` | ≤ 127 (CHECK), lower case — as declared, and signed into the upload |
 | `size_bytes` | ≥ 1 (CHECK), at most `LAIKA_ATTACHMENT_MAX_BYTES` — signed into the upload, and checked against the stored object |
 | `storage_key` | unique — `p/<project_id>/<id>`, **never the filename** |
 | `state` | `pending` \| `ready` (CHECK) — asked for, then confirmed in the store |
-| `inline` | 0/1 (CHECK), set at completion — 1 only for a png, jpeg, gif, webp or pdf **whose first bytes say so** and agree with `content_type` |
+| `inline` | 0/1 (CHECK), set at completion — 1 only for a png, jpeg, gif, webp or pdf, or an mp4 (`ftyp`, not a HEIF or AVIF still) or webm (EBML) recording (D-162), **whose first bytes say so** and agree with `content_type` |
 | `created_at` | |
 | `ready_at` | nullable — set exactly when `ready` (CHECK) |
 | `deleted_at` | nullable — removed: by a person, with its comment, or by the sweep; never read again |
 | `deleted_by` | nullable, FK `users`, set null — who removed it; null for the sweep |
 | `purged_at` | nullable — when the object left the store; only once removed (CHECK) |
 
-Indexes `(task_id)`, `(comment_id)`, `(state, created_at)` — the sweep's —
-`(project_id)`, and the two user keys. **Linking** reads the markdown a task's
+Indexes `(task_id)`, `(comment_id)`, `(unlisted_work_id)`, `(state,
+created_at)` — the sweep's — `(project_id)`, and the two user keys. **Linking** reads the markdown a task's
 description and acceptance, or a comment, is saved with, for
 `/api/v1/attachments/<id>/content` — relative, or on any origin, since one
 deployment can be reached at two (the SPA and the API apart) and the id, not
@@ -4025,15 +4060,36 @@ not removed, **that no task has yet**: it fills `task_id` (writing
 already has is left alone, and one another task has is **never relinked**.
 **A deleted comment removes the files it first linked and the deleter may
 remove** — each asked of `can()` as `DELETE /attachments/:id` asks it (§4.7,
-LAI-1300 review). An upload may be completed within an hour of asking. §11.6's
-sweep deletes a `pending` row after 24 hours, removes a `ready` file no task
-took in the 24 hours since it became ready, and deletes the object of every
-removed file until `purged_at` is set. **A presigned `PUT` stays usable for the
+LAI-1300 review). An upload may be completed within an hour of asking; **a text
+file is scanned for secrets first** and, holding one, removed instead of made
+`ready` (§13.4, D-162). §11.6's
+sweep deletes a `pending` row after 24 hours, removes a `ready` file no task —
+and no unlisted finding — took in the 24 hours since it became ready, and
+deletes the object of every removed file until `purged_at` is set. **A presigned `PUT` stays usable for the
 rest of its ten minutes** after the file is completed or removed: bounded, and
 safe because what a read serves is the type the presigned `GET` forces, not
 what the object claims.
 **Backing the store up is the operator's**: the nightly snapshot (§11.6) holds
 these rows and not the files (D-150 item 8).
+
+**An agent's outputs are those same links, and their captions are the links'
+text** (D-162, LAI-1302). `finish_task`'s `outputs` and the `attachments` of
+`add_comment`, `create_task` and `log_unlisted_work` (§7.1) are each `{
+attachment, caption }`, checked before the write — live and readable (else
+`404`), `ready` (`422 not_ready`), of the target's project (`422
+other_project`), on no other task (`422 other_task`) and on no unlisted
+finding not yet promoted (`422 on_unlisted_work`); at most 20, a caption at
+most 200 characters on one line — and written into the text under a
+`**Outputs**` (a finish) or `**Attached**` line, one per file: `- ![caption](url)`
+for an image a browser may show, `- [caption](url)` for anything else, its
+brackets escaped. Saving the text links them as above. **Nothing new is
+stored**: `get_task_context` reads a file's caption back as the text of the
+first link to it, in the task's description, acceptance and comments.
+**A round's outputs are the files its `summary_md` embeds.** §4.25's round has
+no column naming its summary comment and needs none: `summary_md` is that
+comment's text, written in the same transaction and never rewritten, so the
+link lives in the round itself, and an edit of the comment later changes
+nothing about which round a file was shown on.
 
 ### 4.93 `email_outbox`
 
@@ -4277,9 +4333,9 @@ only through `org.calendar.configure` and the sync.
 | `last_test_roles_json` | nullable — the roles that token carried, A–Z; set and cleared with `last_test_at` (CHECK), and cleared when the credentials change |
 | `last_attempt_at` | nullable — the last sync, whatever came of it |
 | `last_success_at` | nullable |
-| `last_error_code` | nullable — `credentials_rejected` \| `not_granted` \| `unreachable` \| `bad_answer` (CHECK) |
+| `last_error_code` | nullable — `credentials_rejected` \| `not_granted` \| `unreachable` \| `bad_answer` (CHECK) — **hard failures only**: the run changed nothing |
 | `last_error` | nullable — Laika's words, never Microsoft's body |
-| `last_result_json` | nullable — the last complete sync's counts |
+| `last_result_json` | nullable — the last complete sync's counts; or a backfill's counts so far marked `"stopped_partway": true` when the switch stopped it between two people (LAI-1335) — not a hard failure, so no `last_error_code`: `GET /org/calendar` serves it as `last_error` `stopped_partway`, derived from the mark, until a hard failure or the next run's counts replace it |
 | `updated_at` | |
 
 **An application, never a person's sign-in** (D-157 item 1): the sync reads each
@@ -4308,6 +4364,9 @@ never touches again.
 **Nothing of the meeting is kept here but its ids**: the subject — *Busy* for a
 private, confidential or personal one — and the times are on the entry, and no join link,
 body or attendee is read or stored anywhere (D-157 item 4).
+
+**An event shown as out of office is never a meeting and never time**: it is
+kept apart, as an away span in §4.107 (D-157 amended, LAI-1331).
 
 ### 4.103 `org_email_inbound`
 
@@ -4392,6 +4451,94 @@ failure is a reason here and never blocks the task.
 | `attempts` | ≥ 0 (CHECK) |
 | `created_at` | |
 | `finished_at` | nullable |
+
+### 4.107 `calendar_away`
+
+The spans a person's Outlook calendar shows them **out of office** (D-157
+amended, LAI-1331), as the calendar sync (§11.6) last read them — read beside
+their own away periods (§4.86) on Capacity, and **never time**: no entry is
+made from one.
+
+| field | notes |
+| --- | --- |
+| `user_id` | FK `users`, cascade; the key with `event_id` |
+| `event_id` | 1–512 (CHECK) — Graph's **immutable** id for the event, or for one occurrence of a series |
+| `starts_at`, `ends_at` | unix ms, `ends_at > starts_at` (CHECK) |
+| `all_day` | 0 \| 1 (CHECK) — the span is whole days: the sync reads in UTC, so its two values are **UTC midnights standing for its calendar dates**, `ends_at` the midnight after its last day, read as dates and never shifted by a zone. **An assumption**: that Graph returns an all-day event's start and end as UTC midnights under the read's `Prefer: outlook.timezone="UTC"` — to be checked live on Ksage after release |
+| `last_seen_at` | the last sync that read the event |
+| `retired_at` | nullable — when a complete read of a window it overlaps no longer had it; `null` while it stands |
+| `created_at` | |
+
+**Which events**: shown as out of office (`showAs` `oof`), not cancelled, and
+the person's own — organised by them, or an invitation they accepted; all day
+or not. **The meetings' rules for the rest**: every member's window read whole
+before one transaction writes; a span read is kept, moved or **back** (its
+`retired_at` cleared) as Outlook has it now; one standing that overlaps the
+window and is no longer read is retired. Unlike a meeting, a span counts
+**whenever it overlaps the window**, not only when it began inside it — a week
+away began days ago. **Nothing of the event is kept but its id and its span**:
+no subject, no body, no attendee.
+
+**Told only while the sync reads it.** Capacity names no span while the
+Outlook connection (§4.101) is missing or switched off, and none whose
+`last_seen_at` is a day old or more: the sync stamps every span it reads every
+15 minutes, so a standing one is never older while it works, and a mailbox it
+now skips (`403`, `404`, `400` — nothing of theirs retired) or a sync that
+keeps failing stops being shown after a day. **Disconnecting deletes every
+row** (`DELETE /api/v1/org/calendar`), in the transaction that forgets the
+credentials; a connection made again reads them afresh.
+
+**Retention**: a span that ended more than 90 days ago, retired or not, is
+deleted by §11.6's time retention. No index for it: a person has a handful.
+
+### 4.108 `user_directory`
+
+What Microsoft's directory says of one person (D-161, LAI-1330), read by §11.6's
+people sync through the Microsoft 365 connection (§4.101): their job title,
+department, manager and account state, and **their photo, kept in the operator's
+store** so that no view of anyone asks Microsoft. One row per person the sync has
+read, none for anyone it has not. Its own table rather than columns on `users`,
+whose older migration fixtures name every column.
+
+| field | notes |
+| --- | --- |
+| `user_id` | pk, FK `users`, cascade |
+| `entra_oid` | nullable, 1–64 (CHECK) — their Entra object id, set by the one first match by address; **from then on they are read by it** (`/users/{entra_oid}`), so a rename keeps them and an address handed to someone else never becomes them. Cleared when the connection names another tenant or app, or is disconnected |
+| `job_title` | nullable, 1–200 (CHECK) |
+| `department` | nullable, 1–200 (CHECK) |
+| `manager_user_id` | nullable, FK `users`, set null — their manager, when the directory names one whose address is a Laika user's; nothing else of the manager is kept |
+| `account_enabled` | nullable, 0/1 (CHECK) — Entra's `accountEnabled`; null when the answer did not say |
+| `seen_at` | nullable — when the directory last answered for them |
+| `missing_since` | nullable — the first run whose read by `entra_oid` answered `404`; kept, not moved, on later misses, and cleared when they are found |
+| `disabled_since` | nullable — the first run whose read by `entra_oid` said their account is disabled **after the read before had it enabled**: the change seen. Never set by a first match, nor for an account disabled since its first match; kept while it stays disabled, cleared when it does not |
+| `photo_key` | nullable — `u/<user_id>/photo/<id>` in the D-150 store |
+| `photo_type` | nullable — `image/png` \| `image/jpeg` \| `image/webp` (CHECK), proved by the first bytes; never SVG |
+| `photo_etag` | nullable, ≤ 200 (CHECK) — Microsoft's `@odata.mediaEtag` for the photo stored: the same tag is no fetch |
+| `photo_updated_at` | nullable — `?v=` for `GET /users/:id/photo` |
+| `updated_at` | |
+
+The four `photo_*` columns are all set or all null (CHECK).
+
+### 4.109 `org_people_sync`
+
+The people sync's two switches and its last run (D-161, LAI-1330) — one row, or
+none, which is both off. It keeps no credentials: it reads Microsoft through
+§4.101's connection, and is written only through `org.calendar.configure` and
+the sync.
+
+| field | notes |
+| --- | --- |
+| `org_id` | pk, FK `orgs`, cascade |
+| `profile_enabled` | 0/1 (CHECK), default 0 — *Photos and profile*: titles, departments, managers and photos, every hour |
+| `leavers_enabled` | 0/1 (CHECK), default 0 — *Leavers*: deactivate who Microsoft says has left, behind §11.6's guards; never above `profile_enabled` (CHECK), which is the read that finds them |
+| `configured_by` | nullable, FK `users`, set null |
+| `last_attempt_at` | nullable |
+| `last_success_at` | nullable |
+| `last_error_code` | nullable — `not_connected` \| `credentials_rejected` \| `not_granted` \| `unreachable` \| `bad_answer` (CHECK) |
+| `last_error` | nullable — Laika's words, never Microsoft's body |
+| `last_result_json` | nullable — the last complete run's counts |
+| `leavers_json` | nullable — the last complete run's leaver review: `{ at, state: none \| dry_run \| held \| deactivated, breaker, people: [{ user_id, name, email, reason: disabled \| gone, protected: owner \| last_admin \| null, failed }], changed: [{ user_id, name, email, reason: account_changed \| shared_account \| disabled_at_match }] }` — `changed` is each person for a person to check in Microsoft, never the sync to act on: their id answered with another account, or gone while their address answers with another (`account_changed`); the account their address matched already another member's (`shared_account`); their account disabled since it was first matched (`disabled_at_match`) |
+| `updated_at` | |
 
 ## 5. Task lifecycle
 
@@ -4836,11 +4983,15 @@ PUT    /api/v1/org/teams                     body { posting_enabled } — the sw
 GET    /api/v1/org/email-inbound             the Email to tasks card → { enabled, domain, require_authenticated, authserv_id, token_last4, api_key_last4, webhook_url, own_address, can_store_secrets, can_change, authserv_seen, example_domain, updated_at, updated_by, recent: [the 20 newest inbound mails in spaces the caller can open: { id, received_at, outcome, reason, from_address, sender, project: { slug, name } | null, task_key, comment_id, auth, authserv_ids, attachment_count }] } — never the token, the key, or a mail's subject or text   (Configure the organisation's email: owner, admin; session only; D-155, LAI-1315)
 PUT    /api/v1/org/email-inbound             body { enabled?, domain?, require_authenticated?, authserv_id?, api_key? } — every field optional; domain null clears it and turns the switch off; api_key write-only, null removes it → as GET; 422 field enabled reason inbound_not_configured without a domain and a token; 422 field authserv_id reason authserv_required to be on, authentication required, with no receiving server named; **403 reason owner_only, naming the field, for anything from anyone but an owner except `{ enabled: false }`**; 422 naming the field   (same)
 POST   /api/v1/org/email-inbound/token       make the webhook's bearer token, replacing any before it → 201 { token, settings } — the token **said once**; 403 owner_only for anyone but an owner   (same)
-GET    /api/v1/org/calendar                  the Outlook calendar connection → { configured, enabled, tenant_id, client_id, secret_last4, rules: [{ kind: title | channel, text, project: { id, slug, name } | null }], sync_every_minutes, last_test: { at, calendars_read, roles } | null, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, no_mailbox, mailbox_denied, mailbox_refused, meetings, not_a_meeting, created, updated, removed, unchanged, kept_edits, skipped } | null } — a mailbox Microsoft does not have (404), will not open (403) or will not look up (400) is that person skipped and counted, nothing of theirs retired; only a refused token or one without Calendars.Read fails the run   (owner, admin; session only; D-157, LAI-1316)
-PUT    /api/v1/org/calendar                  body { tenant_id, client_id, client_secret?, enabled, rules: [{ kind, text (1–120), project: slug }] (≤ 50) } — reads nothing from Microsoft; the secret may be left out once one is stored; new credentials forget the last test; turning the switch on starts a sync → the connection; 422 reasons tenant_invalid, client_invalid, secret_required, unknown_project, too_many_rules (with max); turning the switch on while the organisation's Time is off is 403 forbidden reason time_off   (owner, admin; session only)
+GET    /api/v1/org/calendar                  the Outlook calendar connection → { configured, enabled, tenant_id, client_id, secret_last4, rules: [{ kind: title | channel, text, project: { id, slug, name } | null }], sync_every_minutes, last_test: { at, calendars_read, roles } | null, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, no_mailbox, mailbox_denied, mailbox_refused, meetings, not_a_meeting, created, updated, removed, unchanged, kept_edits, kept_older, skipped, away } | null, backfill_running: { days, started_at } | null } — away counts the out-of-office spans read (§4.107), 0 in a result stored before LAI-1331; kept_older a backfill's entries before yesterday left as they were, 0 before LAI-1335; backfill_running the backfill going now, which one asked for meanwhile joins — a mailbox Microsoft does not have (404), will not open (403) or will not look up (400) is that person skipped and counted, nothing of theirs retired; only a refused token or one without Calendars.Read fails the run   (owner, admin; session only; D-157, LAI-1316)
+PUT    /api/v1/org/calendar                  body { tenant_id, client_id, client_secret?, enabled, rules: [{ kind, text (1–120), project: slug }] (≤ 50) } — reads nothing from Microsoft; the secret may be left out once one is stored; new credentials forget the last test; another tenant or client id makes the people sync forget every Entra id and first sighting and turns *Leavers* off (D-161); turning the switch on starts a sync → the connection; 422 reasons tenant_invalid, client_invalid, secret_required, unknown_project, too_many_rules (with max); turning the switch on while the organisation's Time is off is 403 forbidden reason time_off   (owner, admin; session only)
 POST   /api/v1/org/calendar/test             asks Microsoft for a fresh app token and keeps the roles it carries — reads no calendar, works with the switch off → the connection with last_test; 409 conflict reason calendar_not_configured or secret_unreadable (`LAIKA_SECRET` can no longer open the stored secret: save it again), 422 unprocessable reason graph_credentials_refused, 503 unavailable reason graph_unreachable or graph_bad_answer   (owner, admin; session only; its own rate-limit bucket)
 POST   /api/v1/org/calendar/sync             syncs now, or joins the sync already running → the connection; 409 conflict reason calendar_off unless saved and switched on; 403 forbidden reason time_off while the organisation's Time is off   (owner, admin; session only; its own rate-limit bucket)
-DELETE /api/v1/org/calendar                  disconnect: the credentials go, logged meetings stay (204)   (owner, admin; session only)
+POST   /api/v1/org/calendar/backfill         body { days } — the sync over the last `days` days for every member: from the start of the day `days` before today to the end of tomorrow, each in their own zone, under every rule of §11.6's (the closed period and a full day held back, an entry the person changed or deleted left alone, one entry per event, retiring only inside the window it read whole) — **before yesterday it only adds**: an entry already there is never changed or retired, counted kept_older; it joins a backfill already running that reaches at least as far back, answering that one's days and result, else waits for a sync already running, is joined by a sync asked for meanwhile, and writes a person to a transaction → { days, result: { …last_result's counts } | null — what was written before it stopped when the switch went off between two people (the connection's last_error then stopped_partway, derived from those counts' mark — §4.101), null when a read failed (the connection's last_error) or nothing was written, connection: the connection after it }; 422 unprocessable reason days_out_of_range (with min 1, max 90) unless days is a whole number from 1 to 90; 409 conflict reason calendar_off unless saved and switched on; 403 forbidden reason time_off while the organisation's Time is off   (owner, admin; session only; its own rate-limit bucket; LAI-1335)
+DELETE /api/v1/org/calendar                  disconnect: the credentials and out-of-office spans (§4.107) go, logged meetings stay; the people sync forgets every Entra id and first sighting, and *Leavers* goes off (D-161) (204)   (owner, admin; session only)
+GET    /api/v1/org/people-sync               the people sync on the Microsoft 365 card → { connected, profile_enabled, leavers_enabled, photos_stored, sync_every_minutes, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, found, not_found, denied, refused, changed, updated, photos_fetched, photos_unchanged, photos_removed, photos_refused, photos_deferred } | null, leavers: { at, state: none | dry_run | held | deactivated, breaker, people: [{ user_id, name, email, reason: disabled | gone, protected: owner | last_admin | null, failed }], changed: [{ user_id, name, email, reason: account_changed | shared_account | disabled_at_match }] } | null } — with *Leavers* off, `leavers` is a dry run   (owner, admin; session only; org.calendar.configure; D-161, LAI-1330)
+PUT    /api/v1/org/people-sync               body { profile_enabled, leavers_enabled } → the people sync; turning *Photos and profile* on starts a run; 422 reason leavers_need_profile (Leavers without it); 409 conflict reason microsoft_not_connected (either turned on with no §4.101 connection); turning *Leavers* on also asks user.deactivate, else 403   (owner, admin; session only)
+POST   /api/v1/org/people-sync/sync          syncs now, or joins the run already going → the people sync; 409 conflict reason people_sync_off unless *Photos and profile* is on   (owner, admin; session only)
 GET    /api/v1/org/holidays                  ?from=&to= (≤ 731 days) → { holidays: [{ id, day, label, source, everyone }] } by day   (every member; D-149)
 POST   /api/v1/org/holidays                  body { day, label } → 201 the holiday; 409 conflict reason holiday_exists with the live one's id   DELETE .../:id → 204; a synced one is 409 conflict reason holiday_from_clan   (owner, admin; session only)
 GET    /api/v1/org/sso                       how people sign in → { sign_in: email | microsoft, microsoft: { tenant_id, client_id, redirect_uri, directory_sync: { enabled, every_minutes, last_run: { at, ok, added, existing, error } | null } } | null }; microsoft null on a password board. Never the client secret, not even masked. Read only: sign-in is set by environment (§11.7), so nothing here can lock anyone out   (owner, admin — org.settings.edit; D-158, LAI-1239)
@@ -4862,6 +5013,8 @@ POST   /api/v1/users/:id/sign-out            end every session, not tokens → {
 GET    /api/v1/users/:id/memberships         → { data: [{ project_id, slug, name, prefix, role, archived, joined_at }] } — membership rows only, narrowed to spaces the caller can read   (viewer+; LAI-981)
 GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind } — anybody's but yours logged as kinds profile and time   (owner, admin; session only)
 GET    /api/v1/me/profile                    your own profile; ratings only with profile.read; no look   (every role; session only; D-139, LAI-1150)
+GET    /api/v1/users/:id/photo               ?v= → their synced photo's bytes (D-161), answered by Laika from the store rather than redirected, so `img-src 'self'` covers it; `Cache-Control: private, max-age=31536000, immutable` when `v` names the current `photo_updated_at`, else `private, no-cache`; no photo, a person deactivated, no store, an object the store lost, and a caller who may not see people are the same 404   (member_list.read; LAI-1330)
+GET    /api/v1/people/directory              → { people: { [user_id]: { photo_v, job_title, department, manager_id, manager_name } } } — everyone the people sync has read (§4.108); `photo_v` is null with no photo, for a person deactivated, or with no store. **A viewer, and any `read_only` token, gets the photos alone**: every other field null — a viewer may be a client (D-161)   (member_list.read; LAI-1330)
 GET    /api/v1/me/activity                   ?range=12w|52w — your own heatmap by day; no look   (every role; session only; D-139, LAI-1150)
 POST   /api/v1/users/:id/ratings             body { score, note } → 201   (owner, admin; session only; not yourself)
 GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's heatmap by day   (owner, or a role granted *See everyone's analytics*; session only; logged, D-102)
@@ -4923,8 +5076,12 @@ GET    /api/v1/projects/:slug/context/deliveries   ?revision=&limit=&cursor= →
        └ **each session's latest delivery, not a history** (§4.69 keeps one row per session and project): `data` is [{ session_id, revision, delivered_at, session_ended_at, agent }], newest delivery first; `?revision=N` keeps the sessions whose latest delivery is N, so a session later given N+1 leaves N's list. A revision the project has not reached is 404, as the revision read's. *Delivered* means sent, never read (§4.69). `agent` is `{ id, harness, device_label, display_name, status }` only for the reader's own agent — another person's agent is missing to everyone else (D-121 item 7), so its row carries `agent: null` and no id or label (LAI-1003)
        └ all five context reads follow project read; a project the caller cannot see is answered **exactly as a missing one** — 404 to a person, and to an agent's token the 403 `agent_not_granted` it gets for any slug it may not use (LAI-555)
 GET    /api/v1/projects/:slug/budgets        PUT /api/v1/projects/:slug/budget  body { tokens | null }   (set: lead, session only; LAI-773)
-GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=&fields=
+GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&archived=&trash=&updated_since=&cursor=&fields=
                                              status is a category (§4.5), status_id one project status (§4.20);
+                                             live tasks only: archived=only lists the archived ones instead (never one in
+                                             Trash), trash=only the space's Trash (signed in only: a token is 403
+                                             session_required; both at once is 400), and with updated_since a task
+                                             archived or deleted since then is a §6.3 tombstone (LAI-1353, LAI-1354);
                                              fields=slim leaves out description_md, acceptance_md, deliverables, solves and unlocks (LAI-795, LAI-1115)
                                              each task carries `handoff`, its saves and hand-off in brief (LAI-1005), read once
                                              for the page returned, whatever its size and however many `ready=` batches were
@@ -4945,10 +5102,12 @@ PATCH  /api/v1/projects/:slug/tags/:name     rename project-wide (lead+)
 DELETE /api/v1/projects/:slug/tags/:name     remove from every task (lead+); tasks are untouched
 GET    /api/v1/projects/:slug/timeline       ?from=&to=  — sprints with date ranges and their tasks
 POST   /api/v1/projects/:slug/tasks
-GET    /api/v1/tasks                         ?project=&status=&assignee=&sprint=&updated_since=&cursor=&fields= — every project the caller may read
+GET    /api/v1/tasks                         ?project=&status=&assignee=&sprint=&archived=&updated_since=&cursor=&fields= — every project the caller may read
                                              (project.read per project); the per-project list's task shape and order; any other filter is 422 (LAI-887)
 GET    /api/v1/tasks/summary                 /tasks' filters, same set → { total, by_status, by_assignee: [{ user_id|null|'others', name, count }] (top 10, then others), overdue, blocked, unassigned } (LAI-974)
 GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id
+DELETE /api/v1/tasks/:id                     POST /api/v1/tasks/:id/restore
+                                             into the space's Trash and back out (LAI-1354) — see below
 POST   /api/v1/tasks/:id/claim               POST /api/v1/tasks/:id/status
                                              claim: body { branch?, estimate?, session_id? }, optional — the branch is kept
                                              on the task (LAI-770); estimate { size?, confidence? } (§4.34); on a registered
@@ -4994,7 +5153,7 @@ DELETE /api/v1/projects/:slug/teams          the space has no channel and is tol
 POST   /api/v1/projects/:slug/teams/test     one test post to the channel, **whether posting is on or off** → the post, recorded like any other; 409 conflict reason teams_no_channel   (owner, admin; session only; its own rate-limit bucket)
 GET    /api/v1/projects/:slug/email-address  the space's inbound address → { address: '<slug>-<token>@<domain>' | null until a domain is set, enabled, can_rotate } — made the first time it is asked for   (whoever may create a task in the space; D-155, LAI-1315)
 POST   /api/v1/projects/:slug/email-address/rotate   a new token; the old address stops at once → as GET   (Edit project settings)
-POST   /api/v1/tasks/:id/finish              body { summary, checklist?, commits?, branch?, pull_request?, tests? }
+POST   /api/v1/tasks/:id/finish              body { summary, checklist?, commits?, branch?, pull_request?, tests?, outputs? } — `outputs` [{ attachment, caption }] as `finish_task`'s (§4.92, D-162)
                                              → review, with a round and its proof (finish_task's twin, D-082); a checklist
                                              line that is a deliverable's id or exact title marks it done (LAI-1115)
 GET    /api/v1/tasks/:id/rounds              { rounds (newest first), send_back }
@@ -5018,8 +5177,8 @@ POST   /api/v1/tasks/:id/dependencies        body { blocked_by_task_id }  — th
 DELETE /api/v1/tasks/:id/dependencies/:depId
 GET    /api/v1/tasks/:id/comments            POST /api/v1/tasks/:id/comments
 PATCH  /api/v1/comments/:id                  DELETE /api/v1/comments/:id
-POST   /api/v1/projects/:slug/attachments    body { filename, content_type, size_bytes, task_id? } → 201 { attachment, upload: { url, method: 'PUT', headers: { content-type, content-disposition }, expires_at } }; 413 payload_too_large with max_bytes; never stored for a replay   (attachment.create; D-150)
-POST   /api/v1/attachments/:id/complete      → the attachment, ready; 409 conflict reason not_uploader, not_pending, upload_expired (asked for over an hour ago), upload_missing or size_mismatch   (the uploader)
+POST   /api/v1/projects/:slug/attachments    body { filename, content_type, size_bytes, task_id? } → 201 { attachment, upload: { url, method: 'PUT', headers: { content-type, content-disposition }, expires_at } }; `task_id` is the task's id, its key (`LAI-42`) or the outside id it carries, as every MCP tool takes a task (LAI-1302); 413 payload_too_large with max_bytes; never stored for a replay   (attachment.create; D-150; MCP `request_upload`, D-162)
+POST   /api/v1/attachments/:id/complete      → the attachment, ready; 409 conflict reason not_uploader, not_pending, upload_expired (asked for over an hour ago), upload_missing or size_mismatch; 422 unprocessable reason secret_detected with `pattern` and `line` — the file removed, never its text (§13.4, D-162)   (the uploader; MCP `complete_upload`)
 GET    /api/v1/attachments/:id/content       → 302 to a presigned GET, five minutes; Cache-Control: private, max-age=60; pending, removed or unreadable 404   (project.read)
 DELETE /api/v1/attachments/:id               → 204   (attachment.delete: a lead any, a member their own)
 GET    /api/v1/tasks/:id/attachments         → { data: [attachment] }, ready and not removed, oldest first   (project.read)
@@ -5067,6 +5226,7 @@ POST   /api/v1/agent-sessions                body { client_version?, harness?, h
 POST   /api/v1/agent-sessions/:id/heartbeat  body { client_version?, harness?, harness_version?, model? } optional → { session, claims, lost } — renews the session's active claims (§9.1); a field sent replaces what the session said, one omitted is kept
 POST   /api/v1/agent-sessions/:id/end        → session; its live claims are released
 GET    /api/v1/presence                      GET /api/v1/capacity
+GET    /api/v1/presence/people               who is online or away now → { enabled, people[{ user_id, name, status: online|away, last_seen, last_seen_via }] } — the header's *who's here* (§9.3, LAI-1348); nothing written
 GET    /api/v1/permissions                   every org and project action: label, scope, which roles hold it, conditions; and the caller's own grants (viewer+; LAI-885) — answered under the organisation's grants (LAI-958)
 GET    /api/v1/unlisted                      ?user=&since=  — work logged outside any project
 POST   /api/v1/unlisted/:id/promote          body { project_slug, title, priority? } → creates a task
@@ -5115,6 +5275,43 @@ three original fields, unchanged.
 `{ title, description_md, acceptance_md, deliverables, solves, unlocks, tags,
 priority, assignee_id, parent_task_id, due_on, planned_start, external_ref,
 selected_agent_id }`.
+
+**`{ archived: true | false }` archives or restores the task** (LAI-1353),
+*Archive or restore a task* in §3.2 — signed in only. It travels **alone**:
+with any other field it is `422` `reason: archived_alone`. Archiving takes the
+task's subtasks with it, releases its live claim, closes its live hand-off
+offers and its open work request `task_closed`, and writes `task.archived` per
+task (§4.8). Restoring brings back the subtasks archived with it, asks the
+selected agent again if the archive closed its request, and writes
+`task.restored`; a subtask whose parent is still archived is `409`
+`reason: parent_archived`. Asking for what the task already is writes nothing.
+**An archived task is read-only**: every other write to it — `PATCH`, a
+status, a claim, a dependency either way, a reorder, a sprint, a comment, a
+file — is `409 conflict` with `reason: archived`. Reads answer as before, with
+`archived_at` and `archived_by` on `TaskView`; it is never `ready`, and as a
+blocker it blocks nothing until restored. Deleting a status is a setting of the
+space, not an edit of the task: an archived task in it — or one in Trash — is
+re-filed to the status the work moves to, still put away, with a
+`task.status_changed` row `via: status_deleted`.
+
+**`DELETE /tasks/:id` moves a task into its space's Trash; `POST
+/tasks/:id/restore` brings it back** (LAI-1354). A soft delete: the row, its key
+and its history stay, and it is restorable for 30 days (LAI-1355 scrubs after).
+Both ask §3.2's *Cancel / delete task* (`task.delete`: a lead any task, a member
+one they created) and are **signed in only** — a token is `403` with `reason:
+session_required`. Both answer the task as it then is. The subtasks go and come
+back with it, as archiving does (`parent_deleted` refuses a subtask whose parent
+is still in Trash, and a restore never brings a subtask back live under a parent
+that is archived); the live claim is released, live offers and the open work
+request close `task_closed`. **A task in Trash is read-only** — every write but
+the restore is `409 conflict` with `reason: deleted` — **and to a token it does
+not exist**: every route under `/tasks/:id` — the task, its comments, files,
+rounds, checkpoints, offers, watchers, estimate, time and usage, read or
+written — and every MCP tool answer `404`, as for an id that names nothing; as
+a parent it is that `404` too, and beside a live task (a blocker) MCP shows it
+as `{ id, visible: false }`. It
+is never archived or restored from the archive while in Trash; an archived task
+deleted and restored comes back archived.
 **`null` clears a field; absent leaves it alone** — they are different requests,
 and `acceptance_md`, `assignee_id`, `parent_task_id` and both dates draw the
 distinction. `tags` replaces the whole set, and so do `deliverables`, `solves`
@@ -6642,8 +6839,9 @@ content_type, size_bytes, inline, uploaded_by, created_at, ready_at, url }`,
 `url` being `/api/v1/attachments/<id>/content` — **what markdown embeds**,
 relative, and never a store URL, so a stored body never expires.
 
-- **Asking** names the project by slug and optionally a task of it (another
-  project's is the missing task's `404`). `filename` is 1–255 with no `/`, `\`
+- **Asking** names the project by slug and optionally a task of it — by id,
+  key or outside id (LAI-1302) — and another project's is the missing task's
+  `404`. `filename` is 1–255 with no `/`, `\`
   or control character; `content_type` a media type, lower-cased;
   `size_bytes` at most `LAIKA_ATTACHMENT_MAX_BYTES`, else `413
   payload_too_large` with `details.max_bytes`. The answer's `upload` is a
@@ -6656,18 +6854,38 @@ relative, and never a store URL, so a stored body never expires.
   upload_expired` after). Laika `HEAD`s the object — missing,
   or another size, is `409` and the row stays `pending` — reads its first
   sixteen bytes, sets `inline`, and marks it `ready`; a file that named its
-  task writes `attachment.added` (§4.8).
+  task writes `attachment.added` (§4.8). **A text file is read further first**
+  — a text type, or a name that says it is one (`.env`, `id_rsa`,
+  `server.pem`, `server.key`, `credentials`, `.npmrc`), at once; **any other
+  file whose first kilobyte is text** — not one of the seven a browser is
+  shown, and no NUL — after that probe; its first 2 MiB through one ranged
+  `GET` — and scanned for secrets (§13.4, D-162): one
+  that holds a recognisable secret is `422 unprocessable`, `details: {
+  reason: 'secret_detected', pattern, line }`, and is removed — row stamped,
+  object deleted — so no read ever serves it. The answer never carries the
+  text that matched. There is no override.
 - **Reading** is a `302` to a presigned `GET`, five minutes long, that makes
   the store answer `response-content-type` — the declared type when `inline`,
   else `application/octet-stream` — and `response-content-disposition` —
   `inline` when `inline`, else `attachment` — with the RFC 6266 filename
-  (§13.1). A `pending` or removed file, or one in a project the caller cannot
+  (§13.1). A file on an unlisted finding not yet promoted is served only to
+  its uploader and to those who read the pile (`audit_log.export`); to anyone
+  else it is the `404` below (D-162 item 8). A `pending` or removed file, or one in a project the caller cannot
   read, is the same `404`.
 - **Removing** stamps the row at once and deletes the object best effort; the
   sweep retries until it goes (§11.6). A file that belonged to a task writes
   `attachment.removed`.
 - **Linking** has no route: saving a task's or a comment's text links the
-  files it embeds (§4.92), REST and MCP alike.
+  files it embeds (§4.92), REST and MCP alike. **An agent's outputs** (D-162)
+  are those links, written by the server: `POST /tasks/:id/finish`'s
+  `outputs`, and `finish_task`, `add_comment`, `create_task` and
+  `log_unlisted_work` over MCP (§7.1), each `{ attachment, caption }`.
+  Promoting an unlisted finding (`POST /unlisted/:id/promote`) moves its files
+  to the new task; dismissing it (`DELETE /unlisted/:id`) removes them.
+- **Recordings play inline** (D-162): an mp4 or webm whose first bytes say so
+  is `inline`, and with attachments on the store's origin is in the CSP's
+  `media-src` as well as `img-src` and `connect-src` (§13.1) — and in
+  `frame-src`, where the output viewer shows an inline PDF (LAI-1352).
 
 **The history export (LAI-984).** `GET /activity/history?format=csv` is the
 JSON answer's rows — same gate, same filters, same validation, newest first —
@@ -6756,7 +6974,12 @@ the client's `clientInfo.name` and its slug on the token (§4.9). That is what
 makes an agent with no heartbeat hook present (§9.3).
 
 The instructions stay under 2,048 characters with the must-follow rules in the
-first 512, and those rules are repeated in the descriptions of `start_working`,
+first 512 — claim before code, one task at a time, finish into review never
+done, and D-162's *show your work, never a secret* (LAI-1302), each whole
+sentence inside them, which `test/mcp/server.test.ts` asserts. The owner's
+parent-and-child rule follows them (LAI-1360), in the repo block's words
+(LAI-1352) but for `parent` written without backticks, since every
+backticked name in the instructions must be a tool. And those rules are repeated in the descriptions of `start_working`,
 `create_task` and `finish_task` for clients that never show `instructions`.
 `/mcp` answers only `POST`: any other method gets `405` with `Allow: POST`. A
 `401` says whether the `Authorization` header was missing, empty (`Bearer` and
@@ -6786,21 +7009,23 @@ matched.
 | `laika_whoami` | `{}` | the identity this token acts as — `user_id`, `name`, `email`, `org_role`, `token_scope`, `agent` (the registered agent this token is the credential of — `id`, `display_name`, `harness`, `device_label`, `status` — or `null` for a legacy token; D-114) — and `how_to_work`, the same text as the server's `instructions`, for clients that drop those (D-076). Reads nothing, changes nothing |
 | `list_projects` | `{}` | projects the user can read |
 | `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age. On a registered agent's token, also `work_requests`: its open work requests, ready or not, newest first, under the same `project` and `limit`, as `GET /agents/me/work-requests?project=&limit=` answers (LAI-535) — a request, not a claim |
-| `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, what it delivers (`### Delivers (n of m built)` — each Ships item with its state and its id, which `checkpoint_task` and `finish_task` take back — `### Solves`, `### Unlocks`; LAI-1115), `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`), and `estimate` — the size, its *why*, the forecast frozen at start and the actual, as `GET /tasks/:id/estimate` answers (D-085), with the token forecast, what was said at claim, *scope grew* and the split suggestion (LAI-772) — and `similar`: up to five similar finished tasks in the project, closest first, each `{ task_id, key, title, status, similarity, rounds, send_backs: [{ round, reason }] }` — why it was sent back, and nobody's name |
-| `get_project_context` | `{ project, since_revision?, session_id? }` | `context_md` with its `revision` — or, with `since_revision`, **no document**: `context_diff` from that revision to the current one (§6.4's diff, truncated past 2,000 changed lines with the same `hint`) — its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770). `session_id` is a registered agent's own open session: the revision answered is recorded as **delivered** to it (§4.69) — but not by a truncated diff, which sent none of it |
+| `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, what it delivers (`### Delivers (n of m built)` — each Ships item with its state and its id, which `checkpoint_task` and `finish_task` take back — `### Solves`, `### Unlocks`; LAI-1115), `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`), and `estimate` — the size, its *why*, the forecast frozen at start and the actual, as `GET /tasks/:id/estimate` answers (D-085), with the token forecast, what was said at claim, *scope grew* and the split suggestion (LAI-772) — and `similar`: up to five similar finished tasks in the project, closest first, each `{ task_id, key, title, status, similarity, rounds, send_backs: [{ round, reason }] }` — why it was sent back, and nobody's name — and `attachments`: its ready files, oldest first, each `{ id, filename, content_type, size_bytes, inline, caption, url, round, comment_id, uploaded_by, created_at }` — `caption` the text of the first link to it in the task's text and comments, `round` the number of the round whose summary attached it, each or `null` (§4.92, D-162, LAI-1302); `url` is `/api/v1/attachments/<id>/content`, relative to the board. Empty on a board with no store |
+| `get_project_context` | `{ project, since_revision?, session_id? }` | `context_md` with its `revision` — or, with `since_revision`, **no document**: `context_diff` from that revision to the current one (§6.4's diff, truncated past 2,000 changed lines with the same `hint`) — its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770) — the owner's parent-and-child rule, *"One parent per feature. A new feature with several parts gets one parent task, with each part as a child task (`create_task` with `parent`). Work on an existing feature becomes a new child of its parent. A genuinely small one-off may stand alone. The main outputs go on the parent, a child's own outputs on the child."* — the repo block's words (LAI-1352), here and in `create_task`'s description (LAI-1360) — and show your work: attach what a person needs to see, captioned, never a secret (D-162). `session_id` is a registered agent's own open session: the revision answered is recorded as **delivered** to it (§4.69) — but not by a truncated diff, which sent none of it |
 | `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
-| `create_task` | `{ project, title, description?, acceptance?, deliverables?, solves?, unlocks?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref?, agent? }` | created task, `created_via: 'mcp'`. `deliverables` (Ships items, each `{ title, detail?, state? }`), `solves` and `unlocks` are the task's "what this delivers" (§4.5, LAI-1115), filled by the agent that files it. `parent` is a task ref and makes this a subtask, one level only. `external_ref` is an outside id (§4.5). `agent` is a registered agent's id and is `POST /projects/:slug/tasks`'s `selected_agent_id` (§6.4): a work request opened in the create, never an assignment (LAI-1027). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |
+| `create_task` | `{ project, title, description?, acceptance?, deliverables?, solves?, unlocks?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref?, agent?, attachments? }` | created task, `created_via: 'mcp'`. `attachments` — mockups, a screenshot of the problem, a repro — are `[{ attachment, caption }]`, files of this project with no task yet, checked before anything is created and added to the description as captioned links (§4.92, D-162). `deliverables` (Ships items, each `{ title, detail?, state? }`), `solves` and `unlocks` are the task's "what this delivers" (§4.5, LAI-1115), filled by the agent that files it. `parent` is a task ref and makes this a subtask, one level only; the tool carries the owner's rule — one parent per feature, its parts as child tasks, work on an existing feature as a new child of its parent, a small one-off standing alone — and tells an agent to find that parent first (`get_project_context`, then `get_task_context` for its subtasks) (LAI-1360). `external_ref` is an outside id (§4.5). `agent` is a registered agent's id and is `POST /projects/:slug/tasks`'s `selected_agent_id` (§6.4): a work request opened in the create, never an assignment (LAI-1027). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |
 | `update_task` | `{ task, title?, description?, acceptance?, deliverables?, solves?, unlocks?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start?, size?, external_ref?, agent?, claim_generation? }` | task. Every field optional; an omitted one is left alone; `deliverables`, `solves` and `unlocks` each replace the whole list, as `PATCH` does (§6.4, LAI-1115) — keep an item's `id` to keep its state; `null` on `parent`, a date, `size`, `external_ref` or `agent` clears it. **No `status`**. `size` (`XS`–`XL`) overrides the computed size (D-085). `agent` is a registered agent's id and is `PATCH`'s `selected_agent_id` (§6.4): a work request, never an assignment (LAI-535) |
 | `start_working` | `{ task, branch?, estimate?, session_id?, reclaim? }` | task, or `409` with the current assignee. A `branch` is kept on the task (LAI-770). `estimate` is the claimant's own `{ size?, confidence? }` — `XS`–`XL` and `green` \| `yellow` \| `red` — kept in §4.34, scored against what happens, and blended into the forecast only once estimates here beat the project median (LAI-772); a resume keeps none. **The holder's own call on a task already in progress succeeds** as a no-op that keeps the branch it is given and returns the task — no status change, no `activity` row, `started_at` and the frozen estimate untouched — so a session resuming its task can mark it (LAI-770 review, B2); anyone else, and a holder whose task is not in progress, still get `409`. **On a registered agent's token** it also takes the task's exclusive claim (§5, §4.66) and answers `claim` — `{ session_id, generation, lease_expires_at, … }` — beside the task, and **never writes the assignee** (§5); `session_id?` names the session to claim under (absent opens one), and the holder's session calling again renews the lease. A second session — the same agent's, or another agent of the same person — is `409`, `reason: claim_held`. **A task with a selected agent** (§4.5) is claimed only by that agent's sessions — another agent is `409`, `reason: selected_for_another_agent`, with or without `reclaim` (D-119, §6.3). **`reclaim: true`** is the explicit reclaim, `POST /tasks/:id/claim/reclaim`'s twin (§9.1, LAI-541): only it gives an agent whose claim expired a claim again, at `generation + 1` |
 | `update_status` | `{ task, status, note?, claim_generation? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
 | `set_task_sprint` | `{ task, sprint, claim_generation? }` | task. `sprint: null` takes it out of whichever it is in |
-| `add_comment` | `{ task, body }` | comment |
-| `finish_task` | `{ task, summary, checklist?, commits?, branch?, pull_request?, tests?, claim_generation? }` | task → **`review`**, summary posted as a comment, and a round with the proof, each item `claimed` until GitHub's deliveries confirm it (§4.25, D-082, D-083). A `checklist` line that is a deliverable's id or exact title marks it `done` (§4.5, LAI-1115); the other lines are appended `- [x]` under the summary. Releases the session's claim (§5) |
+| `add_comment` | `{ task, body, attachments? }` | comment. `attachments` — the error screenshot, the log, the failing report of an incident or a blocker — are `[{ attachment, caption }]`, files of the task's project, added under the comment as captioned links, which the comment then owns (§4.92, D-162) |
+| `finish_task` | `{ task, summary, checklist?, commits?, branch?, pull_request?, tests?, outputs?, claim_generation? }` | task → **`review`**, summary posted as a comment, and a round with the proof, each item `claimed` until GitHub's deliveries confirm it (§4.25, D-082, D-083). A `checklist` line that is a deliverable's id or exact title marks it `done` (§4.5, LAI-1115); the other lines are appended `- [x]` under the summary. `outputs` — what a person needs to see of the result: screenshots, the generated file, a report, a short recording — are `[{ attachment, caption }]`, appended under `**Outputs**` as captioned links, so each belongs to the task, the summary comment and, through its `summary_md`, the round; a file of another project or task refuses the whole finish (§4.92, D-162). The main outputs go on the parent, a child's own outputs on the child; on a parent, through `add_comment`'s `attachments` (LAI-1360). Its REST twin `POST /tasks/:id/finish` takes them too. Releases the session's claim (§5) |
 | `create_sprint` | `{ project, name, goal?, start_date, end_date, status? }` | created sprint, with the id the other sprint tools take |
 | `update_sprint` | `{ sprint, name?, goal?, start_date?, end_date?, status? }` | sprint. Completing one **does not move its tasks** (§4.15, D-013) |
 | `update_project_context` | `{ project, context_md, mode, base_revision? }` | the document's new revision and length. `mode` is `replace` or `append`. `replace` must name the `base_revision` it replaces (absent is `422`, after the permission check); a stale one is `conflict`, `reason: stale_context_revision`, and nothing changes. `append` is computed from the current document inside the write, so two appends both land (LAI-555) |
-| `log_unlisted_work` | `{ repo, note }` | records work or an idea outside any project, for triage |
+| `log_unlisted_work` | `{ repo, note, attachments? }` | records work or an idea outside any project, for triage. `attachments` — evidence the agent chose to show — are `[{ attachment, caption }]`, its own ready uploads with no task: linked to the finding (§4.92 `unlisted_work_id`) and to its note as captioned links; promoting it moves them to the task, dismissing it removes them (D-162 item 8) |
+| `request_upload` | `{ task?, project?, filename, content_type, size_bytes }` | `{ attachment, upload, curl }` — `POST /projects/:slug/attachments`'s twin (§6.4, D-162, LAI-1302). Exactly one of `task` (a ref, which names the project) or `project` (a slug: a file for a task not created yet, or for an unlisted finding), else `422`, `reason: task_or_project`. `upload` is the presigned `PUT`, ten minutes long; `curl` is that upload as one command — `curl -fsS -T '<filename>' -H 'content-type: …' -H 'content-disposition: …' '<url>'`, every word single-quoted — run where the file is. **The bytes never pass through MCP or Laika.** Off, `503`, `reason: attachments_off` |
+| `complete_upload` | `{ attachment }` | the attachment, `ready` — `POST /attachments/:id/complete`'s twin (§6.4, D-162, LAI-1302), the uploader's alone, within an hour of asking. A text file holding a recognisable secret is `422`, `reason: secret_detected`, with the rule and the line, and is removed (§13.4) |
 | `propose_time_entry` | `{ minutes, task?, day?, note? }` | a draft in the person's own drafts (`source: 'agent'`, §4.47) — **never an entry**: only the person confirms it, signed in to the web app (D-088 item 13). Refused `forbidden` with `details.reason: "time_drafts_off"` unless the organisation's *Time* is `drafts` and the person turned on *Draft my time*. `day` is their local day, by default today in their drafts' zone. It answers `{ id, minutes, day }` and nothing of the person's drafts. Its REST twin is `POST /me/time-drafts` (LAI-787) |
 | `agent_sync` | `{ project?, after? }` | a registered agent's inbox: its **live** work requests and the hand-off and recovery offers it may accept, newest first — `GET /agents/me/inbox`'s twin (§6.4, LAI-546), each item with its `delivery` (§4.77); and `{ after? }` returns `events` — `GET /agents/me/events` with `state=undelivered` and the same `project` — with `cursor`, `has_more` and `gap` (LAI-553). Any other token is `forbidden`, `reason: not_an_agent`. It reads, and records nothing: acknowledging is `POST /agents/me/events/ack` |
 | `checkpoint_task` | `{ task, id, idempotency_key, repo, branch, commit_sha, manifest, summary?, summary_commit_sha?, working_on?, claim_generation }` | the checkpoint, `verification: 'pending'` until a signed push delivery verifies it — `POST /tasks/:id/checkpoints`'s twin (§4.70, LAI-545). Register **after** the push; the server never fetches anything (D-083). `working_on` names the Ships items this save advances, by id or exact title: they move to `in_progress`; a name the task does not list refuses the save (LAI-1115) |
@@ -7207,6 +7432,18 @@ hold a result that is legitimately many.
   stamped (D-076, D-081), so
   turning it back on shows nothing from the time it was off. The connecting
   client's name is still kept on the token, as token metadata.
+- **Who is here** (`GET /api/v1/presence/people`, LAI-1348) — the people
+  Capacity calls `online` or `away` now, **by Capacity's own signals and token
+  rules** (a sign-in, an activity-log row, a heartbeat, a token's `/mcp` call or
+  REST write; below), each read **over the last hour only** — the most anyone
+  can be away — so it is a fixed handful of indexed reads whatever the
+  headcount, and **writes nothing**: it asks no workload, availability or time
+  question, so no look is logged (§4.59). `{ enabled, people[{ user_id, name,
+  status, last_seen, last_seen_via }] }`, online first, then the most recently
+  seen; active people only; with presence off, `enabled: false` and nobody.
+  The top bar reads it on every page (every 30 s while the tab is visible) and
+  draws it as overlapping faces ringed by status, opening a list of who is
+  online and who is away.
 - **Capacity** (`GET /api/v1/capacity`) — per user: `active_sessions` (distinct
   tokens seen by heartbeat, `/mcp` call or REST write in the window, one token
   doing several counted once; D-076, D-081),
@@ -7240,10 +7477,15 @@ hold a result that is legitimately many.
     before today, UTC, and not finished — the client's `isOverdue`) and
     `due_soon` (due today or within the next seven days). Counted over the
     projects the reader may read, as `in_progress_tasks` always was.
-    `spaces[]` gives the same counts per project they have open work in, with
-    its `slug`, `name` and **its own `load`** by the rule below — the badge
-    shown while that space is selected (D-092, LAI-818). Most committed
-    first, then most open.
+    `spaces[]` gives the same counts per project, with its `slug`, `name` and
+    **its own `load`** by the rule below — the badge shown while that space
+    is selected (D-092, LAI-818) — for **every space they are a member of**
+    as well as every one they have open work in (LAI-1334): one they are in
+    with no open work of theirs carries every count `0` and load `none`, so
+    someone between tasks is not *No spaces*. Only spaces the reader may
+    read, as the counts; an archived space only while open work of theirs is
+    still in it. Most committed first, then most open — so the spaces with
+    open work come first — then A–Z.
   - `load`, **a fixed rule, not a setting**, on **committed work** (D-092
     item 3, LAI-818): `none` with nothing committed; `heavy` with more than
     **5** in progress **or** more than **15** committed; `light` with at most
@@ -7265,6 +7507,27 @@ hold a result that is legitimately many.
     `position`, D-060.4) by either hand, counted from §4.8 over the window
     through `activity_org_created_at_idx`; `by_self` and `by_agents` are
     §4.22's columns less that bookkeeping, so the three sum to the series.
+  - **`away`** (LAI-1331, D-157 amended): `{ own: { until } | null, outlook:
+    { until } | null }` — the away period the person set covering their today
+    (§4.86) and an Outlook out-of-office span covering now (§4.107), each the
+    last day of it as a calendar day in the person's own zone (an all-day
+    span read as its dates); `null` when neither is so. **D-137's audience**:
+    present for the people whose availability the reader sees — everyone
+    for *See everyone's analytics*, the people in the spaces a lead leads,
+    the people who share a space with a member, and always the reader —
+    and **absent, not null**, for anyone else. **On a web session only**
+    (`availability.read`, D-131): an agent's token reading Capacity is told
+    nobody's, its own person's included. Outlook's half only while the
+    connection is on and the sync has seen the span within a day (§4.107).
+  - **`meeting_minutes_week`** (LAI-1331): the minutes of `kind` `meeting`
+    the person has logged (§4.48, not deleted) on the days of their own week,
+    Monday to Sunday in their zone — the calendar's meetings and any they
+    typed; no Graph call. **Their time (D-102)**: present on the reader's
+    own row (`time_entries.read_own`), and on anyone else's only for *See
+    everyone's analytics* on a web session (`people.analytics.read`) —
+    **each person shown is a logged `time` look** (§4.59, deduped as D-135
+    says), written in the read's transaction, so a list that cannot be
+    logged is not answered. Absent for everyone else.
 
   **With `presence_enabled` off**, `status`, `last_seen` and `last_seen_via`
   are `null`, no agent is `running` and every agent's `last_at` is `null`: the org chose not to record who is
@@ -7663,9 +7926,9 @@ call MCP; agents do.
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read ; *Overview*'s Week, Month and Range (LAI-1138): `GET /time/report?members=<the reader>`, JSON and `format=csv`; *My availability* (LAI-1139): `GET/PUT /me/availability`, `POST /me/availability/away`, `DELETE /me/availability/away/:id`; *For you* (LAI-1139): `GET /me/notices`, `POST /me/notices/:id/read`, `POST /me/notices/read-all` — the rail's count on *My day* reads the same list; the **View**'s Week (LAI-1174): `GET /me/time` for each of its seven days, its Month and Year: `GET /me/time/days` (LAI-1173), a year in four reads | `propose_time_entry` | ✅ D-088, LAI-796, D-130, D-131, D-134, LAI-1174 |
 | **Tokens** *(on Developer access)* | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
-| **Organisation** *(seven tabs, LAI-796; Work since D-147)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET/DELETE /org/hr`, `POST /org/hr/connect`, `POST /org/hr/connect/verify`, `POST /org/hr/sync`, `PUT /org/hr/people`, `GET/POST /org/holidays`, `DELETE /org/holidays/:id` (D-149), `GET/PUT/DELETE /org/calendar`, `POST /org/calendar/test`, `POST /org/calendar/sync` (D-157), `GET/PUT /org/teams` (D-154), `GET/PUT /org/email-inbound`, `POST /org/email-inbound/token` (D-155), `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites`; the *Work* tab (LAI-952, LAI-1170): `GET /tasks?fields=slim` (paged), `GET /tasks/summary`, `GET /projects/:slug/sprints`, and for its bulk bar `GET /projects/:slug/statuses`, `PATCH /tasks/:id`, `POST /tasks/:id/status`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId` — one request per task | — | ✅ |
+| **Organisation** *(seven tabs, LAI-796; Work since D-147)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET/DELETE /org/hr`, `POST /org/hr/connect`, `POST /org/hr/connect/verify`, `POST /org/hr/sync`, `PUT /org/hr/people`, `GET/POST /org/holidays`, `DELETE /org/holidays/:id` (D-149), `GET/PUT/DELETE /org/calendar`, `POST /org/calendar/test`, `POST /org/calendar/sync` (D-157), `POST /org/calendar/backfill` (LAI-1335) — the *Microsoft 365* card, with `GET/PUT /org/people-sync` and `POST /org/people-sync/sync` for its *Photos and profile* and *Leavers* switches (D-161), `GET/PUT /org/teams` (D-154), `GET/PUT /org/email-inbound`, `POST /org/email-inbound/token` (D-155), `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites`; the *Work* tab (LAI-952, LAI-1170): `GET /tasks?fields=slim` (paged), `GET /tasks/summary`, `GET /projects/:slug/sprints`, and for its bulk bar `GET /projects/:slug/statuses`, `PATCH /tasks/:id`, `POST /tasks/:id/status`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId` — one request per task | — | ✅ |
 | **Connect** *(Developer access's first tab, `/developer?tab=connect`; not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET /me/activity-sharing` (whether the organisation collects, so the machine prompt turns the collector on), `GET /projects` (the Projects tab), `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` (the Activity tab) | — | ✅ D-079, D-084, D-087, LAI-507 |
-| **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
+| **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins); each person's title, department and manager, and *My team* (`?team=mine`, the people whose manager is the reader), from `GET /people/directory` (D-161) | — | ✅ LAI-754, LAI-767; LAI-1330 |
 | **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
 | **Unlisted work** *(Inbox's tab, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
 | **Member profile** *(your own for everyone; someone else's for owners and admins — D-139)* | 7 | Someone else's: `GET/PATCH /users/:id/profile` (a `profile` look, D-139 item 3), `GET /people/:id/activity`, `GET /users/:id/usage`, the head card's availability — for a holder of *See everyone's analytics* `GET /people/:id/load` (its one `time` look is the one opening the profile writes, D-135), never `GET /people/availability`, which logs a look at everyone it lists; for any other reader their row of that list, narrowed and unlogged (LAI-1159), and for *This week* `GET /people/:id/time` (a `time` look, D-139 item 4); your own: `GET /me/profile`, `GET /me/activity`, `GET /users/:id/usage` for yourself, `GET/PUT /me/availability`, `GET /me/time`, `GET /me/analytics-views?since=` (*Who looked*); the *Day* tab (the embedded My day, D-140, LAI-1161): `GET /me/time?day=` or `GET /people/:id/time?day=` (drafts read-only, D-102 rule 1) and, for someone else, `GET /people/:id/local-activity` — and for an owner or admin who may change their confirmed time (D-143, LAI-1165) `POST /people/:id/time-entries`, `PATCH/DELETE /people/:id/time-entries/:entryId` and `GET /people/:id/time-entries/:entryId/revisions`; the *Time report* tab (LAI-1138): `GET /time/report`, `members=<them>` or the reader's own, JSON and `format=csv`; the *Developer setup* tab (LAI-1140): `GET /people/:id/developer-setup`, `POST /people/:id/agents/:agentId/revoke`, `POST /people/:id/devices/:deviceId/revoke`, `DELETE /users/:id/tokens/:tokenId`; your own *Developer access* (LAI-1156): `GET /devices`, `GET /agents`, `GET /project-setups`, `GET /tokens`, `GET /devices/pairing-requests` with `POST /devices/pairing-requests/:id/approve` and `…/deny`, `GET /me/developer-setup/activity`. No rating and no *Current load* on the profile (D-139 item 8: `POST /users/:id/ratings` and `GET /people/:id/load` stay in the API) | — | ✅ D-078, D-079, D-084, D-130, D-131, D-132, D-133, D-137, **D-139**, D-140 (LAI-1148) |
@@ -7769,8 +8032,14 @@ anything missing sends the task back.
   Comments distinguish human from agent.
   **Attachments** (D-150, LAI-1301), only when `GET /org`'s `attachments` is
   not `null`: a section listing the task's files (`GET /tasks/:id/attachments`)
-  — an image or a pdf `inline` as a thumbnail, anything else as a named
-  download with its size — with remove for a reader `can()` lets; and an
+  under its count line, *Attachments · 3* — grouped **Outputs** (a round's
+  summary links them, D-162), **In comments** and **Other**, the headings
+  drawn only when a group other than *Other* has files (LAI-1352); each row a
+  preview that opens the **viewer** (below) — an image's own picture, scaled
+  down and loaded lazily, since the server makes no thumbnails (phase 1, which
+  would need an image library), or the file's glyph — then its name as a link
+  that opens it, its size, who added it and when — with remove for a reader
+  `can()` lets; and an
   **attach** control in the description, acceptance and comment editors that
   asks for the upload, `PUT`s the file to the store, completes it and inserts
   `/api/v1/attachments/<id>/content` at the cursor — an image as `![name](…)`,
@@ -7820,6 +8089,38 @@ anything missing sends the task back.
   checks passed*, *CI: lint failed*) — with earlier rounds folded. A comment that is a send-back's reason is
   marked *sent back*, and a card carrying a send-back wears a *sent back*
   marker with the reason as its tooltip.
+  **Outputs, per round** (D-162, LAI-1352): the files an agent chose to show
+  — the ones the round's `summary_md` links, a file belonging to the first
+  round whose summary links it, as `get_task_context` says — as one folded
+  line at the round's foot, *Outputs · 6 — 4 screenshots · 1 sheet · 1
+  report* (screenshots, recordings, sheets, reports and other files, each
+  counted in that order). It opens to a **strip** of tiles: an image's own
+  picture, scaled down and loaded lazily; any other file its glyph; the
+  caption under each and in full on hover; and a *+N* tile for the rest, as
+  an avatar group's overflow. On a phone the strip scrolls sideways and snaps
+  to a tile. A file since removed from the task is left out. When the
+  section folds to its one line in review, the latest round's Outputs line
+  sits directly under it. A round with no outputs shows no line.
+  **The viewer** (LAI-1352), opened by any tile or a preview: one file at a
+  time in the shared dialog — the caption as its title, *2 / 6* and *by
+  <owner>’s <agent>* (the agent as `<harness> · <device>`, *agent* where the
+  reader may not see it, nobody's agent for a person's file) under it; the
+  image, an mp4 or webm recording in `<video controls>`, or a PDF in a frame,
+  for a file the server serves inline; any other file a card with its name,
+  size and the way to get it — and, for a file the board answers `404` for
+  (an unlisted finding's, to a reader its gate refuses), *This file isn’t
+  available to you*; previous and next, which wrap, ← and →, Escape closing
+  it and focus going back to what opened it; **Open in a new tab** and
+  **Download** on every file, Download in a new tab too, since a browser
+  ignores `download` across the 302 and would otherwise take the board's tab.
+  The PDF frame goes through the same 302, which the CSP's `frame-src` allows
+  (§13.1); under a policy that refuses it, the frame gives way to the card.
+  Both themes; on a phone it is the whole screen.
+  **A comment with two or more of the board's images** draws them as one
+  row of the same tiles at its foot, which opens the viewer on them; a
+  paragraph or list item they leave empty goes, so an agent's `**Outputs**`
+  list leaves no empty bullets. One image is drawn where it was written, as
+  before.
   **An Effort section under Acceptance** (D-085, plain words since LAI-785):
   one headline — the effort in words and the build time as one plain range,
   *Small · about 40 min to 1.5 h*, with *rough estimate* beside it when the
@@ -8083,7 +8384,9 @@ anything missing sends the task back.
   at all; the id stays `none`, so a saved address still opens it. The toolbar
   goes on with a space selector (all spaces, or one, which narrows every count
   to it); a sort
-  (*Online first*, the default, *Heaviest load*, *Name*, *Last seen*); a
+  (*Online first*, the default, *Heaviest load*, *Name*, *Last seen*, and
+  *Most meetings this week* only where the figures came for more than one
+  person, LAI-1331 — an address asking for it falls back to *Heaviest load*); a
   **Cards / List** toggle, remembered per browser (LAI-991); an (i)
   with the definitions. **One card a person** in a grid of three columns on a
   laptop, two on a tablet and one on a phone — **every card draws every block
@@ -8093,7 +8396,14 @@ anything missing sends the task back.
   and dot (green online, amber away, grey offline, dashed never seen) and the
   same in words — *Online now*, *Away · 23 min*, *Last seen 2 h ago* with the
   date and time and the kind of signal on hover, *Never seen*; name, org role,
-  and for owners and admins the profile kind; the load badge with its rule on
+  and for owners and admins the profile kind; under them, the job title,
+  department and *Reports to* the directory gives (D-161), and the person's
+  synced photo in the avatar; **why they are away and their meetings this
+  week** (LAI-1331), a line the card's width under the head — *Away until Fri
+  20 Nov* for their own period, *Out of office until Wed 25 Nov* for
+  Outlook's, *Outlook ·* first when both are so, each an away pill with its
+  glyph, and *6 h in meetings this week* — drawn only when the server sent
+  something to say (the list puts it under the name); the load badge with its rule on
   hover — **the selected space's load** when one is selected, and the *Heavy
   load* chip reads the same — and beside it an *N overdue* badge of its own
   (D-092, LAI-818); the workload counts
@@ -8103,9 +8413,11 @@ anything missing sends the task back.
   running, or *No agents running*; for owners and admins *Activity · 14 days
   · total*, the fortnight as three figures, *by hand · by agents ·
   bookkeeping* from `activity_14d_split`, each with what it counts on hover
-  and **no bar chart** (LAI-996); *Spaces · N*, the spaces they have open work in as chips
-  carrying the space's colour (the sidebar badge's, keyed by slug) and its
-  committed count, with backlog and review on hover, or *No spaces*; the name
+  and **no bar chart** (LAI-996); *Spaces · N*, the spaces they are in or
+  have open work in as chips carrying the space's colour (the sidebar
+  badge's, keyed by slug) and its committed count, with backlog and review on
+  hover — **greyed, with no count, where they have no open work** (LAI-1334)
+  — or *No spaces*, and the label saying on hover what the chips are; the name
   linking to the profile for owners and admins. **No task is read and no
   task is listed** (LAI-992, the owner): the *Show tasks* footer and the
   *working on LAI-9* line LAI-767 drew each cost a `GET /tasks/:id`, and the
@@ -8118,7 +8430,8 @@ anything missing sends the task back.
   fold into one line at the bottom, unless searched for or filtered to.
   **List** draws the same people, filtered and sorted the same way, as a
   table: person, load, a workload bar, in progress, to do, review, agents
-  running, for owners and admins *hand · agents · bookkeeping*, and spaces.
+  running, for owners and admins *hand · agents · bookkeeping*, and spaces —
+  the cards' chips, the header saying on hover what they are.
   **Every row's bar is drawn to one scale, the heaviest committed count on
   the page, so the table is the team-load chart** — it replaced the *Team
   load* and *Agents running now* panels that LAI-767 put under the grid
@@ -8180,7 +8493,10 @@ anything missing sends the task back.
   when the tab returns and after each decision.
 - **Unlisted work** (Inbox's tab, `/inbox?tab=unlisted`, owners and admins, LAI-754) — **one line per
   note**: repo, who, when and the note's first line, newest first; a click opens
-  the full text with **Promote to task** and **Dismiss** under it; the first
+  the full text with **Promote to task** and **Dismiss** under it — and the
+  files an agent attached to it (D-162 item 8, the note's `**Attached**`
+  block) in the task panel's strip under the text, each opening the viewer,
+  *by <who>’s agent* (LAI-1352); the first
   page of lines and then *Show more*; a *Show dismissed* toggle; the open count
   on the tab and in the sidebar's Inbox count.
 - **Dashboard** — shaped like Jira's project Summary (D-072): **done, updated,
@@ -8417,7 +8733,9 @@ anything missing sends the task back.
     chip, and the **availability pill** inline — *Open to more work · ~6
     h/week*, *At capacity*, *Away until …*, *On leave until …* (the type
     only where D-149 item 5 allows) or *Leave requested*, or a dashed *Availability not
-    set* — then org role · project count · email · member since, and on its
+    set* — then org role · project count · email · member since; the job
+    title, department and *Reports to* Microsoft's directory gives (D-161),
+    when the people sync has read them; and on its
     own line the note, tags and *set by <first> · updated N ago* (*set by
     you* on your own). On your own profile the pill is a button opening *My
     availability* (status, hours a week, note; *Everyone in your spaces sees
@@ -8699,8 +9017,10 @@ One interval-driven scheduler in the same process:
   (LAI-788). With them, by the same job (LAI-831): `time_breaks` dated before
   30 days ago, as drafts are (§4.55), and `time_undo` rows older than
   `UNDO_WINDOW_MS`, two minutes, whoever's they are (§4.56). Away periods
-  that ended more than 30 days ago go with them (§4.86, LAI-1130). No
-  `activity` row, for the reason local activity's has none
+  that ended more than 30 days ago go with them (§4.86, LAI-1130), and
+  Outlook's out-of-office spans that ended more than 90 days ago, retired or
+  not (§4.107, LAI-1331). No `activity` row, for the reason local activity's
+  has none
 - **HR sync** (§4.88 – §4.91, D-149, LAI-1181) — every 30 minutes **and once
   at boot**, while the organisation is connected: the HR system's people,
   holidays and leave from 1 January last year to 31 December next year, read in
@@ -8713,14 +9033,74 @@ One interval-driven scheduler in the same process:
   at boot**, and only while the Outlook connection is saved, **its switch is
   on** and the organisation's Time is not off: each active member's calendar
   from the start of yesterday to the end of tomorrow in their zone, every
-  member read before one transaction writes; invitations the member accepted
-  (online or in person) and Teams meetings they organised (`isOnlineMeeting`)
+  member read before one transaction writes; invitations the member has not
+  declined — accepted, tentative or not answered, online or in person, shown
+  busy or tentative (D-157 item 3 amended, LAI-1335: the owner's choice of
+  2026-11-18, made knowing it is about 1,080 hours a month of invitations
+  nobody accepted; a person deletes what they did not attend, and their
+  delete wins) — and Teams meetings they organised (`isOnlineMeeting`)
   become or update their `calendar` entries — an event they organised that is
   not a Teams meeting is counted `not_a_meeting` and left off (D-157 item 3,
-  the owner's choice of 2026-11-18) — gone or cancelled ones are retired,
-  and an entry the person changed is left alone. Under §3.4's
+  the owner's choice of 2026-11-18) — declined, cancelled, free, all-day and
+  gone ones are not logged or are retired, and an entry the person changed is
+  left alone. **Out of office is kept
+  apart as away, never as time** (§4.107, D-157 amended, LAI-1331): each span
+  read is kept, moved or brought back, and one overlapping the window that is
+  no longer read is retired. Under §3.4's
   `system.calendar.sync`. **A run never overlaps another** — *Sync now* joins
-  one already running. No `activity` row, as for any time entry (§4.48)
+  one already running. **A backfill** (§6.4, LAI-1335) is the same run over
+  the last 1 to 90 days, from the start of the day that many days before
+  today to the end of tomorrow: **before yesterday it only adds** — a meeting
+  with no entry gets one, and an entry already there is never changed or
+  retired — and yesterday to tomorrow keep every rule above; it joins a
+  backfill already going that reaches as far back, else waits for a run
+  already going; a tick or *Sync now* that comes meanwhile joins it; it
+  retires only inside the window it read whole; and it writes **a person to a
+  transaction**, yielding between them, so 90 days of every member is never
+  one blocking pass. The switch turned off between two people stops it, and
+  the connection keeps what was written before, marked `stopped_partway`
+  (§4.101: a derived status, not a failure code). The
+  regular window stays yesterday to tomorrow. No `activity` row, as for any time
+  entry (§4.48)
+- **people sync** (§4.108, §4.109, D-161, LAI-1330) — every hour, **never at
+  boot**, and only while *Photos and profile* is on, a §4.101 connection is
+  saved and `LAIKA_SECRET` is set, under §3.4's `system.people.sync`; the app's
+  token must carry `User.Read.All` (`not_granted` otherwise). Each active
+  member: the least recently read, at most 500 a run, read the earliest
+  member first. **Matched
+  once by address** — `/users/{address}`, and the one person whose `mail` it
+  is when that is a `404` — **and read by their Entra id ever after**
+  (`/users/{entra_oid}`), so a rename keeps them and an address handed on does
+  not become them. That read answering `404` is them gone; if their address
+  then answers with **another** id, nothing is saved, nobody is a leaver, and
+  the card names them to check. **A first match whose account another
+  member's row already holds** is not them either: nothing is saved, and the
+  card names them to check — and since the earliest member is read first, it
+  is always the earlier of the two who keeps it, ids forgotten or not. A `403`, a `400` or two people at one address
+  skip that person. Then their manager and their photo's `@odata.mediaEtag` —
+  the 240px photo's, else the default size's (`/photo`). A photo is fetched
+  only when its tag changed — at most 50 a run, 1 MiB, its first bytes png,
+  jpeg or webp — and put under a new key with a header-signed `PUT`, the old
+  object deleted best effort; a `404` removes the stored one, and a `403`, a
+  `400` or an empty answer removes nothing; no store keeps no photo, and a
+  store that fails stops photos, not profiles. **Leavers**, after a complete
+  read and only for someone already matched by id: their id `404`, or their
+  account disabled **after the sync saw it enabled**, on two runs at least an
+  hour apart — never on a first match, never an owner, never the last active
+  admin. An account disabled since it was first matched (a shared mailbox) is
+  never a leaver: the card names it to check. **The breaker** counts the
+  sync's own deactivations over a rolling 24 hours: more than 3, or more than
+  a tenth of the active members, holds the rest and records `held` — so on a
+  board of fewer than ten members every leaver waits for a person. With
+  *Leavers* off the review is a dry run. Otherwise each is deactivated **on
+  their own** — one that fails is marked `failed` and the rest still go — as
+  §6.4's deactivation does: tokens revoked, sessions ended, spaces left, open
+  tasks unassigned, `user.deactivated` written by the system with `via:
+  'microsoft_directory'`, and their stored photo and directory row deleted. **A
+  run never overlaps another** — *Sync now* joins one already running — and
+  **one that finds another tenant or app saved meanwhile stops**: it writes
+  nothing more and records nothing, so the Entra ids that save forgot are not
+  put back.
 - **Teams posting** (§4.94 – §4.96, D-154, LAI-1314) — every minute, not at
   boot, under §3.4's `system.teams.post`: KSage's stand-up to each space with a
   channel at **05:30 and 12:30 UTC** (11:00 and 18:00 IST), Monday to Friday by
@@ -8884,7 +9264,7 @@ compose file or systemd unit.
 | `LAIKA_CLAIM_SCAN_SECONDS` | `30` | §11.6: how often the claim-expiry scan runs |
 | `LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS` | `600` | §9.1.1: a `pending` checkpoint older than this is shown *"Verification pending — no push notice from GitHub yet"*. Whole seconds, 1–86400. The checkpoint helper reads the same variable, so set it in both places (LAI-1015) |
 | `LAIKA_CHECKPOINT_RETENTION_DAYS` | `90` | D-115 item 9, §11.6: how long a task's checkpoints are kept after it reaches `done` or `cancelled`, and how old the §4.72 rows for a ref never registered grow before they are pruned. Whole days, 1–3650 |
-| `LAIKA_BUILD_COMMIT` | unset | the git commit the image was built from, set by the Docker build (`--build-arg LAIKA_BUILD_COMMIT`); served as `build_commit` by `/health` and `/developer/compatibility` (§6.4). 7–40 lowercase hex digits; anything else is a startup failure. Unset is `null` (LAI-1043) |
+| `LAIKA_BUILD_COMMIT` | unset | the git commit the image was built from, set by the Docker build: `--build-arg LAIKA_BUILD_COMMIT`, which wins (CI passes `github.sha`), else `--build-arg SOURCE_COMMIT`, which Coolify passes when "Include source commit in build" is on; an empty value counts as not passed. `SOURCE_COMMIT` is a build arg only and the server never reads it (LAI-1332). A runtime `LAIKA_BUILD_COMMIT` set on the container overrides the image's. Served as `build_commit` by `/health` and `/developer/compatibility` (§6.4). 7–40 lowercase hex digits; anything else is a startup failure. Unset is `null` (LAI-1043). In the image, the entrypoint unsets a non-empty value that is not 7–40 lowercase hex (Coolify can pass `HEAD` or `unknown`) and prints one line to stderr, so the container serves `null` instead of failing to boot (LAI-1332) |
 | `LAIKA_DEVELOPER_ACCESS` | `v3` | which Developer access the web shows: `classic`, `preview` or `v3`, served as `features.developer_access` (§6.4). Any other value is a startup failure. Unset is `v3` (LAI-1076); the web reads an answer it cannot get or read as `v3` too. `classic` and `preview` stay accepted as the opt-out: rollback is setting `classic` and restarting; nothing it gates is stored (LAI-1043) |
 | `LAIKA_CLI_SOURCE_URL` | `https://github.com/PawanSirsat/Laika.git` | the git repository a developer's `laika` is cloned from, served as `cli.source.url` (§6.4). `https://` only, and refused at startup if it carries a user, password, query or fragment, since it is served to anyone (LAI-1043) |
 | `LAIKA_MICROSOFT_CLIENT_ID` | unset | Microsoft SSO (LAI-1238): the Entra ID app's *Application (client) ID*. **Set with the other two `LAIKA_MICROSOFT_*` variables or not at all** — a partial set is a startup failure. All three set makes Microsoft the **only** way to sign in: email-and-password sign-in, sign-up, password invite acceptance and password-reset links are refused `sso_only`. Unsetting all three and restarting restores passwords — the recovery path when the identity provider is unreachable |
@@ -8974,7 +9354,8 @@ name, which signs everyone out once.
 Markdown embeds Laika's own `/api/v1/attachments/<id>/content`, which answers a
 `302` to a presigned `GET` valid five minutes, `Cache-Control: private,
 max-age=60`. That URL fixes the store's answer: **only a png, jpeg, gif, webp
-or pdf whose first sixteen bytes say so** is served with its own type and
+or pdf, or an mp4 or webm recording (D-162), whose first sixteen bytes say
+so** is served with its own type and
 `inline`; everything else — HTML and SVG included, whatever it was called — is
 `application/octet-stream` and `attachment`, a download. The store this was
 built against sends no `X-Content-Type-Options`, so this override is what keeps
@@ -8982,8 +9363,11 @@ active content from rendering on its origin. Uploads are presigned `PUT`s that
 sign the size and type, so the store refuses anything else; the bytes never
 reach Laika, and Laika never echoes the store's own response text. **The CSP
 names the store's origin only when attachments are on**, and only in
-`img-src` and `connect-src` — never in `script-src`, `style-src`, `frame-src`
-or `object-src`.
+`img-src`, `media-src` — where an inline recording plays (D-162) — `frame-src`
+— where the output viewer shows an inline PDF (LAI-1352); the store renders
+nothing but the seven sniffed types, so a frame of it shows a PDF and no page —
+and `connect-src`; never in `script-src`, `style-src` or `object-src`. With
+attachments off, `frame-src` is `'self'`, which `default-src` already gave.
 
 ### 13.2 Errors and logging
 
@@ -9009,8 +9393,9 @@ to, the organisation's configured HR system (D-149) — read-only `GET`s of
 its holidays, leave and people, plus the one sign-in that makes the token
 when an owner connects it that way — and, when the operator configures one,
 **the attachments store** (D-150): signed `HEAD`, ranged `GET` and `DELETE` of
-the objects Laika itself names — and, for an inbound mail's attachment only
-(D-155), a header-signed `PUT` of the bytes Brevo handed over — nothing else. Browsers reach that store too,
+the objects Laika itself names — and a header-signed `PUT` of bytes Laika holds
+itself, for an inbound mail's attachment Brevo handed over (D-155) and a
+person's photo Microsoft handed over (D-161) — nothing else. Browsers reach that store too,
 through the short-lived URLs Laika signs; it is the operator's own, beside
 Laika, not a third party's. **And, when an owner or admin sets one and turns
 posting on, each space's Teams channel** (D-154): one `POST` of
@@ -9020,11 +9405,17 @@ person's comments — nothing to a space without one, and nothing at all while
 *Teams posting* is off, as it ships. Teams' answer is never read. And, when an
 owner or admin sets it up and turns it on, **the organisation's Microsoft
 tenant** (D-157): an app token from `login.microsoftonline.com` and read-only
-`GET`s of members' calendars from `graph.microsoft.com`, keeping only each
-accepted invitation's or organised Teams meeting's subject — *Busy* when it is
-private — times and ids, never a join link, a body or an attendee. When the
-operator sets the `LAIKA_MICROSOFT_*` variables (D-158), **the organisation's
-own Microsoft Entra ID tenant's token endpoint**: to exchange the code at each
+`GET`s of members' calendars from `graph.microsoft.com`, keeping only the
+subject — *Busy* when it is private — times and ids of each invitation they
+have not declined and each Teams meeting they organised, never a join link, a
+body or an attendee; and, with *Photos and profile* on (D-161), read-only
+`GET`s of each active member's directory entry (`/users/{address}` or
+`/users?$filter=mail eq …` to match them once, `/users/{entra_oid}` after),
+their `/manager`, and their `/photos/240x240` or `/photo` and its `$value`,
+keeping only their Entra id, job title, department, account state, their
+manager as a Laika user and the photo in the store. When the operator sets the
+`LAIKA_MICROSOFT_*` variables (D-158), **the organisation's own Microsoft
+Entra ID tenant's token endpoint**: to exchange the code at each
 sign-in, and to refresh a signed-in person's Microsoft token when better-auth's
 `get-access-token` or `refresh-token` is called for it — and, only with
 directory sync on, for the app's own token, beside Graph's `/users`, every 15
@@ -9032,6 +9423,35 @@ minutes (§11.6). For sign-in and directory sync, no profile photo is fetched,
 nothing else of Graph's is read, and no signing keys are fetched: id-token
 sign-in is off, so nothing asks for them. Any task proposing otherwise is
 rejected at review.
+
+**An agent's outputs are deliberate, never captured** (D-162, LAI-1302). An
+agent may attach files it chooses to show a person — screenshots, generated
+documents, test and run reports, short recordings — to tasks, comments,
+finishes and unlisted findings, each captioned and attributed (§4.92). They go
+to the operator's store as every attachment does, through a presigned `PUT`;
+nothing reaches a third party. **Nothing is automatic**: no screenshot,
+transcript, prompt text, diff or file sweep is ever taken, and D-005 still
+governs everything collected without a deliberate act. **Secrets are never
+kept.** The agent attaches a masked copy, and the server scans each text file
+it completes — the first 2 MiB of a text type, of a file whose name says it
+is text or a key (`.env`, `id_rsa`, `*.pem`, `*.key`, `credentials`,
+`.npmrc`), and of any other file whose first kilobyte is text by content (no
+NUL, not an image, PDF or recording) — for known shapes: a private key block,
+an AWS access key id or secret key, a Laika (`lai_`), GitHub (`ghp_`, `gho_`,
+`ghu_`, `ghs_`, `ghr_`, `github_pat_`) or `sk-` token, a `password:`-style
+value that is **one secret-shaped token** (six characters or more with a
+digit, a symbol or both cases, or twelve or more) — never prose such as
+*stored in the team vault* — a `.env` line whose name ends in a secret word,
+credentials in a URL, and a table column named for a credential (`password`,
+`api_key`, `client_secret`, `access_token` — not a bare `pass` or `token`, a
+test report's columns) whose cell is not a number, a result word or more
+than one word. A masked or placeholder value (`****`, `<redacted>`,
+`${VAR}`) passes. A hit refuses the completion with the rule and the line,
+never the text, and the file is deleted. **Every rule is bounded and linear**:
+the scan runs inside the request, and a crafted 2 MiB file of each rule's
+worst case is timed in `secret-scan.test.ts`. There is no override; the list is `services/secret-scan.ts`, and
+LAI-1351's CLI checks the same list before it uploads. It catches known
+shapes only: the instruction to mask is the real guard.
 
 **Inbound email is the organisation's choice, and off as it ships** (D-155).
 With *Email to tasks* on, Brevo posts each mail sent to a space's address to

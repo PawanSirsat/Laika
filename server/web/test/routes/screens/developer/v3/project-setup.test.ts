@@ -10,6 +10,7 @@ import { AGENT_CLIENTS } from '../../../../../src/api/agent-clients.ts';
 import type { RegisteredAgent } from '../../../../../src/api/agents.ts';
 import type { ProjectAccess } from '../../../../../src/api/project-access.ts';
 import type { ProjectSetup } from '../../../../../src/api/project-setups.ts';
+import { PROJECT_BLOCK_REVISION } from '../../../../../src/routes/screens/connect/connect-copy.ts';
 import {
   askedView,
   CLI_HARNESS,
@@ -149,7 +150,8 @@ const setup = (over: Partial<ProjectSetup> & { id: string }): ProjectSetup => ({
   repo_key: 'a'.repeat(64),
   instructions_path: 'CLAUDE.md',
   block_found: true,
-  template_revision: 2,
+  // A current record: whatever the template's revision is (3 since LAI-1352).
+  template_revision: PROJECT_BLOCK_REVISION,
   project_match: true,
   prefix_match: true,
   source: 'local_check',
@@ -257,7 +259,7 @@ void describe('what the records say (LAI-1066)', () => {
     // The reader's own word is not a check, so it does not say one ran.
     assert.equal(
       recordFinding(setup({ id: 's4', source: 'self_reported_browser', repo_label: null })),
-      'instructions template revision 2 in CLAUDE.md',
+      `instructions template revision ${String(PROJECT_BLOCK_REVISION)} in CLAUDE.md`,
     );
   });
 

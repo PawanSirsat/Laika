@@ -141,17 +141,9 @@
   outline-offset: 2px;
 }
 
+/* The shared Avatar at 28 (D-161): its own size, disc and initials. */
 .sidebar-user-avatar {
-  width: 1.75rem;
-  height: 1.75rem;
   flex: none;
-  border-radius: var(--radius-pill);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
-  line-height: 1;
 }
 
 .user-menu {
@@ -600,6 +592,226 @@
   }
 }
 
+/* ── Who's here (LAI-1348) ─────────────────────────────────────────────── */
+
+/* The stack is one button: the faces, then the +N, opening the list. */
+.hdr-here {
+  display: inline-flex;
+  align-items: center;
+  height: 2.25rem;
+  box-sizing: border-box;
+  padding: 0 var(--space-1-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.hdr-here:hover,
+.hdr-here-open {
+  background: var(--bg-card-hover);
+}
+
+.hdr-here:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * One face: the shared Avatar inside a ring of its status — green online,
+ * amber away, as Capacity's — parted from its neighbour by the bar's own
+ * ground. The words are the button's label and the list's; the ring is not
+ * the only way it is told.
+ */
+.hdr-here-face {
+  --here-ring: var(--border-default);
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  padding: var(--space-0-5);
+  border-radius: var(--radius-round);
+  background: var(--here-ring);
+  box-shadow: 0 0 0 2px var(--bg-canvas);
+  transition: background-color var(--duration-base) var(--ease-standard);
+}
+
+.hdr-here-face[data-status='online'] {
+  --here-ring: var(--chip-green);
+}
+
+.hdr-here-face[data-status='away'] {
+  --here-ring: var(--chip-orange);
+}
+
+/* Overlap by a quarter, as the shared group does. */
+.hdr-here-face + .hdr-here-face,
+.hdr-here-face + .hdr-here-more {
+  margin-left: calc(var(--space-2) * -1);
+}
+
+.hdr-here-more {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2rem;
+  height: 2rem;
+  box-sizing: border-box;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  background: var(--bg-pill);
+  box-shadow: 0 0 0 2px var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Someone arrives: the face pops in and a ring of their status ripples out
+ * once. Someone leaves: the face shrinks away. Transform and opacity only, on
+ * the motion tokens — reduced motion zeroes them (motion.css), and the script
+ * drops a leaving face at once (`prefersReducedMotion`).
+ */
+.hdr-here-face[data-arriving] {
+  animation: hdr-here-in var(--duration-base) var(--ease-emphasised) both;
+}
+
+.hdr-here-face[data-arriving]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-round);
+  box-shadow: 0 0 0 2px var(--here-ring);
+  opacity: 0;
+  pointer-events: none;
+  animation: hdr-here-ripple var(--duration-slow) var(--ease-standard);
+}
+
+.hdr-here-face[data-leaving] {
+  animation: hdr-here-out var(--duration-fast) var(--ease-exit) forwards;
+}
+
+@keyframes hdr-here-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+@keyframes hdr-here-ripple {
+  from {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+}
+
+@keyframes hdr-here-out {
+  to {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+/* The list: who is online, then who is away, each in words. */
+.hdr-here-pop {
+  display: flex;
+  flex-direction: column;
+  width: 20rem;
+  max-height: min(30rem, 75vh);
+}
+
+.hdr-here-body {
+  overflow-y: auto;
+  padding: var(--space-1-5);
+}
+
+.hdr-here-group + .hdr-here-group {
+  margin-top: var(--space-1);
+}
+
+.hdr-here-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hdr-here-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  min-height: 2.5rem;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-card);
+}
+
+.hdr-here-who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.hdr-here-link {
+  display: block;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.hdr-here-name {
+  display: block;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.hdr-here-link:hover .hdr-here-name {
+  text-decoration: underline;
+}
+
+a.hdr-here-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+
+.hdr-here-status {
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+.hdr-here-status[data-here-status='online'] {
+  color: var(--chip-green);
+}
+
+.hdr-here-status[data-here-status='away'] {
+  color: var(--chip-orange);
+}
+
+.hdr-here-foot .hdr-text-button {
+  text-decoration: none;
+}
+
+.hdr-here-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
 /*
  * A phone (LAI-1227): the bar keeps Create (its plus), the bell and the
  * person. Keyboard shortcuts need a keyboard; the settings fold into the
@@ -608,7 +820,8 @@
  */
 @media (max-width: 600px) {
   .hdr-anchor-settings,
-  .hdr-help {
+  .hdr-help,
+  .hdr-anchor-here {
     display: none;
   }
 

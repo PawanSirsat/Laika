@@ -650,6 +650,11 @@ const NOT_FENCED: Record<string, string> = {
   'POST /api/v1/tasks/:id/send-back':
     'session only (§3.1): no token reaches it, and a person is never fenced',
   'PUT /api/v1/tasks/:id/budget': 'session only (budget.set, §3.1)',
+  // LAI-1354: Trash — a person's decision; it releases any claim on the task.
+  'DELETE /api/v1/tasks/:id':
+    'session only (task.delete, LAI-1354): no token reaches it, and a person is never fenced',
+  'POST /api/v1/tasks/:id/restore':
+    'session only (task.delete, LAI-1354): no token reaches it, and a person is never fenced',
   'PUT /api/v1/tasks/:id/watch': "the caller's own subscription; changes no field of the task",
   'DELETE /api/v1/tasks/:id/watch': "the caller's own subscription; changes no field of the task",
   'POST /api/v1/tasks/:id/comments':
@@ -816,7 +821,12 @@ const NOT_FENCED: Record<string, string> = {
   'PUT /api/v1/org/calendar': 'session only (org.calendar.configure)',
   'POST /api/v1/org/calendar/test': 'session only (org.calendar.configure)',
   'POST /api/v1/org/calendar/sync': 'session only (org.calendar.configure); time, not a task',
+  // LAI-1335: the same sync over the last 1 to 90 days.
+  'POST /api/v1/org/calendar/backfill': 'session only (org.calendar.configure); time, not a task',
   'DELETE /api/v1/org/calendar': 'session only (org.calendar.configure)',
+  // D-161 (LAI-1330): the people sync's switches on the same card, session only.
+  'PUT /api/v1/org/people-sync': 'session only (org.calendar.configure)',
+  'POST /api/v1/org/people-sync/sync': 'session only (org.calendar.configure); people, not a task',
   'POST /api/v1/otlp/v1/logs': 'telemetry, not a task',
   'POST /api/v1/otlp/v1/metrics': 'telemetry, not a task',
   'POST /api/v1/otlp/v1/traces': 'telemetry, not a task',

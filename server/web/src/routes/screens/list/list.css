@@ -491,9 +491,14 @@
   min-width: 0;
 }
 
+/* The shared Avatar at 22 (LAI-1336), or the unassigned mark in its place. */
 .list-avatar {
-  display: flex;
   flex: none;
+}
+
+/* Unassigned is a dashed ring around nothing — the design's own mark for it. */
+.list-avatar-empty {
+  display: flex;
   width: 22px;
   height: 22px;
   border-radius: var(--radius-pill);
@@ -502,11 +507,6 @@
   font-size: var(--text-tiny);
   font-weight: var(--weight-heavy);
   line-height: 1;
-  border: 1px solid transparent;
-}
-
-/* Unassigned is a dashed ring around nothing — the design's own mark for it. */
-.list-avatar-empty {
   background: transparent;
   color: var(--text-muted);
   border: 1.5px dashed var(--border-default);

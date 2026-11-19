@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { avatarColor } from '../../theme/avatar-color.ts';
+import { photoUrlOf } from '../../api/people-directory.ts';
+import { usePersonDirectory } from '../../api/use-person-directory.ts';
+import { avatarColor, avatarColorSolid } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
 import type { Theme } from '../../theme/theme.ts';
 import {
@@ -20,12 +22,17 @@ export interface AvatarProps {
   readonly theme: Theme;
   readonly size?: AvatarSize | undefined;
   /**
-   * A picture, when one is served. None is today; the fallback is the point:
-   * a picture that fails to load gives way to the initials, never to the
-   * browser's broken-image icon.
+   * A picture. Left out, the person's synced photo (D-161) is drawn when the
+   * directory has one for `userId`. A picture that fails to load gives way to
+   * the initials, never to the browser's broken-image icon.
    */
   readonly src?: string | undefined;
   readonly presence?: Presence | undefined;
+  /**
+   * The solid disc with white initials — a face in a thread (comments, My
+   * day) rather than a chip on a row. Off, the softer tint.
+   */
+  readonly solid?: boolean | undefined;
   /**
    * The accessible name in full — `Accountable: Ada Lovelace`. Defaults to the
    * name. `null` marks the avatar decorative, for a row that already says the
@@ -36,8 +43,9 @@ export interface AvatarProps {
 }
 
 /**
- * A person, as a disc (LAI-1206): a picture when there is one, the initials
- * otherwise, and a presence dot only when presence is actually known.
+ * A person, as a disc (LAI-1206): a picture when there is one — theirs from
+ * Microsoft, by `userId`, when the people sync has kept one (D-161) — the
+ * initials otherwise, and a presence dot only when presence is actually known.
  *
  * The initials come from `theme/initials.ts` — the single source — and the
  * colour from `theme/avatar-color.ts`, applied as an inline style (allowed by
@@ -50,16 +58,25 @@ export function Avatar({
   size = 24,
   src,
   presence,
+  solid = false,
   label,
   className,
 }: AvatarProps) {
-  const [broken, setBroken] = useState(false);
-  const colour = userId === undefined ? undefined : avatarColor(userId, theme);
+  // Which picture failed, not whether one did: a new one is tried afresh.
+  const [broken, setBroken] = useState<string | null>(null);
+  const synced = usePersonDirectory(src === undefined ? userId : undefined);
+  const url = src ?? (userId === undefined ? null : photoUrlOf(userId, synced));
+  const colour =
+    userId === undefined
+      ? undefined
+      : solid
+        ? avatarColorSolid(userId, theme)
+        : avatarColor(userId, theme);
   const spoken =
     label === null
       ? undefined
       : `${label ?? name}${presence === undefined ? '' : `, ${PRESENCE_WORDS[presence]}`}`;
-  const picture = src !== undefined && src !== '' && !broken;
+  const picture = url !== null && url !== '' && url !== broken;
   const face = (
     <span
       className={`avatar avatar-${String(size)}${className === undefined ? '' : ` ${className}`}`}
@@ -79,14 +96,18 @@ export function Avatar({
         }
       >
         {picture ? (
+          // Lazy and off the main thread: a board draws one per card. Its
+          // words are the name, unless the row already says it (LAI-1336).
           <img
             className="avatar-img"
-            src={src}
-            alt=""
+            src={url}
+            alt={spoken === undefined ? '' : (label ?? name)}
             width={size}
             height={size}
+            loading="lazy"
+            decoding="async"
             onError={() => {
-              setBroken(true);
+              setBroken(url);
             }}
           />
         ) : (

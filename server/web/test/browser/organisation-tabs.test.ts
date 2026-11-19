@@ -15,7 +15,14 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { answerConfirm } from './confirm.ts';
 import { closeBrowser, open, until, type StubCall, openSectionsByDefault } from './harness.ts';
-import { PEOPLE } from './organisation-refine-fixtures.ts';
+import {
+  MEMBER,
+  ORG,
+  OWNER,
+  OWNER_ACTIONS,
+  PEOPLE,
+  permissions,
+} from './organisation-refine-fixtures.ts';
 import { TABS } from './organisation-tabs-fixtures.ts';
 
 // The folded sections this file reads inside open as a returning viewer has them (LAI-1345).
@@ -75,7 +82,10 @@ void describe('Overview: a figure with a next step leads to it', () => {
         0,
         'Blocked links to a list that cannot show blocked work',
       );
-      // Security is offered to a reader who may list tokens, as a place.
+      // Security is offered to a reader who may list tokens, as a place — on
+      // General, in the settings hub (LAI-1318).
+      await h.page.locator('.page-tab[data-tab="general"]').click();
+      await h.page.locator('[data-security-link]').waitFor({ timeout: 10_000 });
       assert.equal(
         await h.page.locator('[data-security-link]').getAttribute('href'),
         '/organisation?tab=security',

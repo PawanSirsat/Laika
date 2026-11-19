@@ -2,9 +2,9 @@
  * The Outlook calendar card on Organisation → Integrations (D-157,
  * LAI-1316), in a real browser against stubbed `/org/calendar*`: an owner
  * saves the app's credentials and a rule, tests the connection with and
- * without `Calendars.Read`, flips the switch and syncs; a member is shown no
- * card and it is never asked; and the card fits in both themes at 1440 and
- * 390.
+ * without `Calendars.Read`, flips the switch and syncs, and backfills the
+ * last N days (LAI-1335); a member is shown no card and it is never asked;
+ * and the card fits in both themes at 1440 and 390.
  *
  * `LAIKA_SHOTS=<dir>` also writes the card's screenshots there.
  */
@@ -17,6 +17,7 @@ import {
   closeBrowser,
   defaultPermissions,
   open as openPage,
+  PEOPLE_SYNC_OFF,
   reply,
   setTheme,
   until,
@@ -84,6 +85,7 @@ const OFF = {
   last_success_at: null,
   last_error: null,
   last_result: null,
+  backfill_running: null,
 };
 
 /** `minutes` before now, read when the fixture is built — the page reads it moments later. */
@@ -98,6 +100,63 @@ const saved = (patch: Record<string, unknown> = {}) => ({
   rules: [{ kind: 'title', text: 'standup', project: { id: 'p1', slug: 'laika', name: 'Laika' } }],
   ...patch,
 });
+
+/** The people sync on the same card (D-161), connected, profile on, Leavers off — a dry run. */
+const PEOPLE_DRY_RUN = {
+  connected: true,
+  profile_enabled: true,
+  leavers_enabled: false,
+  photos_stored: true,
+  sync_every_minutes: 60,
+  last_attempt_at: ago(12),
+  last_success_at: ago(12),
+  last_error: null,
+  last_result: {
+    people: 25,
+    found: 24,
+    not_found: 1,
+    denied: 0,
+    refused: 0,
+    changed: 0,
+    updated: 3,
+    photos_fetched: 2,
+    photos_unchanged: 21,
+    photos_removed: 0,
+    photos_refused: 0,
+    photos_deferred: 0,
+  },
+  leavers: {
+    at: ago(12),
+    state: 'dry_run',
+    breaker: false,
+    people: [
+      {
+        user_id: 'u7',
+        name: 'Grace Hopper',
+        email: 'grace@example.com',
+        reason: 'disabled',
+        protected: null,
+        failed: false,
+      },
+      {
+        user_id: 'u1',
+        name: 'Ada Lovelace',
+        email: 'u1@example.com',
+        reason: 'gone',
+        protected: 'owner',
+        failed: false,
+      },
+    ],
+    changed: [
+      {
+        user_id: 'u9',
+        name: 'Front Desk',
+        email: 'desk@example.com',
+        reason: 'disabled_at_match',
+      },
+    ],
+  },
+};
 
 const RESULT = {
   people: 9,
@@ -147,6 +206,8 @@ function orgStub(role: string, extra: ApiStub = {}): ApiStub {
     '/api/v1/permissions': permissionsFor(role),
     '/api/v1/org/holidays': { holidays: [] },
     '/api/v1/org/model-prices': { as_of: '2026-10-18', can_set: false, entries: [] },
+    // The card's people part (D-161), opted in: off and never run.
+    '/api/v1/org/people-sync': PEOPLE_SYNC_OFF,
     ...extra,
   };
 }
@@ -197,7 +258,7 @@ function calendarState(initial: unknown) {
   };
 }
 
-/** Integrations, where the calendar card is. */
+/** The Outlook calendar's own page (LAI-1318), where its card is. */
 async function integrations(stub: ApiStub, ready = '[data-section="calendar"]'): Promise<Harness> {
   const h = await openPage('/organisation?tab=calendar', stub);
   await h.page.locator(ready).waitFor({ timeout: 20_000 });
@@ -218,7 +279,10 @@ void describe('Outlook calendar: setting it up', () => {
       const c = card(h);
       assert.equal(await c.getAttribute('data-calendar-status'), 'not set up');
       const lead = await c.locator('[data-calendar-lead]').innerText();
-      assert.match(lead, /accepted an\s+invitation to/);
+      // Invitations not declined, the owner's rule of 2026-11-18 (LAI-1335).
+      assert.match(lead, /invited to and has not declined — accepted, tentative or not answered/);
+      assert.match(lead, /Declined, cancelled, free, out-of-office and all-day ones are left out/);
+      assert.match(lead, /a meeting they did not go to/);
       // The owner's rule of 2026-11-18: only a Teams meeting they organised.
       assert.match(lead, /Teams meetings they organised/);
       assert.match(lead, /not a Teams meeting, like lunch or focus time, is left off/);
@@ -226,14 +290,14 @@ void describe('Outlook calendar: setting it up', () => {
       assert.match(lead, /“Busy”/);
       assert.match(lead, /later syncs leave it alone/);
       // The switch cannot be turned on with nothing saved.
-      const toggle = c.getByRole('switch');
+      const toggle = c.locator('[data-calendar-switch]').getByRole('switch');
       assert.equal(await toggle.getAttribute('aria-checked'), 'false');
       assert.equal(await toggle.isDisabled(), true);
       // Nothing saved: no test, no sync.
       assert.equal(await c.getByRole('button', { name: 'Test connection' }).count(), 0);
 
       // Saving with nothing typed names each field and sends nothing.
-      const form = c.getByRole('form', { name: 'Outlook calendar settings' });
+      const form = c.getByRole('form', { name: 'Microsoft 365 settings' });
       await form.getByRole('button', { name: 'Add a rule' }).click();
       await form.getByLabel('Directory (tenant) ID').fill('contoso');
       await form.getByRole('button', { name: 'Save', exact: true }).click();
@@ -264,7 +328,10 @@ void describe('Outlook calendar: setting it up', () => {
       assert.match(await form.innerText(), /Saved, ending ···page/);
       assert.equal((await h.page.content()).includes(SECRET), false, 'the secret is on the page');
       // Saved, the switch can be turned on and the connection tested.
-      assert.equal(await c.getByRole('switch').isDisabled(), false);
+      assert.equal(
+        await c.locator('[data-calendar-switch]').getByRole('switch').isDisabled(),
+        false,
+      );
       assert.equal(await c.getByRole('button', { name: 'Test connection' }).count(), 1);
     } finally {
       await h.close();
@@ -287,7 +354,7 @@ void describe('Outlook calendar: setting it up', () => {
       }),
     );
     try {
-      const form = card(h).getByRole('form', { name: 'Outlook calendar settings' });
+      const form = card(h).getByRole('form', { name: 'Microsoft 365 settings' });
       await form.getByLabel('Directory (tenant) ID').fill(TENANT);
       await form.getByLabel('Application (client) ID').fill(CLIENT);
       await form.locator('input[type="password"]').fill(SECRET);
@@ -342,7 +409,10 @@ void describe('Outlook calendar: testing the connection', () => {
       assert.equal(await c.locator('[data-calendar-grant]').count(), 0);
       assert.equal(tested.length, 1);
       assert.equal(tested[0]?.method, 'POST');
-      assert.equal(await c.getByRole('switch').getAttribute('aria-checked'), 'false');
+      assert.equal(
+        await c.locator('[data-calendar-switch]').getByRole('switch').getAttribute('aria-checked'),
+        'false',
+      );
     } finally {
       await h.close();
     }
@@ -430,7 +500,7 @@ void describe('Outlook calendar: the switch and syncing', () => {
       const c = card(h);
       assert.equal(await c.getByRole('button', { name: 'Sync now' }).count(), 0);
       assert.match(await c.locator('[data-calendar-last]').innerText(), /the switch is off/);
-      await c.getByRole('switch').click();
+      await c.locator('[data-calendar-switch]').getByRole('switch').click();
       await until(async () => (await c.getAttribute('data-calendar-status')) === 'on');
       assert.deepEqual(cal.puts, [
         {
@@ -482,8 +552,9 @@ void describe('Outlook calendar: the switch and syncing', () => {
       await c.getByRole('button', { name: 'Disconnect' }).click();
       const dialog = h.page.getByRole('alertdialog');
       await dialog.waitFor();
-      assert.match(await dialog.innerText(), /Disconnect Outlook\?/);
+      assert.match(await dialog.innerText(), /Disconnect Microsoft 365\?/);
       assert.match(await dialog.innerText(), /Meetings already logged stay/);
+      assert.match(await dialog.innerText(), /stops showing anyone out of office from Outlook/);
       await dialog.getByRole('button', { name: 'Disconnect' }).click();
       await until(async () => (await c.getAttribute('data-calendar-status')) === 'not set up');
       assert.deepEqual(
@@ -496,9 +567,361 @@ void describe('Outlook calendar: the switch and syncing', () => {
   });
 });
 
+void describe('Microsoft 365: people (D-161)', () => {
+  void test('Leavers off is a dry run: who would go, why, and who never goes', async () => {
+    const h = await integrations(
+      orgStub('owner', {
+        '/api/v1/org/calendar': saved(),
+        '/api/v1/org/people-sync': PEOPLE_DRY_RUN,
+      }),
+      '[data-leavers="dry_run"]',
+    );
+    try {
+      const review = card(h).locator('[data-leavers="dry_run"]');
+      assert.match(
+        await review.innerText(),
+        /Leavers is off\. Turned on, the next sync would deactivate:/,
+      );
+      assert.match(
+        await review.locator('[data-leaver="u7"]').innerText(),
+        /Grace Hopper\s+grace@example\.com · account turned off in Microsoft/,
+      );
+      assert.match(
+        await review.locator('[data-leaver="u1"]').innerText(),
+        /no longer in Microsoft for over an hour · never deactivated: the owner/,
+      );
+      // Disabled since first matched: named to check, never on the list to go.
+      const check = card(h).locator('[data-people-changed]');
+      assert.match(
+        await check.innerText(),
+        /^Check this person in Microsoft by hand — the sync never deactivates them:/,
+      );
+      assert.match(
+        await check.locator('[data-changed="u9"]').innerText(),
+        /Front Desk\s+desk@example\.com · their Microsoft account was already turned off when first matched/,
+      );
+      assert.equal(await review.locator('[data-leaver="u9"]').count(), 0);
+      assert.match(
+        await card(h).locator('[data-people-counts]').innerText(),
+        /25 people read: 24 found, 1 not in Microsoft; 2 photos updated\./,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a switch saves when flipped, and Leavers waits for Photos and profile', async () => {
+    let state: unknown = { ...PEOPLE_DRY_RUN, profile_enabled: false, leavers: null };
+    const puts: unknown[] = [];
+    const h = await integrations(
+      orgStub('owner', {
+        '/api/v1/org/calendar': saved(),
+        '/api/v1/org/people-sync': (call: StubCall) => {
+          if (call.method === 'PUT') {
+            puts.push(call.body);
+            state = { ...(state as object), ...(call.body as object) };
+          }
+          return state;
+        },
+      }),
+      '[data-people-switch="profile"]',
+    );
+    try {
+      const leavers = card(h).locator('[data-people-switch="leavers"] [role="switch"]');
+      assert.equal(await leavers.isDisabled(), true, 'Leavers before Photos and profile');
+      await card(h).locator('[data-people-switch="profile"] [role="switch"]').click();
+      await until(() => puts.length === 1);
+      assert.deepEqual(puts, [{ profile_enabled: true, leavers_enabled: false }]);
+      await until(async () => !(await leavers.isDisabled()));
+      assert.equal(await leavers.isDisabled(), false, 'Leavers once Photos and profile is on');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an admin who may not deactivate people cannot turn Leavers on', async () => {
+    const base = permissionsFor('admin') as { me: { actions: string[] } };
+    const h = await integrations(
+      orgStub('admin', {
+        '/api/v1/permissions': {
+          ...base,
+          me: { ...base.me, actions: base.me.actions.filter((a) => a !== 'user.deactivate') },
+        },
+        '/api/v1/org/calendar': saved(),
+        '/api/v1/org/people-sync': PEOPLE_DRY_RUN,
+      }),
+      '[data-people-switch="leavers"]',
+    );
+    try {
+      const row = card(h).locator('[data-people-switch="leavers"]');
+      assert.equal(await row.locator('[role="switch"]').isDisabled(), true);
+      assert.match(
+        await row.innerText(),
+        /Only someone who may deactivate people can turn this on\./,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('Outlook calendar: backfill (LAI-1335)', () => {
+  const BACKFILLED = {
+    ...RESULT,
+    meetings: 412,
+    created: 380,
+    updated: 0,
+    removed: 0,
+    unchanged: 14,
+    kept_edits: 0,
+    kept_older: 5,
+    skipped: 18,
+    away: 3,
+  };
+
+  void test('a number of days, a confirm, then the counts; one out of range is named and nothing is sent', async () => {
+    const posts: StubCall[] = [];
+    const h = await integrations(
+      orgStub('owner', {
+        '/api/v1/org/calendar': saved({ enabled: true }),
+        '/api/v1/org/calendar/backfill': (call: StubCall) => {
+          posts.push(call);
+          return {
+            days: (call.body as { days: number }).days,
+            result: BACKFILLED,
+            connection: saved({
+              enabled: true,
+              last_attempt_at: Date.now(),
+              last_success_at: Date.now(),
+              last_result: BACKFILLED,
+            }),
+          };
+        },
+      }),
+      '[data-calendar-backfill]',
+    );
+    try {
+      const c = card(h);
+      const box = c.getByLabel('Days to backfill, 1 to 90');
+      const go = c.getByRole('button', { name: 'Backfill', exact: true });
+      assert.equal(await box.inputValue(), '30');
+      assert.match(
+        await c.locator('[data-calendar-backfill]').innerText(),
+        /Running it again adds nothing/,
+      );
+
+      // Out of range: named under the box; no confirm, nothing sent.
+      for (const typed of ['91', '0']) {
+        await box.fill(typed);
+        await go.click();
+        await until(async () => (await c.locator('[data-calendar-backfill-problem]').count()) > 0);
+        assert.equal(
+          await c.locator('[data-calendar-backfill-problem]').innerText(),
+          'A whole number of days, from 1 to 90.',
+        );
+        assert.equal(await box.getAttribute('aria-invalid'), 'true');
+      }
+      assert.equal(await h.page.getByRole('alertdialog').count(), 0);
+
+      // Typing again clears it; Cancel sends nothing.
+      await box.fill('30');
+      assert.equal(await c.locator('[data-calendar-backfill-problem]').count(), 0);
+      await go.click();
+      const dialog = h.page.getByRole('alertdialog');
+      await dialog.waitFor();
+      assert.match(await dialog.innerText(), /Backfill the last 30 days\?/);
+      assert.match(await dialog.innerText(), /from 30 days ago to tomorrow/);
+      assert.match(await dialog.innerText(), /changed or deleted stays as they left it/);
+      await dialog.getByRole('button', { name: 'Cancel' }).click();
+      await until(async () => (await h.page.getByRole('alertdialog').count()) === 0);
+      assert.equal(posts.length, 0);
+
+      // Confirmed: one POST of the days, then the counts on their own line.
+      await go.click();
+      await dialog.waitFor();
+      await dialog.getByRole('button', { name: 'Backfill' }).click();
+      await until(async () => (await c.locator('[data-calendar-backfilled]').count()) > 0);
+      assert.deepEqual(
+        posts.map((call) => [call.method, call.body]),
+        [['POST', { days: 30 }]],
+      );
+      assert.equal(
+        await c.locator('[data-calendar-backfilled]').innerText(),
+        'Backfilled the last 30 days: 412 meetings · 380 logged · 5 from before yesterday left as they were · 18 held back (day full or closed) · 3 out of office, kept as away (never time) · 9 people, 1 with no Outlook calendar, 1 whose calendar Microsoft would not open.',
+      );
+      // The card's last sync is the backfill's.
+      assert.match(
+        await c.locator('[data-calendar-counts]').innerText(),
+        /^Last sync just now: 412 meetings · 380 logged/,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('one the server says is running holds Backfill and says so, until a later read says it is done (review F1)', async () => {
+    let state: unknown = saved({
+      enabled: true,
+      backfill_running: { days: 30, started_at: ago(2) },
+    });
+    const h = await openPage(
+      '/organisation?tab=calendar',
+      orgStub('owner', { '/api/v1/org/calendar': () => state }),
+      {
+        before: async (page) => {
+          await page.clock.install();
+        },
+      },
+    );
+    try {
+      await h.page.locator('[data-calendar-backfill-running]').waitFor({ timeout: 20_000 });
+      const c = card(h);
+      const go = c.getByRole('button', { name: 'Backfill', exact: true });
+      assert.equal(
+        await c.locator('[data-calendar-backfill-running]').innerText(),
+        'A backfill of the last 30 days is running, started 2 min ago. Its counts show as the last sync when it finishes.',
+      );
+      assert.equal(await go.isDisabled(), true);
+      assert.equal(await c.getByLabel('Days to backfill, 1 to 90').isDisabled(), true);
+
+      // Done on the server: the next read, ten seconds on, gives Backfill back.
+      state = saved({
+        enabled: true,
+        last_attempt_at: Date.now(),
+        last_success_at: Date.now(),
+        last_result: BACKFILLED,
+      });
+      const reads = () => h.calls.filter((call) => call.path === '/api/v1/org/calendar').length;
+      const before = reads();
+      await h.page.clock.fastForward(10_000);
+      await until(async () => (await c.locator('[data-calendar-backfill-running]').count()) === 0);
+      assert.equal(reads(), before + 1);
+      assert.equal(await go.isDisabled(), false);
+      assert.match(await c.locator('[data-calendar-counts]').innerText(), /412 meetings/);
+      // Done, it asks no more.
+      await h.page.clock.fastForward(30_000);
+      await h.page.waitForTimeout(200);
+      assert.equal(reads(), before + 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a gateway giving up on the request: the card reads again, holds Backfill and says it runs', async () => {
+    let state: unknown = saved({ enabled: true });
+    const h = await integrations(
+      orgStub('owner', {
+        '/api/v1/org/calendar': () => state,
+        '/api/v1/org/calendar/backfill': () => {
+          // The server carries on; the proxy in front of it gave up.
+          state = saved({ enabled: true, backfill_running: { days: 30, started_at: Date.now() } });
+          return reply(504, '<html><body>504 Gateway Time-out</body></html>');
+        },
+      }),
+      '[data-calendar-backfill]',
+    );
+    try {
+      const c = card(h);
+      const go = c.getByRole('button', { name: 'Backfill', exact: true });
+      await go.click();
+      const dialog = h.page.getByRole('alertdialog');
+      await dialog.waitFor();
+      await dialog.getByRole('button', { name: 'Backfill' }).click();
+      await c.getByRole('alert').waitFor();
+      await until(async () => (await c.locator('[data-calendar-backfill-running]').count()) > 0);
+      assert.match(
+        await c.locator('[data-calendar-backfill-running]').innerText(),
+        /^A backfill of the last 30 days is running, started just now\./,
+      );
+      assert.equal(await go.isDisabled(), true);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('one the switch stopped part-way says so, with what it wrote before (review F5)', async () => {
+    const h = await integrations(
+      orgStub('owner', {
+        '/api/v1/org/calendar': saved({
+          enabled: true,
+          last_attempt_at: ago(1),
+          last_success_at: ago(30),
+          last_error: { code: 'stopped_partway', message: 'x' },
+          last_result: BACKFILLED,
+        }),
+      }),
+      '[data-calendar-sync-error]',
+    );
+    try {
+      const c = card(h);
+      assert.equal(
+        await c.locator('[data-calendar-sync-error]').getAttribute('data-calendar-sync-error'),
+        'stopped_partway',
+      );
+      assert.match(
+        await c.locator('[data-calendar-sync-error]').innerText(),
+        /failed: a backfill stopped part-way, the switch turned off while it ran\.$/,
+      );
+      assert.match(
+        await c.locator('[data-calendar-stopped-counts]').innerText(),
+        /^Before it stopped: 412 meetings · 380 logged/,
+      );
+      // Not the last good sync's time beside counts that are not its own.
+      assert.equal(
+        (await c.locator('[data-calendar-last]').innerText()).includes('Last good sync'),
+        false,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a refusal is in words, and with the switch off there is no backfill to ask for', async () => {
+    const h = await integrations(
+      orgStub('owner', {
+        '/api/v1/org/calendar': saved({ enabled: true }),
+        '/api/v1/org/calendar/backfill': reply(403, {
+          error: {
+            code: 'forbidden',
+            message: 'Time is off',
+            details: { reason: 'time_off' },
+          },
+        }),
+      }),
+      '[data-calendar-backfill]',
+    );
+    try {
+      const c = card(h);
+      await c.getByRole('button', { name: 'Backfill', exact: true }).click();
+      const dialog = h.page.getByRole('alertdialog');
+      await dialog.waitFor();
+      await dialog.getByRole('button', { name: 'Backfill' }).click();
+      const alert = c.getByRole('alert');
+      await alert.waitFor();
+      assert.match(await alert.innerText(), /Time is off for this organisation/);
+      assert.equal(await c.locator('[data-calendar-backfilled]').count(), 0);
+    } finally {
+      await h.close();
+    }
+
+    const off = await integrations(orgStub('owner', { '/api/v1/org/calendar': saved() }));
+    try {
+      await card(off).locator('[data-calendar-sync]').waitFor();
+      assert.equal(await card(off).locator('[data-calendar-backfill]').count(), 0);
+      assert.equal(
+        off.calls.filter((call) => call.path === '/api/v1/org/calendar/backfill').length,
+        0,
+      );
+    } finally {
+      await off.close();
+    }
+  });
+});
+
 void describe('Outlook calendar: who sees it', () => {
-  void test('a member on Integrations is shown no calendar card, and it is never asked', async () => {
-    const h = await integrations(orgStub('member'), '[data-section="prices"]');
+  void test('a member on the Outlook calendar’s page is shown no card, and it is never asked', async () => {
+    // Its page says who sets it up, rather than drawing an empty card.
+    const h = await integrations(orgStub('member'), '[data-conn-refused]');
     try {
       await h.page.waitForTimeout(300);
       assert.equal(await card(h).count(), 0);
@@ -603,6 +1026,7 @@ void describe('both themes, 1440 and 390', () => {
           last_error: { code: 'not_granted', message: 'x' },
           last_result: RESULT,
         }),
+        '/api/v1/org/people-sync': PEOPLE_DRY_RUN,
       }),
       '[data-calendar-rule="1"]',
     );

@@ -6,7 +6,7 @@ import { SizeChip } from '../../../components/SizeChip.tsx';
 import { Chip } from '../../../components/chip/Chip.tsx';
 import { sprintGlyphLabel } from '../../../components/chip/chip-model.ts';
 import { startTicker } from '../../../api/time-label.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import type { Theme } from '../../../theme/theme.ts';
 import type { Member, TaskSummary } from '../../../api/tasks.ts';
 import type { Sprint } from '../../../api/sprints.ts';
@@ -16,6 +16,9 @@ import { effectiveSelection, pageState, selectAll, toggleOne, togglePage } from 
 import { runBulkAction, statusChoices, type BulkAction, type BulkRun } from './list-bulk.ts';
 import { anchorOf, ListMenu, type MenuAnchor } from './ListMenu.tsx';
 import { BulkBar } from './BulkBar.tsx';
+import { setTaskArchived, setTaskDeleted } from '../../../api/tasks.ts';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
+import { bulkArchivedToast, bulkTrashedToast } from '../task/archive-model.ts';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { agentDevice, agentProductName, selectedHarness } from '../../../api/selected-agent.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
@@ -61,6 +64,10 @@ export interface ListViewProps {
    */
   readonly mayEdit: boolean;
   readonly maySetSprint: boolean;
+  /** `task.archive` here (LAI-1353): the bulk bar's *Archive*. */
+  readonly mayArchive?: boolean | undefined;
+  /** `task.delete` here (LAI-1354): the bulk bar's *Delete*. */
+  readonly mayDelete?: boolean | undefined;
   readonly onOpen: (taskId: string) => void;
   readonly onAdd: () => void;
   /**
@@ -132,6 +139,8 @@ export function ListView({
   canAdd,
   mayEdit,
   maySetSprint,
+  mayArchive = false,
+  mayDelete = false,
   onOpen,
   onAdd,
   sort,
@@ -199,6 +208,7 @@ export function ListView({
   >(undefined);
   const menuTask = statusMenu === undefined ? undefined : byId.get(statusMenu.id);
 
+  const toast = useToast();
   const runBulk = (action: BulkAction): void => {
     const chosen = [...effective].flatMap((id) => {
       const task = byId.get(id);
@@ -206,8 +216,29 @@ export function ListView({
     });
     // One request per task, in selection order, the report by key — the
     // shared run (`runBulkAction`), so Work counts exactly as the List does.
-    void runBulkAction(action, chosen, onBulkRun).then(() => {
+    void runBulkAction(action, chosen, onBulkRun).then((outcome) => {
       onChanged();
+      // **Archived rows leave the List, and the bar and its report with
+      // them** (LAI-1353), so a toast says what went — and Undo brings each
+      // back. A refusal is still in the report, whose rows stayed.
+      // Into Trash goes the same way (LAI-1354), and Undo takes each back out.
+      if (action.kind !== 'archive' && action.kind !== 'delete') return;
+      if (outcome.done.length === 0) return;
+      const count = outcome.done.length;
+      const trash = action.kind === 'delete';
+      toast.show({
+        text: trash ? bulkTrashedToast(count) : bulkArchivedToast(count),
+        tone: 'info',
+        mark: trash ? 'data-trash-toast' : 'data-archive-toast',
+        undo: async () => {
+          for (const id of outcome.done) {
+            await (trash ? setTaskDeleted(id, false) : setTaskArchived(id, false));
+          }
+          onChanged();
+          // Both shelves' rows came from the live List, so both go back to the board.
+          return `${String(count)} ${count === 1 ? 'task is' : 'tasks are'} back on the board`;
+        },
+      });
     });
   };
 
@@ -346,7 +377,6 @@ export function ListView({
 
             <tbody>
               {shown.map((row) => {
-                const ink = row.assigned ? avatarColor(row.assigneeId, theme) : undefined;
                 const isSelected = effective.has(row.id);
                 const moving = movingId === row.id;
                 return (
@@ -481,21 +511,20 @@ export function ListView({
 
                     <td>
                       <span className="list-assignee">
-                        <span
-                          className={row.assigned ? 'list-avatar' : 'list-avatar list-avatar-empty'}
-                          aria-hidden="true"
-                          {...(ink === undefined
-                            ? {}
-                            : {
-                                style: {
-                                  background: ink.background,
-                                  color: ink.foreground,
-                                  borderColor: ink.border,
-                                },
-                              })}
-                        >
-                          {row.initials}
-                        </span>
+                        {row.assigned ? (
+                          <Avatar
+                            name={row.who}
+                            userId={row.assigneeId}
+                            theme={theme}
+                            size={22}
+                            label={null}
+                            className="list-avatar"
+                          />
+                        ) : (
+                          <span className="list-avatar list-avatar-empty" aria-hidden="true">
+                            —
+                          </span>
+                        )}
                         <Tooltip content={row.who} lazy>
                           <span className="list-who">{row.who}</span>
                         </Tooltip>
@@ -629,6 +658,8 @@ export function ListView({
             sprints={sprints}
             sprintLabels={sprintLabels}
             maySetSprint={maySetSprint}
+            mayArchive={mayArchive}
+            mayDelete={mayDelete}
             run={bulkRun}
             onAction={runBulk}
             onDismissReport={() => {

@@ -50,6 +50,8 @@ import {
   claimTask,
   createTask,
   removeTaskDependency,
+  setTaskArchived,
+  setTaskDeleted,
   startWorking,
   updateTask,
 } from '../../src/services/tasks.ts';
@@ -659,6 +661,19 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
 
       claimTask(t.sqlite, t.db, actorFor(t, memberId), other.id);
       changeStatus(t.db, owner(), other.id, 'review');
+
+      // --- tasks.ts: task.archived, task.restored (LAI-1353) — a parent, so
+      //     a subtask's `with_parent` payload is in the census too.
+      const putAway = createTask(t.sqlite, t.db, owner(), 'core', { title: 'Put away' });
+      createTask(t.sqlite, t.db, owner(), 'core', {
+        title: 'Went with it',
+        parent_task_id: putAway.id,
+      });
+      setTaskArchived(t.db, owner(), putAway.id, true);
+      setTaskArchived(t.db, owner(), putAway.id, false);
+      // …and into Trash and out (LAI-1354): task.deleted, task.undeleted.
+      setTaskDeleted(t.db, owner(), putAway.id, true);
+      setTaskDeleted(t.db, owner(), putAway.id, false);
 
       // --- comments.ts: added, edited, deleted -----------------------------
       const comment = addComment(t.db, owner(), task.id, 'A remark');

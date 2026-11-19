@@ -3,8 +3,7 @@ import { ApiError } from '../../../api/errors.ts';
 import { listAnalyticsViews, type WhoLooked as Looked } from '../../../api/people-analytics.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
-import { avatarColorSolid } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { HeaderPopover } from './HeaderPopover.tsx';
 import { lookingNow, reachesPast, type LookingNow } from './who-looked-derive.ts';
@@ -143,13 +142,15 @@ export function WhoLooked({ open, onOpenChange }: WhoLookedProps) {
             const label = timeLabel(person.at, load.at);
             return (
               <li key={person.id} className="myday-looked-row" data-looked={person.id}>
-                <span
+                <Avatar
+                  name={person.name}
+                  userId={person.id}
+                  theme={theme}
+                  size={24}
+                  solid
+                  label={null}
                   className="myday-looked-avatar"
-                  aria-hidden="true"
-                  style={{ background: avatarColorSolid(person.id, theme).background }}
-                >
-                  {initials(person.name)}
-                </span>
+                />
                 <span className="myday-looked-who">{person.name}</span>
                 <Tooltip content={label.full}>
                   <time className="myday-looked-when" dateTime={label.iso}>

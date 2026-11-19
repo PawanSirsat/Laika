@@ -22,8 +22,9 @@ import type { FilterChip } from './filter-chips.ts';
 import { FilterChips } from './FilterChips.tsx';
 import { MembersPopover } from './MembersPopover.tsx';
 import type { Theme } from '../../../theme/theme.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { usePresenceStatuses } from '../../../api/use-presence-people.ts';
+import { ringClass } from '../../../components/avatar/avatar-model.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { cluster, memberFilterLabel } from '../../../components/space/top-bar-derive.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { SpaceBand, useClaimSpaceFilters } from '../../../components/space/SpaceSlot.tsx';
@@ -139,6 +140,12 @@ export interface BoardToolbarProps {
    */
   readonly hiddenColumns?: number | undefined;
   readonly onHiddenColumns?: (() => void) | undefined;
+  /**
+   * The space's shelves — its archived tasks (LAI-1353) and its Trash
+   * (LAI-1354) — one button, before Insights: the row has room for one more
+   * icon at 920px with the sidebar open, not two.
+   */
+  readonly onShelves?: (() => void) | undefined;
   /** The board's sprint scope, at the end of the active-filter row (LAI-1198). */
   readonly scope?: ReactNode;
 }
@@ -291,9 +298,12 @@ export function BoardToolbar({
   onRefresh,
   hiddenColumns = 0,
   onHiddenColumns,
+  onShelves,
   scope,
 }: BoardToolbarProps) {
   const [open, setOpen] = useState<'filter' | 'group' | 'members' | undefined>(undefined);
+  // Who is online or away, from the page's one read (LAI-1349): each face's ring.
+  const presence = usePresenceStatuses();
   const filterButton = filterButtonRef;
   const groupButton = useRef<HTMLButtonElement>(null);
   const membersButton = useRef<HTMLButtonElement>(null);
@@ -442,24 +452,25 @@ export function BoardToolbar({
         pinned: true,
         icon: <span className="dd-avatar dd-avatar-none" />,
       },
-      ...members.map((m) => {
-        const colour = avatarColor(m.user_id, theme);
-        return {
-          value: m.user_id,
-          label: m.name,
-          keywords: m.email,
-          icon: (
-            <span
-              className="dd-avatar t-avatar"
-              style={{ background: colour.background, color: colour.foreground }}
-            >
-              {initials(m.name)}
-            </span>
-          ),
-        };
-      }),
+      ...members.map((m) => ({
+        value: m.user_id,
+        label: m.name,
+        keywords: m.email,
+        // Their photo when the directory has one (LAI-1336); the label names them.
+        icon: (
+          <Avatar
+            name={m.name}
+            userId={m.user_id}
+            theme={theme}
+            size={22}
+            label={null}
+            // Ringed by their status, online or away (LAI-1349).
+            className={`dd-avatar ${ringClass(presence?.get(m.user_id))}`.trim()}
+          />
+        ),
+      })),
     ],
-    [members, theme],
+    [members, theme, presence],
   );
   const tagOptions = useMemo<DropdownOption[]>(
     () => [
@@ -576,7 +587,6 @@ export function BoardToolbar({
             aria-label={`${String(members.length)} ${members.length === 1 ? 'member' : 'members'}`}
           >
             {shown.map((member) => {
-              const colour = avatarColor(member.user_id, theme);
               const on = assignee === member.user_id;
               return (
                 <Tooltip
@@ -585,15 +595,23 @@ export function BoardToolbar({
                 >
                   <button
                     type="button"
-                    className={on ? 'bt-member bt-member-on t-avatar' : 'bt-member t-avatar'}
-                    style={{ background: colour.background, color: colour.foreground }}
+                    className={on ? 'bt-member bt-member-on' : 'bt-member'}
+                    // Its ring takes their status, online or away (LAI-1349).
+                    data-ring={presence?.get(member.user_id)}
                     aria-pressed={on}
                     aria-label={memberFilterLabel(member.name, on)}
                     onClick={() => {
                       onAssignee(on ? undefined : member.user_id);
                     }}
                   >
-                    {initials(member.name)}
+                    {/* The face inside the ring (LAI-1336): their photo, or initials. */}
+                    <Avatar
+                      name={member.name}
+                      userId={member.user_id}
+                      theme={theme}
+                      size={24}
+                      label={null}
+                    />
                   </button>
                 </Tooltip>
               );
@@ -997,6 +1015,26 @@ export function BoardToolbar({
                 <span className="bt-hidden-count" aria-hidden="true">
                   {hiddenColumns}
                 </span>
+              </button>
+            </Tooltip>
+          )}
+
+          {/* **Archived and Trash** (LAI-1353, LAI-1354): tasks put away, with Restore. */}
+          {onShelves !== undefined && (
+            <Tooltip content="Archived and Trash">
+              <button
+                type="button"
+                className="bt-icon"
+                data-board-action="shelves"
+                aria-label="Archived and Trash"
+                aria-haspopup="dialog"
+                onClick={onShelves}
+              >
+                <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+                  <path d="M3.5 4.5h17v4h-17z" strokeLinejoin="round" />
+                  <path d="M5 8.5V19a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8.5" strokeLinejoin="round" />
+                  <path d="M10 12.5h4" strokeLinecap="round" />
+                </svg>
               </button>
             </Tooltip>
           )}

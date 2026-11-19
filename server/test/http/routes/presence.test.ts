@@ -296,3 +296,29 @@ describe('a REST write on an agent token is presence (D-081)', () => {
     h.t.sqlite.exec('DROP TRIGGER no_rest_stamp');
   });
 });
+
+describe('who is here, for the header (LAI-1348)', () => {
+  interface PeopleBody {
+    enabled: boolean;
+    people: { user_id: string; name: string; status: string; last_seen_via: string }[];
+  }
+
+  it('is mounted, and names the owner who has just set the org up as online', async () => {
+    const res = await get('/api/v1/presence/people');
+
+    expect(res.status, await res.clone().text()).toBe(200);
+    const body = (await res.json()) as PeopleBody;
+    expect(body.enabled).toBe(true);
+    expect(body.people).toEqual([expect.objectContaining({ name: 'Ada', status: 'online' })]);
+  });
+
+  it('401s signed out, and is enabled:false with nobody while presence is off', async () => {
+    const out = await h.app.request('/api/v1/presence/people', { headers: jsonHeaders() });
+    expect(out.status).toBe(401);
+
+    h.db.update(orgs).set({ presenceEnabled: 0 }).run();
+    const res = await get('/api/v1/presence/people');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ enabled: false, people: [] });
+  });
+});

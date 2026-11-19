@@ -23,7 +23,7 @@ import { TokenRow } from '../../../components/TokenRow.tsx';
 import { useUserTokens } from './use-user-tokens.ts';
 import { updateUser } from '../../../api/users.ts';
 import { initials } from '../../../theme/initials.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { OrgAccordion, OrgFoldMode } from './OrgAccordion.tsx';
 import { OrgNav } from './OrgNav.tsx';
 import { ConnectionsIndex, OverviewBento } from './OverviewBento.tsx';
@@ -480,6 +480,7 @@ export function OrganisationScreen({
                 can={{
                   invite: canInvite,
                   hr: canConfigureHr,
+                  email: canConfigureEmail,
                   teams: canConfigureTeams,
                   calendar: canConfigureCalendar,
                   activity: tabs.some((t) => t.id === 'activity'),
@@ -801,7 +802,12 @@ export function OrganisationScreen({
           {tab === 'integrations' && (
             <ConnectionsIndex
               org={org}
-              can={{ hr: canConfigureHr, teams: canConfigureTeams, calendar: canConfigureCalendar }}
+              can={{
+                hr: canConfigureHr,
+                email: canConfigureEmail,
+                teams: canConfigureTeams,
+                calendar: canConfigureCalendar,
+              }}
               onNavigate={onNavigate}
             />
           )}
@@ -1065,16 +1071,16 @@ export function OrganisationScreen({
                     data-open={tokensFor === person.id ? '' : undefined}
                   >
                     {(() => {
-                      const ink = avatarColor(person.id, theme);
                       const who = (
                         <>
-                          <span
+                          <Avatar
+                            name={person.name}
+                            userId={person.id}
+                            theme={theme}
+                            size={28}
+                            label={null}
                             className="org-avatar"
-                            style={{ background: ink.background, color: ink.foreground }}
-                            aria-hidden="true"
-                          >
-                            {initials(person.name)}
-                          </span>
+                          />
                           <span className="org-person-who">
                             <span className="org-person-name">
                               {person.name}

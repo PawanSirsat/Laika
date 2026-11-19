@@ -10,6 +10,7 @@ import {
   boardActivityDays,
   heartbeats,
   orgs,
+  projectMemberships,
   projects,
   sessions,
   tasks,
@@ -17,8 +18,13 @@ import {
   unlistedWork,
   users,
 } from '../db/schema.ts';
+import { liveTask } from '../db/live-task.ts';
 import { assertCan, can } from '../policy/can.ts';
+import { readLoggedMany } from './analytics-views.ts';
+import { availabilityFor } from './availability.ts';
+import { availabilityVisibleAmong } from './availability-audience.ts';
 import { addDays } from './calendar-days.ts';
+import { meetingMinutesThisWeek, outlookAwayFor } from './capacity-calendar.ts';
 import { resolveRepoProjects } from './heartbeats.ts';
 
 /**
@@ -166,9 +172,11 @@ export interface CapacityWorkload {
 }
 
 /**
- * One space a person has open work in, with the same counts and **that
- * space's load**, by the same rule (LAI-767, LAI-818): a badge shown while one
- * space is selected is that space's load (D-092 item 3).
+ * One space a person is in or has open work in, with the same counts and
+ * **that space's load**, by the same rule (LAI-767, LAI-818): a badge shown
+ * while one space is selected is that space's load (D-092 item 3). A space
+ * they are a member of with no open work of theirs has every count `0` and
+ * load `none` (LAI-1334).
  */
 export interface CapacitySpace extends CapacityWorkload {
   project_id: string;
@@ -236,7 +244,12 @@ export interface CapacityEntry {
   workload: CapacityWorkload;
   /** {@link loadOf} across every space the reader may read; each space has its own. */
   load: LoadLevel;
-  /** Spaces they have open work in, most committed first, then most open. */
+  /**
+   * The spaces the reader can see that they are a member of or have open work
+   * in (LAI-1334), most committed first, then most open — so the ones with
+   * open work come first — then A–Z. An archived space only while open work
+   * of theirs is still in it: a tombstone everywhere else a space is listed.
+   */
   spaces: CapacitySpace[];
   /**
    * Their agents. Everyone sees the ones running now, as `/presence` already
@@ -258,6 +271,29 @@ export interface CapacityEntry {
    * with `activity_14d`, by `profile.activity.read`. Absent, not empty.
    */
   activity_14d_split?: ActivitySplit;
+  /**
+   * Away now (LAI-1331, D-157 amended), for a person whose availability the
+   * reader sees (D-137): `null` when neither is so. **Absent, not null**, for
+   * anyone else — *not away* and *you may not be told* are different claims.
+   */
+  away?: CapacityAwayView | null;
+  /**
+   * Their meetings this week, in minutes — Monday to Sunday of their own week
+   * (LAI-1331). **Their time** (D-102): present only for a reader who may read
+   * it — *See everyone's analytics*, each person shown logged as a `time`
+   * look — and on the reader's own row. Absent for everyone else.
+   */
+  meeting_minutes_week?: number;
+}
+
+/**
+ * Why a person is away now (LAI-1331): the away period they set covering
+ * their today (§4.86), and an Outlook out-of-office span covering now
+ * (§4.107) — each the last day of it, a calendar day in their own zone.
+ */
+export interface CapacityAwayView {
+  own: { until: string } | null;
+  outlook: { until: string } | null;
 }
 
 export interface CapacityView {
@@ -632,7 +668,10 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
     })
     .from(tasks)
     .innerJoin(projects, eq(projects.id, tasks.projectId))
-    .where(and(inArray(tasks.assigneeId, ids), inArray(tasks.status, [...OPEN_CATEGORIES])))
+    // Archived work is not on anybody's plate (LAI-1353).
+    .where(
+      and(inArray(tasks.assigneeId, ids), inArray(tasks.status, [...OPEN_CATEGORIES]), liveTask()),
+    )
     .all();
 
   // `can()` once per project, not once per task.
@@ -652,6 +691,28 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
     const list = tasksOf.get(task.assigneeId) ?? [];
     list.push(task);
     tasksOf.set(task.assigneeId, list);
+  }
+
+  // The spaces each person is in (LAI-1334): listed with no open work too, so
+  // a person between tasks is not "No spaces". The same visibility as the
+  // tasks — never a space the reader cannot see — and no archived space.
+  const memberships = db
+    .select({
+      userId: projectMemberships.userId,
+      projectId: projects.id,
+      slug: projects.slug,
+      projectName: projects.name,
+    })
+    .from(projectMemberships)
+    .innerJoin(projects, eq(projects.id, projectMemberships.projectId))
+    .where(and(inArray(projectMemberships.userId, ids), isNull(projects.archivedAt)))
+    .all();
+  const memberOf = new Map<string, typeof memberships>();
+  for (const m of memberships) {
+    if (!mayRead(m.projectId)) continue;
+    const list = memberOf.get(m.userId) ?? [];
+    list.push(m);
+    memberOf.set(m.userId, list);
   }
 
   const since = now - PRESENCE_WINDOW_MS;
@@ -805,6 +866,34 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
           .groupBy(activity.actorId, activity.actorKind)
           .all();
 
+  // Away (LAI-1331): the people whose availability the reader sees (D-137),
+  // and for them both their own away period and Outlook's out of office.
+  // Reading availability is session only (D-131) and the audience asks no
+  // `can()` of its own, so `capacity.read` on an agent's token is told nobody's.
+  const awaySeen = can(actor, 'availability.read')
+    ? availabilityVisibleAmong(db, actor, ids)
+    : new Set<string>();
+  const ownAway = availabilityFor(db, actor, [...awaySeen], now);
+  const outlookAway = outlookAwayFor(db, [...awaySeen], now);
+  // Meetings this week are time (D-102): the reader's own, and anyone else's
+  // only under *See everyone's analytics* — every one shown logged as a
+  // `time` look in this read's transaction, so a list that cannot be logged is
+  // not answered.
+  const mayReadTime = ids.filter((id) =>
+    id === actor.userId
+      ? can(actor, 'time_entries.read_own')
+      : can(actor, 'people.analytics.read', { targetUserId: id }),
+  );
+  const meetings = readLoggedMany(
+    db,
+    actor,
+    'time',
+    () => meetingMinutesThisWeek(db, mayReadTime, now),
+    (read) => [...read.keys()],
+    () => null,
+    now,
+  );
+
   const people: CapacityEntry[] = everyone.map((person) => {
     const theirs = tasksOf.get(person.id) ?? [];
     const inProgress = theirs.filter((t) => t.status === 'in_progress');
@@ -812,21 +901,25 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
 
     const workload = emptyWorkload();
     const spaces = new Map<string, CapacitySpace>();
-    for (const task of theirs) {
-      countTask(workload, task, today);
-      let space = spaces.get(task.projectId);
+    const spaceOf = (ref: { projectId: string; slug: string; projectName: string }) => {
+      let space = spaces.get(ref.projectId);
       if (space === undefined) {
         space = {
-          project_id: task.projectId,
-          slug: task.slug,
-          name: task.projectName,
+          project_id: ref.projectId,
+          slug: ref.slug,
+          name: ref.projectName,
           ...emptyWorkload(),
           load: 'none',
         };
-        spaces.set(task.projectId, space);
+        spaces.set(ref.projectId, space);
       }
-      countTask(space, task, today);
+      return space;
+    };
+    for (const task of theirs) {
+      countTask(workload, task, today);
+      countTask(spaceOf(task), task, today);
     }
+    for (const m of memberOf.get(person.id) ?? []) spaceOf(m);
     for (const space of spaces.values()) space.load = loadOf(space);
 
     const theirBeats = beats.filter((b) => b.userId === person.id);
@@ -946,10 +1039,149 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
       };
     }
 
+    if (awaySeen.has(person.id)) {
+      const own = ownAway.get(person.id)?.away ?? null;
+      const outlook = outlookAway.get(person.id) ?? null;
+      entry.away = own === null && outlook === null ? null : { own, outlook };
+    }
+    const minutes = meetings.get(person.id);
+    if (minutes !== undefined) entry.meeting_minutes_week = minutes;
+
     return entry;
   });
 
   return { enabled, people };
+}
+
+/** One person the header's *who's here* names (LAI-1348): online or away now. */
+export interface PresencePersonView {
+  user_id: string;
+  name: string;
+  /** {@link statusOf}, only ever these two: the read is the last hour. */
+  status: 'online' | 'away';
+  last_seen: number;
+  last_seen_via: SeenVia;
+}
+
+export interface PresencePeopleView {
+  /** `false` when the org has turned presence off (§4.2). Not the same as nobody. */
+  enabled: boolean;
+  /** Online first, then the most recently seen. */
+  people: PresencePersonView[];
+}
+
+/**
+ * `GET /presence/people` (LAI-1348): who is **online or away** now, for the
+ * header on every page — Capacity's status and nothing else of it.
+ *
+ * **The same signals and token rules as {@link capacityNow}** — a sign-in, an
+ * activity-log row (an agent's only while its token can still make a
+ * request), a heartbeat on a cookie or a usable token, and a token's `/mcp`
+ * call or REST write — so the two never disagree about who is here. **Each
+ * read only the last hour** (`AWAY_WINDOW_MS`), the most a person can be
+ * away: the activity log by `activity_org_created_at_idx`, heartbeats by
+ * their time, sessions and tokens being small. A fixed handful of statements
+ * whatever the headcount, and **nothing written** — unlike `/capacity`, whose
+ * time figures are logged looks, which is why the header does not read it.
+ *
+ * Active people only. Presence off is `enabled: false` and nobody, never a
+ * guess from the activity log.
+ */
+export function presencePeopleNow(
+  db: Db,
+  actor: ResolvedActor,
+  now: number = Date.now(),
+): PresencePeopleView {
+  assertCan(actor, 'presence.read');
+  if (!presenceEnabled(db)) return { enabled: false, people: [] };
+
+  const since = now - AWAY_WINDOW_MS;
+  const seen = new Map<string, Signal>();
+  const note = (userId: string | null, at: number | null, via: SeenVia): void => {
+    if (userId === null || at === null || at <= since) return;
+    seen.set(userId, newer(seen.get(userId), { at, via }));
+  };
+
+  for (const call of tokenSessionsSince(db, since, now)) note(call.userId, call.at, 'agent');
+
+  for (const row of db
+    .select({
+      userId: heartbeats.userId,
+      byToken: sql<number>`${heartbeats.tokenId} IS NOT NULL`,
+      at: sql<number>`max(${heartbeats.createdAt})`,
+    })
+    .from(heartbeats)
+    .leftJoin(tokens, eq(tokens.id, heartbeats.tokenId))
+    .where(and(gt(heartbeats.createdAt, since), liveHeartbeat(now)))
+    // `+user_id`: grouped by the person, but never *through* their index —
+    // `(user_id, created_at)` would serve the grouping by walking every
+    // heartbeat ever kept. The hour is the time index's range (at most one
+    // post a session per 90 s), grouped after.
+    .groupBy(sql`+${heartbeats.userId}`, sql`${heartbeats.tokenId} IS NOT NULL`)
+    .all()) {
+    note(row.userId, row.at, row.byToken === 1 ? 'agent' : 'web');
+  }
+
+  const org = db.select({ id: orgs.id }).from(orgs).limit(1).get();
+  if (org !== undefined) {
+    for (const row of db
+      .select({
+        actorId: activity.actorId,
+        actorKind: activity.actorKind,
+        at: sql<number>`max(${activity.createdAt})`,
+      })
+      .from(activity)
+      .leftJoin(tokens, eq(tokens.id, activity.actorTokenId))
+      .where(
+        and(
+          eq(activity.orgId, org.id),
+          gt(activity.createdAt, since),
+          or(eq(activity.actorKind, 'user'), and(isNotNull(tokens.id), tokenStillUsable(now))),
+        ),
+      )
+      .groupBy(activity.actorId, activity.actorKind)
+      .all()) {
+      note(row.actorId, row.at, row.actorKind === 'user' ? 'board' : 'agent');
+    }
+  }
+
+  // A sign-in: `created_at`, not `updated_at` — see `capacityNow`.
+  for (const row of db
+    .select({ userId: sessions.userId, at: sql<number>`max(${sessions.createdAt})` })
+    .from(sessions)
+    // `timestamp_ms`: the column takes a Date, stored as the same milliseconds.
+    .where(gt(sessions.createdAt, new Date(since)))
+    .groupBy(sessions.userId)
+    .all()) {
+    note(row.userId, row.at, 'web');
+  }
+
+  if (seen.size === 0) return { enabled: true, people: [] };
+  const people: PresencePersonView[] = [];
+  for (const person of db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .where(and(inArray(users.id, [...seen.keys()]), eq(users.isActive, 1)))
+    .all()) {
+    const signal = seen.get(person.id);
+    if (signal === undefined) continue;
+    const status = statusOf(signal.at, now);
+    if (status !== 'online' && status !== 'away') continue;
+    people.push({
+      user_id: person.id,
+      name: person.name,
+      status,
+      last_seen: signal.at,
+      last_seen_via: signal.via,
+    });
+  }
+  people.sort(
+    (a, b) =>
+      Number(b.status === 'online') - Number(a.status === 'online') ||
+      b.last_seen - a.last_seen ||
+      a.name.localeCompare(b.name),
+  );
+  return { enabled: true, people };
 }
 
 /** One person's live agents, for the member profile (LAI-743). */

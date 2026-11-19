@@ -1,13 +1,15 @@
 import type {
   CapacityAgent,
+  CapacityAway,
   CapacityEntry,
   CapacityWorkload,
   LoadLevel,
   PersonStatus,
   SeenVia,
 } from '../../../api/presence.ts';
-import { formatDurationMs } from '../../../api/duration.ts';
+import { formatDuration, formatDurationMs } from '../../../api/duration.ts';
 import { timeLabel } from '../../../api/time-label.ts';
+import { dayShort } from '../../../components/availability/availability-derive.ts';
 
 /**
  * Capacity's client-side derivations (LAI-767) — **all of them about
@@ -49,6 +51,8 @@ export const SORTS = [
   { id: 'load', label: 'Heaviest load' },
   { id: 'name', label: 'Name' },
   { id: 'seen', label: 'Last seen' },
+  // LAI-1331: offered only to a reader shown others' meetings (`meetingsSortOffered`).
+  { id: 'meetings', label: 'Most meetings this week' },
 ] as const;
 export type CapacitySort = (typeof SORTS)[number]['id'];
 
@@ -188,8 +192,64 @@ export function sortPeople(
         return byName(a, b);
       case 'seen':
         return (b.last_seen ?? -1) - (a.last_seen ?? -1) || byName(a, b);
+      case 'meetings':
+        return (b.meeting_minutes_week ?? -1) - (a.meeting_minutes_week ?? -1) || byName(a, b);
     }
   });
+}
+
+/**
+ * Is *Most meetings this week* worth offering (LAI-1331)? Only when the
+ * server sent the figure for more than one person — to a reader with *See
+ * everyone's analytics* (D-102). Anyone else has it on their own row alone,
+ * and a sort over one number orders nobody.
+ */
+export function meetingsSortOffered(people: readonly CapacityEntry[]): boolean {
+  return people.filter((p) => p.meeting_minutes_week !== undefined).length > 1;
+}
+
+/** One reason a person is away, drawn as a pill: their own period, or Outlook's. */
+export interface AwayChip {
+  readonly key: 'own' | 'outlook';
+  readonly label: string;
+  /** Where it comes from, for the tooltip. */
+  readonly title: string;
+}
+
+/**
+ * Why a person is away now (LAI-1331), in words: *Away until Wed 20 Jan* for
+ * the period they set, *Out of office until Fri 22 Jan* for Outlook's — and,
+ * when both are so, the Outlook one says *Outlook* first, so the two are never
+ * mistaken for one another. Nothing when the server sent nothing: absent (not
+ * in the reader's audience, D-137) and `null` (not away) both draw nothing.
+ */
+export function awayChips(away: CapacityAway | null | undefined): readonly AwayChip[] {
+  if (away === null || away === undefined) return [];
+  const chips: AwayChip[] = [];
+  if (away.own !== null) {
+    chips.push({
+      key: 'own',
+      label: `Away until ${dayShort(away.own.until)}`,
+      title: 'The away period they set',
+    });
+  }
+  if (away.outlook !== null) {
+    chips.push({
+      key: 'outlook',
+      label: `${away.own === null ? '' : 'Outlook · '}Out of office until ${dayShort(away.outlook.until)}`,
+      title: 'Out of office in their Outlook calendar',
+    });
+  }
+  return chips;
+}
+
+/**
+ * *6 h in meetings this week* (LAI-1331), or nothing: none sent (D-102), or
+ * none had — a card says what someone has, not every nought.
+ */
+export function meetingsText(minutes: number | undefined): string | undefined {
+  if (minutes === undefined || minutes <= 0) return undefined;
+  return `${formatDuration(minutes, { largest: 'h' })} in meetings this week`;
 }
 
 /** What `last_seen` was, in words, for the tooltip. */
@@ -327,7 +387,9 @@ export function oldestAge(ms: number | null): string | undefined {
 
 /**
  * What the page is narrowed to (LAI-1201), as the address carries it: `?q=`
- * the search, `?show=` the chip, `?space=` a space id and `?sort=`. A reload
+ * the search, `?show=` the chip, `?space=` a space id, `?sort=`, and
+ * `?team=mine` — only the people whose manager is the reader, by Microsoft's
+ * directory (D-161, LAI-1330). A reload
  * or a pasted link opens the same view; Back leaves the page rather than
  * stepping through every keystroke, because a filter replaces.
  */
@@ -336,6 +398,8 @@ export interface CapacityParams {
   readonly filter: CapacityFilter;
   readonly space: string | null;
   readonly sort: CapacitySort;
+  /** Only the reader's own reports. */
+  readonly team: boolean;
 }
 
 export const CAPACITY_DEFAULTS: CapacityParams = {
@@ -343,6 +407,7 @@ export const CAPACITY_DEFAULTS: CapacityParams = {
   filter: 'all',
   space: null,
   sort: 'online',
+  team: false,
 };
 
 function isFilter(value: string | null): value is CapacityFilter {
@@ -363,6 +428,7 @@ export function capacityParams(params: URLSearchParams): CapacityParams {
     filter: isFilter(show) ? show : CAPACITY_DEFAULTS.filter,
     space: space === null || space === '' ? null : space,
     sort: isSort(sort) ? sort : CAPACITY_DEFAULTS.sort,
+    team: params.get('team') === 'mine',
   };
 }
 
@@ -381,5 +447,6 @@ export function withCapacityParams(
   put('show', merged.filter, CAPACITY_DEFAULTS.filter);
   put('space', merged.space ?? '', '');
   put('sort', merged.sort, CAPACITY_DEFAULTS.sort);
+  put('team', merged.team ? 'mine' : '', '');
   return out;
 }

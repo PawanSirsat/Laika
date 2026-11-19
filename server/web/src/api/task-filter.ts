@@ -13,12 +13,25 @@ import { PRIORITIES, type TaskSummary, type TaskFilter, type TaskPriority } from
  * equality on status, status id, priority, assignee and sprint, with `none` for null as
  * over a query string; `ready` as the server served it, never recomputed
  * (§4.5); a tag by its normalised name (`normaliseTagName` trims and
- * lower-cases); `updated_at` at or after `updated_since`; children of `parent`.
+ * lower-cases); `updated_at` at or after `updated_since`; children of `parent`;
+ * live tasks, or only archived ones under `archived` (LAI-1353).
  * Every field the type gains must be handled here, or it would be accepted and
  * ignored — LAI-069's failure, in memory instead of on the wire.
  *
  * Order is the set's own, which is the server's (`updated_at`, then id).
  */
+type Shelf = 'live' | 'archived' | 'trash';
+
+function shelfOf(task: TaskSummary): Shelf {
+  if (task.deleted_at != null) return 'trash';
+  return task.archived_at != null ? 'archived' : 'live';
+}
+
+function shelfAsked(filter: TaskFilter): Shelf {
+  if (filter.trash === 'only') return 'trash';
+  return filter.archived === 'only' ? 'archived' : 'live';
+}
+
 export function matchesTaskFilter(task: TaskSummary, filter: TaskFilter): boolean {
   if (filter.status !== undefined && task.status !== filter.status) return false;
   if (filter.status_id !== undefined && task.status_id !== filter.status_id) return false;
@@ -36,6 +49,9 @@ export function matchesTaskFilter(task: TaskSummary, filter: TaskFilter): boolea
     return false;
   if (filter.updated_since !== undefined && task.updated_at < filter.updated_since) return false;
   if (filter.parent !== undefined && task.parent_task_id !== filter.parent) return false;
+  // Live work, unless a shelf is what was asked for (LAI-1353, LAI-1354):
+  // the Trash, or the archive — which never shows what is in Trash.
+  if (shelfOf(task) !== shelfAsked(filter)) return false;
   return true;
 }
 
@@ -50,6 +66,8 @@ const NARROWING = [
   'tag',
   'updated_since',
   'parent',
+  'archived',
+  'trash',
 ] as const satisfies readonly (keyof TaskFilter)[];
 
 /**

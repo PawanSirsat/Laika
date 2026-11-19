@@ -15,7 +15,9 @@ import {
   parseEmails,
   roleCounts,
   seatLine,
+  signInLine,
   sortPeople,
+  toolsLine,
 } from '../../../../src/routes/screens/organisation/people-derive.ts';
 
 /**
@@ -170,6 +172,18 @@ void describe('LAI-987 features in the LAI-893 tab', () => {
     assert.deepEqual(lastSignIn(undefined, NOW), { text: 'Never', tone: 'muted' });
     assert.equal(lastSignIn(NOW - 3 * HOUR, NOW).text, '3h ago');
     assert.equal(lastSignIn(NOW - 9 * DAY, NOW).text, '1w ago');
+  });
+
+  // LAI-1345: beside the hub's side menu the table drops Last sign-in, then
+  // Tools running; each comes back as a line under Last active.
+  void test('the lines under Last active say what the dropped columns said', () => {
+    assert.equal(signInLine(lastSignIn(NOW - 3 * HOUR, NOW)), 'Signed in 3h ago');
+    assert.equal(signInLine(lastSignIn(NOW - 30 * HOUR, NOW)), 'Signed in yesterday');
+    assert.equal(signInLine(lastSignIn(null, NOW)), 'Never signed in');
+    assert.equal(toolsLine(undefined, false), 'Tools not known');
+    assert.equal(toolsLine(0, false), 'No tools');
+    assert.equal(toolsLine(1, false), '1 tool');
+    assert.equal(toolsLine(2, true), '2 tools · running');
   });
 
   void test('the Deactivated filter shows only deactivated people', () => {

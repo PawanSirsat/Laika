@@ -147,6 +147,25 @@ void describe('applyTaskFilter means what the server’s WHERE means', () => {
     assert.equal(applyTaskFilter(SET, { limit: 1, cursor: 'x' }), SET);
     assert.equal(matchesTaskFilter(SET[0]!, { limit: 1 }), true);
   });
+
+  void test('live work unless `archived: only`, which is the archived alone (LAI-1353)', () => {
+    const put = task({ id: '4', archived_at: 400, archived_by: 'ada' });
+    assert.equal(matchesTaskFilter(put, { status: put.status }), false);
+    assert.equal(matchesTaskFilter(put, { archived: 'only' }), true);
+    // A served task with no archive field yet, as older fixtures are, is live.
+    assert.equal(matchesTaskFilter(SET[0]!, { archived: 'only' }), false);
+    assert.equal(matchesTaskFilter(SET[0]!, { status: 'done' }), true);
+  });
+
+  void test('Trash is its own shelf, and the archive never shows it (LAI-1354)', () => {
+    const gone = task({ id: '5', deleted_at: 500, deleted_by: 'ada' });
+    const both = task({ id: '6', archived_at: 400, deleted_at: 500 });
+    assert.equal(matchesTaskFilter(gone, {}), false);
+    assert.equal(matchesTaskFilter(gone, { trash: 'only' }), true);
+    assert.equal(matchesTaskFilter(both, { trash: 'only' }), true);
+    assert.equal(matchesTaskFilter(both, { archived: 'only' }), false);
+    assert.equal(matchesTaskFilter(SET[0]!, { trash: 'only' }), false);
+  });
 });
 
 /*

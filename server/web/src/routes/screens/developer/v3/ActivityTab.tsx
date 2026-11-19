@@ -26,6 +26,7 @@ import {
 import type { ChipTone } from './DesignChip.tsx';
 import { DesignChip } from './DesignChip.tsx';
 import { DxIcon } from './DxIcon.tsx';
+import { OutputsNote } from './OutputsNote.tsx';
 import { StaleNotice } from './StaleNotice.tsx';
 import '../../connect/connect.css';
 import './activity.css';
@@ -494,6 +495,8 @@ export function ActivityTab({
               {model.error}
             </p>
           )}
+          {/* What is not activity: an agent's outputs are its own deliberate act (D-162). */}
+          <OutputsNote />
         </div>
       </section>
     </div>

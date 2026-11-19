@@ -703,6 +703,8 @@
   border-radius: var(--radius-round);
   /* The gap ring between overlapping circles — the canvas, not a colour. */
   border: 2px solid var(--bg-canvas);
+  /* The shared Avatar fills the ring (LAI-1336); nothing shows behind it. */
+  background: transparent;
   cursor: pointer;
   padding: 0;
 }
@@ -710,6 +712,30 @@
 /* Overlapped, as the reference has them — the first one keeps its full edge. */
 .bt-member + .bt-member {
   margin-left: calc(var(--space-2) * -1);
+}
+
+/*
+ * Positioned, so each ring paints over the face before it as the stack
+ * overlaps: the shared Avatar inside is positioned too (LAI-1336), and an
+ * unpositioned button would sit under its neighbour's face, ring and all.
+ */
+.bt-member {
+  position: relative;
+}
+
+/* Online or away (LAI-1349): the gap ring takes their status colour. */
+.bt-member[data-ring='online'] {
+  border-color: var(--chip-green);
+}
+
+.bt-member[data-ring='away'] {
+  border-color: var(--chip-orange);
+}
+
+/* The shared Avatar fills the ring (LAI-1336), whatever the button's box. */
+.bt-member > .avatar {
+  width: 100%;
+  height: 100%;
 }
 
 /* "+1" is a figure, not another face: plain muted text, no circle. */
@@ -862,16 +888,9 @@ button.bt-member-more:focus-visible {
   background: var(--accent-bg);
 }
 
+/* The shared Avatar at 26 (LAI-1336): its own size, disc and initials. */
 .bt-mp-avatar {
   flex: none;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-round);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
 }
 
 .bt-mp-text {

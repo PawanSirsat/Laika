@@ -19,6 +19,9 @@ import { formatAgeCompact } from '../../../api/duration.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { Chip } from '../../../components/chip/Chip.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
+import { HIDDEN_AGENT } from '../../../api/review.ts';
+import { OutputsStrip } from '../task/OutputsStrip.tsx';
+import { outputBy, outputItems, splitAttached } from '../task/outputs-derive.ts';
 import '../../../components/markers.css';
 import './unlisted.css';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
@@ -182,6 +185,8 @@ export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedLis
           const open = expanded === row.id;
           const promotedKey =
             justPromoted?.unlistedId === row.id ? justPromoted.taskKey : undefined;
+          // The files an agent attached to it (D-162 item 8), under the note.
+          const { text, refs } = splitAttached(row.note);
 
           return (
             <li key={row.id} className={`unl-row unl-row-${state}${open ? ' unl-row-open' : ''}`}>
@@ -253,7 +258,17 @@ export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedLis
 
               {open && (
                 <div className="unl-detail">
-                  <p className="unl-note">{row.note}</p>
+                  <p className="unl-note">{text}</p>
+                  {refs.length > 0 && (
+                    <OutputsStrip
+                      items={outputItems(
+                        refs,
+                        undefined,
+                        outputBy(who, row.token_id === null ? null : HIDDEN_AGENT),
+                      )}
+                      label={`Files attached to the note from ${row.repo}`}
+                    />
+                  )}
 
                   <div className="unl-row-actions">
                     {/* `token_id` is what makes it an agent's note rather than a

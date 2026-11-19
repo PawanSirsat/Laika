@@ -578,7 +578,7 @@ export function ShareActivity({
       from your machine.{' '}
       {canSetInsights ? (
         <>
-          You can turn them on in <a href="/organisation?tab=overview">Organisation</a>.
+          You can turn them on in <a href="/organisation?tab=general">Organisation</a>.
         </>
       ) : (
         `Only ${collectionManager(permissions)} can turn them on.`
@@ -618,7 +618,7 @@ export function ShareActivity({
             {canSetInsights ? (
               <>
                 You can turn Developer insights off in{' '}
-                <a href="/organisation?tab=overview">Organisation</a>.
+                <a href="/organisation?tab=general">Organisation</a>.
               </>
             ) : (
               `Only ${collectionManager(permissions)} can turn it off.`

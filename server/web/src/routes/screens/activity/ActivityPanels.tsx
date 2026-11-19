@@ -2,8 +2,7 @@ import type { AgentNaming } from '../../../api/selected-agent.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { staleFor } from '../../../api/board-derive.ts';
 import { describeEvent } from '../../../api/activity.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { streamEmptyNote } from '../board/stream-presentation.ts';
 import { describeActor } from '../board/actor-presentation.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
@@ -94,7 +93,6 @@ export function ActivityPanels({
               // and the task detail render the same rows and disagreed about
               // them — see `actor-presentation.ts`.
               const actor = describeActor(event, members, agentNames);
-              const ink = avatarColor(event.actor_id ?? event.id, theme);
 
               return (
                 <li key={event.id}>
@@ -102,12 +100,14 @@ export function ActivityPanels({
                     {clock(event.created_at)}
                   </time>
                   <span className="rail-feed-who">
-                    <span
-                      className="rail-feed-avatar"
-                      style={{ background: ink.background, color: ink.foreground }}
-                    >
-                      {initials(actor.name)}
-                    </span>
+                    {/* Their synced photo when there is one (D-161). */}
+                    <Avatar
+                      name={actor.name}
+                      userId={event.actor_id ?? event.id}
+                      theme={theme}
+                      size={24}
+                      label={null}
+                    />
                     {/* The design marks a non-human actor with a corner dot on
                         the avatar rather than a word, so the row stays scannable
                         at 8.5px. Agent and system differ by **shape** as well as

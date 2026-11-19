@@ -1,10 +1,12 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import Markdown, { type Components, type ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { boardOrigin, fileKind, isAttachmentUrl } from './editor/attach.ts';
+import { attachmentIdOf, boardOrigin, fileKind, isAttachmentUrl } from './editor/attach.ts';
 import { FileGlyph } from './FileGlyph.tsx';
 import type { MentionCandidate } from './LazyRichEditor.tsx';
 import { findMentions, mentionClass, mentionKind, type MentionDirectory } from './mentions.ts';
+import { OutputsStrip } from './OutputsStrip.tsx';
+import { outputItems, type OutputRef } from './outputs-derive.ts';
 import './task-markdown.css';
 
 /**
@@ -40,12 +42,16 @@ import './task-markdown.css';
  * react-markdown escapes raw HTML and before the components map, so an
  * open-ended plugin prop could turn raw HTML back into elements or retag an
  * `img` past the rule above. The transforms a surface needs are owned here:
- * one switched on by a boolean, and the mention pills (LAI-868), which take
- * the people list as data, never as a plugin.
+ * two switched on by a boolean — single hard breaks, and the image row
+ * (LAI-1352) — and the mention pills (LAI-868), which take the people list as
+ * data, never as a plugin.
  */
 
 /** Who the pills are for; `null` where a surface has no people list. */
 const Mentions = createContext<MentionDirectory | null>(null);
+
+/** Who a comment's images came from, for the viewer: *by Ada’s Claude Code*. */
+const ImagesBy = createContext<string | null>(null);
 
 /**
  * A `@handle` the tree step below set apart: a pill when it names somebody
@@ -139,6 +145,27 @@ function AttachmentImage({ src, alt }: { readonly src: string; readonly alt: str
   );
 }
 
+/**
+ * A comment's images, two or more, as one row of thumbnails (D-162,
+ * LAI-1352): the element {@link gatherImageRow} put them in. Each opens the
+ * viewer, which steps through them all; the alt text is the caption.
+ */
+function ImageRow({ node }: { readonly node: ExtraProps['node'] }) {
+  const by = useContext(ImagesBy);
+  const refs: OutputRef[] = [];
+  for (const kid of node?.children ?? []) {
+    if (kid.type !== 'element' || kid.tagName !== 'img') continue;
+    const id = attachmentIdOf(String(kid.properties.src ?? ''), boardOrigin());
+    if (id === null || refs.some((ref) => ref.id === id)) continue;
+    refs.push({ id, caption: String(kid.properties.alt ?? '').trim(), image: true });
+  }
+  return (
+    <div className="md-image-row">
+      <OutputsStrip items={outputItems(refs, undefined, by)} label="Images" max={6} />
+    </div>
+  );
+}
+
 const COMPONENTS: Components = {
   // Links leave the board in a new tab rather than replacing it; a link to an
   // attachment is its file chip (D-150).
@@ -164,6 +191,10 @@ const COMPONENTS: Components = {
       <table {...props} />
     </div>
   ),
+  // The image row's own element; markdown has no other way to make a `div`,
+  // since raw HTML is never rendered.
+  div: ({ node, ...props }) =>
+    node?.properties.dataImageRow === undefined ? <div {...props} /> : <ImageRow node={node} />,
   // A mention's span decides its own pill; any other span is drawn as it is.
   span: ({ node, ...props }) => {
     const handle = mentionOf(node);
@@ -257,8 +288,69 @@ function markMentions() {
   return walk;
 }
 
+/** Elements left with nothing in them once their images went to the row. */
+const EMPTIED = new Set(['p', 'li', 'ul', 'ol']);
+
+/** Nothing in it but white space. */
+function blank(node: HastNode): boolean {
+  return (node.children ?? []).every(
+    (kid) => kid.type === 'text' && (kid.value ?? '').trim() === '',
+  );
+}
+
+/**
+ * Two or more of this board's images, gathered into one row (LAI-1352).
+ *
+ * Every attachment image not inside a link moves, in order, into one `div`
+ * marked `dataImageRow` at the end of the text, and a paragraph or list item
+ * it leaves empty goes with it — so an agent's `**Outputs**` list of shots
+ * does not leave a column of empty bullets. One image stays where it was, as
+ * it always has. It moves elements and creates one; it never reads or makes
+ * raw HTML, and an image that is not this board's is not touched.
+ */
+function gatherImageRow() {
+  return (root: HastNode): void => {
+    const found: HastNode[] = [];
+    const collect = (node: HastNode): void => {
+      for (const kid of node.children ?? []) {
+        if (kid.type !== 'element' || kid.tagName === 'a') continue;
+        if (kid.tagName === 'img') {
+          const src = kid.properties?.src;
+          if (typeof src === 'string' && isAttachmentUrl(src, boardOrigin())) found.push(kid);
+          continue;
+        }
+        collect(kid);
+      }
+    };
+    collect(root);
+    if (found.length < 2) return;
+    const moved = new Set(found);
+    const prune = (node: HastNode): void => {
+      if (node.children === undefined) return;
+      node.children = node.children.filter((kid) => !moved.has(kid));
+      for (const kid of node.children) prune(kid);
+      node.children = node.children.filter(
+        (kid) => !(kid.type === 'element' && EMPTIED.has(kid.tagName ?? '') && blank(kid)),
+      );
+    };
+    prune(root);
+    root.children = [
+      ...(root.children ?? []),
+      { type: 'element', tagName: 'div', properties: { dataImageRow: '' }, children: found },
+    ];
+  };
+}
+
 const MENTIONS = [markMentions];
 const MENTIONS_AND_SINGLE_HARD_BREAKS = [oneBreakPerHardBreak, markMentions];
+const IMAGE_ROW = [markMentions, gatherImageRow];
+const IMAGE_ROW_AND_SINGLE_HARD_BREAKS = [oneBreakPerHardBreak, markMentions, gatherImageRow];
+
+/** The steps a surface's two booleans switch on: always one of the lists above. */
+function pluginsFor(singleHardBreaks: boolean, imageRow: boolean) {
+  if (imageRow) return singleHardBreaks ? IMAGE_ROW_AND_SINGLE_HARD_BREAKS : IMAGE_ROW;
+  return singleHardBreaks ? MENTIONS_AND_SINGLE_HARD_BREAKS : MENTIONS;
+}
 
 export interface TaskMarkdownProps {
   readonly source: string;
@@ -279,6 +371,13 @@ export interface TaskMarkdownProps {
   readonly people?: readonly MentionCandidate[] | undefined;
   /** The reader, whose own mention is the stronger pill. */
   readonly meId?: string | undefined;
+  /**
+   * Two or more of this board's images are one row of thumbnails that opens
+   * the viewer (D-162, LAI-1352) — a comment's. See {@link gatherImageRow}.
+   */
+  readonly imageRow?: boolean;
+  /** Who the row's images came from, as the viewer says it. */
+  readonly imagesBy?: string | undefined;
 }
 
 export function TaskMarkdown({
@@ -288,18 +387,22 @@ export function TaskMarkdown({
   singleHardBreaks = false,
   people,
   meId,
+  imageRow = false,
+  imagesBy,
 }: TaskMarkdownProps) {
   const directory = useMemo(() => (people === undefined ? null : { people, meId }), [people, meId]);
   return (
     <div className={className === undefined ? 'md' : `md ${className}`}>
       <Mentions.Provider value={directory}>
-        <Markdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={singleHardBreaks ? MENTIONS_AND_SINGLE_HARD_BREAKS : MENTIONS}
-          components={components === undefined ? COMPONENTS : { ...components, ...COMPONENTS }}
-        >
-          {source}
-        </Markdown>
+        <ImagesBy.Provider value={imagesBy ?? null}>
+          <Markdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={pluginsFor(singleHardBreaks, imageRow)}
+            components={components === undefined ? COMPONENTS : { ...components, ...COMPONENTS }}
+          >
+            {source}
+          </Markdown>
+        </ImagesBy.Provider>
       </Mentions.Provider>
     </div>
   );

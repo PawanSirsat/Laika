@@ -3,29 +3,36 @@ import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type CalendarRuleKind, type CalendarSyncErrorCode } from '../db/enums.ts';
 import { requireOrgId } from '../db/orgs.ts';
-import { orgCalendarSource, type OrgCalendarSource, projects } from '../db/schema.ts';
+import { calendarAway, orgCalendarSource, type OrgCalendarSource, projects } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { decryptSecret, encryptSecret } from '../secrets.ts';
 import {
+  CALENDAR_BACKFILL_MAX_DAYS,
   CALENDAR_RULES_MAX,
   CALENDAR_SYNC_EVERY_MINUTES,
+  calendarBackfillRunning,
   calendarSyncInFlight,
   type CalendarSyncDeps,
   type CalendarSyncResultView,
   graphTokenCache,
   parseRules,
+  runCalendarBackfill,
   runCalendarSync,
+  STOPPED_PARTWAY,
+  STOPPED_PARTWAY_TEXT,
   type StoredRule,
 } from './calendar-sync.ts';
 import { CALENDARS_READ, graphClient, isClientId, isTenantId } from './microsoft-graph.ts';
+import { forgetDirectoryIdentity } from './people-sync.ts';
 import { canSeeProject, requireProjectBySlug } from './projects.ts';
 import { assertTimeOn } from './time-settings.ts';
 
 /**
  * The organisation's Outlook calendar connection (§4.101, D-157, LAI-1316):
  * the Entra app's tenant, client id and secret, the rules that send a meeting
- * to a space, the switch, a test of the grant, sync now, and disconnect.
+ * to a space, the switch, a test of the grant, sync now, a backfill of the
+ * last N days (LAI-1335), and disconnect.
  *
  * **Every call is `org.calendar.configure`** — owners and admins holding
  * *Change organisation settings, Time and breaks*, signed in (§3.1). The
@@ -47,7 +54,11 @@ import { assertTimeOn } from './time-settings.ts';
  */
 
 export interface CalendarSyncErrorView {
-  code: CalendarSyncErrorCode;
+  /**
+   * A hard failure as `last_error_code` keeps it, or `stopped_partway` — a
+   * backfill the switch stopped, derived by {@link lastRunOf} (LAI-1335).
+   */
+  code: CalendarSyncErrorCode | typeof STOPPED_PARTWAY;
   message: string;
 }
 
@@ -69,6 +80,14 @@ export interface CalendarTestView {
   roles: string[];
 }
 
+/** A backfill going now (LAI-1335 review F1). */
+export interface CalendarBackfillRunningView {
+  /** The days before today it reaches back. */
+  days: number;
+  /** When it began, unix ms. */
+  started_at: number;
+}
+
 /** `GET /api/v1/org/calendar`, and the answer of every write here (§6.4). */
 export interface CalendarSourceView {
   /** Tenant, client id and secret are saved. */
@@ -86,6 +105,35 @@ export interface CalendarSourceView {
   last_success_at: number | null;
   last_error: CalendarSyncErrorView | null;
   last_result: CalendarSyncResultView | null;
+  /**
+   * A backfill going now, or null: the card holds its own until it is done —
+   * a backfill asked for meanwhile joins it.
+   */
+  backfill_running: CalendarBackfillRunningView | null;
+}
+
+/** `POST /api/v1/org/calendar/backfill`'s answer (LAI-1335). */
+export interface CalendarBackfillView {
+  /**
+   * The days before today it reached back: as asked, or more when it joined
+   * a backfill already running that reached further.
+   */
+  days: number;
+  /**
+   * What it did — what was written before it stopped, when the switch went
+   * off between two people (the connection's `last_error` then
+   * `stopped_partway`, derived) — or `null` when a read failed, which the
+   * connection's `last_error` says, or it wrote nothing.
+   */
+  result: CalendarSyncResultView | null;
+  /** The connection afterwards, as `GET /org/calendar` answers it. */
+  connection: CalendarSourceView;
+}
+
+/** `POST /api/v1/org/calendar/backfill`. */
+export interface CalendarBackfillInput {
+  /** A whole number of days before today, 1 to 90. */
+  days: number;
 }
 
 /** `PUT /api/v1/org/calendar`. */
@@ -127,6 +175,11 @@ function rulesView(db: Db, rules: readonly StoredRule[]): CalendarRuleView[] {
   }));
 }
 
+function backfillRunningOf(db: Db): CalendarBackfillRunningView | null {
+  const running = calendarBackfillRunning(db);
+  return running === null ? null : { days: running.days, started_at: running.startedAt };
+}
+
 function viewOf(db: Db): CalendarSourceView {
   const row = db.select().from(orgCalendarSource).get();
   if (row === undefined) {
@@ -143,6 +196,7 @@ function viewOf(db: Db): CalendarSourceView {
       last_success_at: null,
       last_error: null,
       last_result: null,
+      backfill_running: backfillRunningOf(db),
     };
   }
   const roles = jsonOf<string[]>(row.lastTestRolesJson);
@@ -160,10 +214,44 @@ function viewOf(db: Db): CalendarSourceView {
         : { at: row.lastTestAt, calendars_read: roles.includes(CALENDARS_READ), roles },
     last_attempt_at: row.lastAttemptAt,
     last_success_at: row.lastSuccessAt,
-    last_error:
-      row.lastErrorCode === null ? null : { code: row.lastErrorCode, message: row.lastError ?? '' },
-    last_result: jsonOf<CalendarSyncResultView>(row.lastResultJson),
+    ...lastRunOf(row),
+    backfill_running: backfillRunningOf(db),
   };
+}
+
+/**
+ * The last run as served: its error and its counts (LAI-1335 review F5).
+ *
+ * **`last_error_code` holds hard failures only** — Microsoft refused or
+ * failed, and the run changed nothing. A backfill the switch stopped between
+ * two people is not one: it wrote everyone it reached, so it keeps its counts
+ * so far in `last_result_json` marked `stopped_partway: true`, and **this is
+ * the one place that mark becomes `last_error` `stopped_partway`**. A hard
+ * failure recorded since wins; the next run's counts, stored unmarked, clear
+ * it. The mark itself is never served: `last_result` is the counts alone.
+ *
+ * A result stored before LAI-1331 counted no out-of-office spans, and one
+ * before LAI-1335 no older entries kept: each is `0` rather than missing.
+ */
+export function lastRunOf(
+  row: Pick<OrgCalendarSource, 'lastErrorCode' | 'lastError' | 'lastResultJson'>,
+): Pick<CalendarSourceView, 'last_error' | 'last_result'> {
+  const stored = jsonOf<CalendarSyncResultView & { [STOPPED_PARTWAY]?: unknown }>(
+    row.lastResultJson,
+  );
+  const stopped = stored?.[STOPPED_PARTWAY] === true;
+  let last_result: CalendarSyncResultView | null = null;
+  if (stored !== null) {
+    const { [STOPPED_PARTWAY]: _mark, ...counts } = stored;
+    last_result = { ...counts, away: counts.away ?? 0, kept_older: counts.kept_older ?? 0 };
+  }
+  const last_error: CalendarSyncErrorView | null =
+    row.lastErrorCode !== null
+      ? { code: row.lastErrorCode, message: row.lastError ?? '' }
+      : stopped
+        ? { code: STOPPED_PARTWAY, message: STOPPED_PARTWAY_TEXT }
+        : null;
+  return { last_error, last_result };
 }
 
 /** `GET /api/v1/org/calendar`. */
@@ -301,6 +389,11 @@ export function saveCalendarSource(
     db.update(orgCalendarSource).set(values).where(eq(orgCalendarSource.orgId, was.orgId)).run();
   }
   if (credentialsChanged) graphTokenCache(db).clear();
+  // Another tenant or app is another directory: the people sync's Entra ids
+  // are the old one's, and Leavers waits for a person again (D-161, F2).
+  if (was !== undefined && (was.tenantId !== tenantId || was.clientId !== clientId)) {
+    forgetDirectoryIdentity(db, now);
+  }
 
   if (enabled === 1 && (was?.enabled !== 1 || credentialsChanged)) {
     syncSoon(db, serverSecret, deps);
@@ -388,12 +481,66 @@ export async function syncCalendarNow(
 }
 
 /**
+ * `POST /api/v1/org/calendar/backfill` (LAI-1335): the sync over the last
+ * `days` days for every member — from the start of the day that many days
+ * before today to the end of tomorrow, each in their own zone — under the
+ * sync's every rule, only adding before yesterday, and answer what it did. It
+ * joins a backfill already running that reaches as far back, and otherwise
+ * waits for a sync already running, never beside it.
+ *
+ * `days` is a whole number from 1 to 90, or `422 days_out_of_range` (with
+ * `min` and `max`); `409 calendar_off` unless the connection is saved and its
+ * switch is on; `403 time_off` while the organisation's Time is off. A read
+ * Microsoft fails is recorded on the connection, as any sync's is, and
+ * answered with no result.
+ */
+export async function backfillCalendar(
+  db: Db,
+  actor: ResolvedActor,
+  serverSecret: string,
+  input: CalendarBackfillInput,
+  deps: CalendarSyncDeps = {},
+): Promise<CalendarBackfillView> {
+  assertCan(actor, 'org.calendar.configure');
+  const { days } = input;
+  if (!Number.isInteger(days) || days < 1 || days > CALENDAR_BACKFILL_MAX_DAYS) {
+    throw new ApiError(
+      'unprocessable',
+      `days is a whole number from 1 to ${String(CALENDAR_BACKFILL_MAX_DAYS)}`,
+      { field: 'days', reason: 'days_out_of_range', min: 1, max: CALENDAR_BACKFILL_MAX_DAYS },
+    );
+  }
+  const row = db.select().from(orgCalendarSource).get();
+  if (row?.enabled !== 1) {
+    throw new ApiError('conflict', 'The Outlook calendar sync is off', { reason: 'calendar_off' });
+  }
+  assertTimeOn(db);
+  const run = await runCalendarBackfill(db, serverSecret, days, deps);
+  return {
+    days: run.days,
+    result:
+      run.outcome.kind === 'synced' || run.outcome.kind === 'stopped' ? run.outcome.result : null,
+    connection: viewOf(db),
+  };
+}
+
+/**
  * `DELETE /api/v1/org/calendar`: forget the credentials and stop syncing.
  * Meetings already logged stay as they are — they are people's time now —
  * and so do their links, so a connection made again never logs one twice.
+ * **Out-of-office spans go** (§4.107, LAI-1331): they are the sync's reading
+ * of a calendar it no longer reads, not anybody's time, and a connection made
+ * again reads them afresh. One transaction, so a sync finishing meanwhile —
+ * which writes only while the connection it read with is still there — never
+ * puts one back.
  */
-export function disconnectCalendar(db: Db, actor: ResolvedActor): void {
+export function disconnectCalendar(db: Db, actor: ResolvedActor, now: number = Date.now()): void {
   assertCan(actor, 'org.calendar.configure');
-  db.delete(orgCalendarSource).run();
+  db.transaction((tx) => {
+    tx.delete(orgCalendarSource).run();
+    tx.delete(calendarAway).run();
+  });
   graphTokenCache(db).clear();
+  // A connection made again may be another tenant's (D-161, F2).
+  forgetDirectoryIdentity(db, now);
 }

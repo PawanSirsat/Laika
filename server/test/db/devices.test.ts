@@ -83,6 +83,11 @@ function folderBefore0070(): { dir: string; restore: () => void } {
     '0087_calendar_sync',
     '0088_email_inbound',
     '0089_email_inbound_switch_off',
+    '0090_calendar_away',
+    '0091_people_directory',
+    '0092_attachments_unlisted_work',
+    '0093_task_archive',
+    '0094_task_trash',
   ]);
   writeFileSync(journalPath, JSON.stringify(journal));
   return {
@@ -104,7 +109,8 @@ function folderBefore0070(): { dir: string; restore: () => void } {
       // LAI-1314's 0085 adds three tables; LAI-1313's 0086 four tables and
       // `email_outbox` rebuilt.
       // LAI-1316's 0087 adds two tables, with a rebuild of `time_entries`;
-      // LAI-1315's 0088 four tables, and its 0089 a rebuild of one of them.
+      // LAI-1315's 0088 four tables, and its 0089 a rebuild of one of them;
+      // LAI-1330's 0091 two tables.
       const later = new Set([
         '0075_task_deliverables',
         '0076_user_availability',
@@ -119,6 +125,11 @@ function folderBefore0070(): { dir: string; restore: () => void } {
         '0087_calendar_sync',
         '0088_email_inbound',
         '0089_email_inbound_switch_off',
+        '0090_calendar_away',
+        '0091_people_directory',
+        '0092_attachments_unlisted_work',
+        '0093_task_archive',
+        '0094_task_trash',
       ]);
       journal.entries.push(...dropped.filter((e) => !later.has(e.tag)));
       writeFileSync(journalPath, JSON.stringify(journal));

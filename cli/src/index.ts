@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { activity, time } from './activity.ts';
+import { attach } from './attach.ts';
 import { ignoredAgentTokenNotice } from './agent-session.ts';
 import { withBoardNotice } from './board-notice.ts';
 import { connect } from './connect.ts';
@@ -36,6 +37,8 @@ const USAGE = [
   '  laika device pair        pair this machine with a board (the browser shows the command)',
   '  laika tool add <tool>    install one tool’s own credential on this paired machine',
   '  laika connect <agent>    point a coding agent at the board (--project: this folder)',
+  '  laika attach <KEY> <file…> show a person your result: files on the task, a caption',
+  '                           each, in one comment; checked for secrets first (--help)',
   '  laika project check      is this repo’s Laika block there and current? reads only;',
   '                           records the finding with a tool’s own credential (--help)',
   '  laika connect --list     the agents connect knows, and what it does for each',
@@ -74,10 +77,11 @@ async function main(argv: readonly string[]): Promise<number> {
   if (command === 'tool') return tool(argv.slice(1));
   // The commands that act with an agent's credential say when the
   // environment's token is not used for want of its URL (LAI-1344).
-  if (command === 'project' || command === 'agent') {
+  if (command === 'project' || command === 'agent' || command === 'attach') {
     const notice = ignoredAgentTokenNotice(process.env);
     if (notice !== undefined) process.stderr.write(`${notice}\n`);
   }
+  if (command === 'attach') return attach(argv.slice(1));
   if (command === 'project') {
     if (argv[1] === 'check') return projectCheck(argv.slice(2));
     process.stderr.write(

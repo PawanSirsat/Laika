@@ -17,11 +17,11 @@ import type { CapacityView } from '../../../api/presence.ts';
 import type { Project } from '../../../api/projects.ts';
 import type { OpenTasksChoice } from '../../../api/offboarding.ts';
 import { updateUser, type OrgUser } from '../../../api/users.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
-import { initials } from '../../../theme/initials.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { ConfirmDialog } from '../../../components/ConfirmDialog.tsx';
+import { PersonFacts } from '../../../components/person-facts/PersonFacts.tsx';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { ScrollRegion } from './ScrollRegion.tsx';
 import {
   SORT_LABELS,
@@ -34,7 +34,9 @@ import {
   roleCounts,
   seatLine,
   readPeopleView,
+  signInLine,
   sortPeople,
+  toolsLine,
   withPeopleView,
   type PeopleFilter,
   type PeopleView,
@@ -709,17 +711,21 @@ export function PeopleTab({
                 <span role="columnheader">Person</span>
                 <span role="columnheader">Role</span>
                 <span role="columnheader">Spaces</span>
-                {/* Presence, not registered agents (LAI-1058, plan §B.7). */}
-                <span role="columnheader">Tools running</span>
+                {/* Presence, not registered agents (LAI-1058, plan §B.7). `data-col`
+                    names the two a narrow table drops first (LAI-1345). */}
+                <span role="columnheader" data-col="tools">
+                  Tools running
+                </span>
                 <span role="columnheader">Last active</span>
-                <span role="columnheader">Last sign-in</span>
+                <span role="columnheader" data-col="sign-in">
+                  Last sign-in
+                </span>
                 <span role="columnheader" className="visually-hidden">
                   Actions
                 </span>
               </div>
 
               {shown.map((person) => {
-                const ink = avatarColor(person.id, theme);
                 const entry = entries.get(person.id);
                 const seen = lastActive(entry, capacity?.enabled, person.is_active, now);
                 const signedIn = lastSignIn(person.last_seen_at, now);
@@ -762,13 +768,14 @@ export function PeopleTab({
                     </span>
                     <span role="cell" className="org-people-person">
                       <span className="org-avatar-wrap">
-                        <span
+                        <Avatar
+                          name={person.name}
+                          userId={person.id}
+                          theme={theme}
+                          size={28}
+                          label={null}
                           className="org-avatar"
-                          style={{ background: ink.background, color: ink.foreground }}
-                          aria-hidden="true"
-                        >
-                          {initials(person.name)}
-                        </span>
+                        />
                         {online && (
                           <span className="org-presence-dot" title="Active now" data-online />
                         )}
@@ -789,7 +796,10 @@ export function PeopleTab({
                             <span className="org-chip org-chip-off">DEACTIVATED</span>
                           )}
                         </span>
-                        <span className="org-person-email">{person.email}</span>
+                        <span className="org-person-email" title={person.email}>
+                          {person.email}
+                        </span>
+                        <PersonFacts userId={person.id} className="org-person-facts" />
                       </span>
                     </span>
                     <span role="cell" className="org-people-role">
@@ -839,11 +849,19 @@ export function PeopleTab({
                     </span>
                     <span
                       role="cell"
-                      className={`org-people-seen org-people-seen-${seen.tone}`}
-                      data-last-active
-                      title={seen.note}
+                      className={`org-people-seen org-people-seen-${seen.tone} org-people-active`}
                     >
-                      {seen.text}
+                      <span data-last-active title={seen.note}>
+                        {seen.text}
+                      </span>
+                      {/* What a narrow table drops (LAI-1345), in sight under
+                          Last active once its column steps out — for a mouse,
+                          a keyboard and a finger alike. A screen reader reads
+                          the dropped cell itself, so not these. */}
+                      <span className="org-people-also" aria-hidden="true">
+                        <span className="org-people-also-sign-in">{signInLine(signedIn)}</span>
+                        <span className="org-people-also-tools">{toolsLine(agents, running)}</span>
+                      </span>
                     </span>
                     <span
                       role="cell"

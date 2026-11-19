@@ -39,6 +39,8 @@ import '../../routes/screens/task/tokens.css';
 import '../../routes/screens/profile/profile.css';
 import '../../routes/screens/task/evidence.css';
 import '../../routes/screens/task/attachments.css';
+// D-162 (LAI-1352): an agent's outputs — the strip, and the viewer a tile opens.
+import '../../routes/screens/task/outputs.css';
 import '../../routes/screens/task/hero.css';
 import '../../routes/screens/task/delivers.css';
 import '../../routes/screens/task/feed.css';
@@ -54,6 +56,8 @@ import '../create-task/create-task.css';
 import '../create-task/create-task-hints.css';
 import '../space/space.css';
 import '../avatar/avatar.css';
+// D-161 (LAI-1330): a person's title, department and manager, on three screens.
+import '../person-facts/person-facts.css';
 import '../size-chip.css';
 import '../../routes/screens/board/column-composer.css';
 import '../../routes/screens/board/board.css';
@@ -62,6 +66,8 @@ import '../bulk-bar.css';
 import '../../routes/screens/list/list.css';
 import '../../routes/screens/board/sprint-stats.css';
 import '../../routes/screens/board/board-insights.css';
+// LAI-1353, LAI-1354: the Archived and Trash panels, Insights' shape with rows.
+import '../../routes/screens/board/board-shelf.css';
 import '../../routes/screens/board/board-toolbar.css';
 import '../../routes/screens/board/column-editor.css';
 import '../../routes/screens/board/view-settings.css';

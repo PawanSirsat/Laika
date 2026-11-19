@@ -484,7 +484,8 @@ void describe('the states', () => {
           await off.innerText(),
           /GitHub and Local are not shown: Developer insights are off for this organisation\./,
         );
-        assert.equal(await activityCard.locator('a[href="/organisation"]').count(), 1);
+        // General, where the hub puts Developer insights' switch (LAI-1318).
+        assert.equal(await activityCard.locator('a[href="/organisation?tab=general"]').count(), 1);
         // GitHub and Local are all the card draws: no grid, no tiles, no Board.
         assert.equal(await activityCard.locator('.hm-grid, .hm-ghost').count(), 0, design);
         assert.equal(await activityCard.locator('.hm-stats').count(), 0, design);

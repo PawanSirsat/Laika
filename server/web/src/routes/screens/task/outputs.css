@@ -1,0 +1,307 @@
+/*
+ * An agent's outputs (D-162, LAI-1352): the folded line in Proof, the strip of
+ * tiles it opens to — the same strip under a comment with several images and
+ * an unlisted finding — and the viewer a tile opens. Tokens only, so both
+ * themes come from `theme.css`; a glyph wears its file chip's colour
+ * (`task-markdown.css`).
+ */
+
+/* --- the fold, inside a round ------------------------------------------- */
+
+.out-fold {
+  margin-top: var(--space-2);
+}
+
+.ev-fold.out-fold > .ev-fold-summary {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.ev-fold.out-fold > .ev-fold-summary:hover {
+  color: var(--text-primary);
+}
+
+/* --- the strip ------------------------------------------------------------ */
+
+/*
+ * The KPI row's sideways strip (`kpi.css`): it scrolls and snaps to a tile
+ * where the tiles do not fit, rather than wrapping into rows.
+ */
+.out-strip {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 0 var(--space-0-5);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  list-style: none;
+}
+
+.out-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.out-cell {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+.out-tile {
+  display: grid;
+  gap: var(--space-1);
+  width: 6rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.out-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  width: 6rem;
+  height: 4.5rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-column);
+  transition: var(--transition);
+}
+
+.out-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.out-tile:hover .out-thumb {
+  border-color: var(--accent-border);
+}
+
+.out-tile:focus-visible {
+  outline: none;
+}
+
+.out-tile:focus-visible .out-thumb {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* A recording's tile: a play mark over its glyph. */
+.out-play {
+  position: absolute;
+  right: var(--space-1);
+  bottom: var(--space-1);
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 8px solid var(--text-secondary);
+}
+
+.out-caption {
+  overflow: hidden;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.out-tile:hover .out-caption {
+  color: var(--text-primary);
+}
+
+/* *+N*: Avatar's overflow, as a tile. */
+.out-more-count {
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+/* A comment's images, two or more, as one row (`TaskMarkdown`'s image row). */
+.md-image-row {
+  margin-top: var(--space-2);
+  white-space: normal;
+}
+
+/*
+ * Inside the reading view the strip is a list, and `.md ul` indents a list
+ * and `.md li + li` drops each item a step (`task-markdown.css`): neither is
+ * the strip's, which is one row from the text's own edge.
+ */
+.md .out-strip {
+  margin: 0;
+  padding-left: 0;
+}
+
+.md .out-cell + .out-cell {
+  margin-top: 0;
+}
+
+/* --- the viewer ----------------------------------------------------------- */
+
+.overlay-dialog.ovw {
+  --overlay-width: 60rem;
+}
+
+.ovw .overlay-dialog-body {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+}
+
+.ovw-stage {
+  display: grid;
+  place-items: center;
+  min-height: 14rem;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-column);
+}
+
+.ovw-image,
+.ovw-video {
+  display: block;
+  max-width: 100%;
+  max-height: 70dvh;
+  object-fit: contain;
+}
+
+.ovw-video {
+  width: 100%;
+  background: var(--bg-canvas);
+}
+
+.ovw-frame {
+  display: block;
+  width: 100%;
+  height: 70dvh;
+  border: 0;
+  background: var(--bg-card);
+}
+
+.ovw-card {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-1);
+  max-width: 28rem;
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+
+.ovw-card-glyph {
+  display: grid;
+  place-items: center;
+  margin-bottom: var(--space-1);
+}
+
+.ovw-card-name {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.ovw-card-meta,
+.ovw-card-note {
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+.ovw-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.ovw-steps {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ovw-step {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.ovw-step:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
+.ovw-step:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ovw-count {
+  min-width: 3rem;
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.ovw-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.ovw-action {
+  gap: var(--space-1);
+  text-decoration: none;
+}
+
+/*
+ * A phone: the dialog is the whole screen (`overlay.css`), so the stage
+ * takes what the bar leaves, and the bar's two halves stack.
+ */
+@media (max-width: 600px) {
+  .ovw-image,
+  .ovw-video,
+  .ovw-frame {
+    max-height: 60dvh;
+  }
+
+  .ovw-frame {
+    height: 60dvh;
+  }
+
+  .ovw-bar {
+    justify-content: center;
+  }
+
+  .ovw-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .ovw-actions > .ovw-action {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+}

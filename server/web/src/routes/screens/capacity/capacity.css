@@ -230,16 +230,9 @@
   border-style: dashed;
 }
 
+/* The shared Avatar, 36 on a card and 28 in a row (D-161): its own size and disc. */
 .cap-avatar {
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: var(--radius-round);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
-  letter-spacing: -0.02em;
+  flex: none;
 }
 
 .cap-dot {
@@ -540,6 +533,20 @@
   white-space: nowrap;
 }
 
+/* A space they are in with no open work of theirs (LAI-1334): greyed, with no
+   count — no fill, a dashed edge, muted text, the mark faded. Before
+   `.cap-space-on`, so the chosen space still shows as chosen. */
+.cap-space-idle {
+  border-style: dashed;
+  background: transparent;
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+}
+
+.cap-space-idle .project-mark {
+  opacity: 0.55;
+}
+
 .cap-space-on {
   border-color: var(--accent-border);
   background: var(--accent-bg);
@@ -817,12 +824,6 @@
   max-width: calc(100% - 3rem);
 }
 
-.cap-avatar-sm {
-  width: 1.875rem;
-  height: 1.875rem;
-  font-size: var(--text-small);
-}
-
 .cap-list-bar {
   min-width: 9rem;
 }
@@ -960,4 +961,41 @@
   .cap .cap-dropdown {
     width: 100%;
   }
+}
+
+/* LAI-1331: why someone is away — their own period, Outlook's out of office —
+   and their meetings this week, under the name. The pills are the availability
+   pill's own (availability.css); nothing here when there is nothing to say. */
+.cap-cal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin-top: var(--space-1);
+  min-width: 0;
+}
+
+.cap-cal-card {
+  margin-top: var(--space-2);
+}
+
+.cap-meetings {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+/* In the list the pill keeps its whole width, and a row that has one widens
+   the Person column enough for *Outlook · Out of office until Wed 25 Nov*
+   rather than cutting it short — the table already scrolls sideways inside
+   its card (LAI-1201). */
+.cap-list-person .cap-cal .avail-pill {
+  max-width: none;
+}
+
+.cap-list-person .cap-cal .avail-pill > span {
+  overflow: visible;
+}
+
+.cap-list-person:has(.cap-cal .avail-pill) {
+  min-width: 21rem;
 }

@@ -101,6 +101,8 @@ import {
   TEAMS_POST_REASONS,
   AVAILABILITY_STATUSES,
   CALENDAR_SYNC_ERROR_CODES,
+  PEOPLE_SYNC_ERROR_CODES,
+  USER_PHOTO_TYPES,
   TIME_DRAFT_SOURCES,
   TIME_DRAFT_STATES,
   TIME_ENTRY_KINDS,
@@ -738,6 +740,32 @@ export const tasks = sqliteTable(
      * not. Compared with the policy's `max_handoffs`. Never decremented.
      */
     handoffCount: integer('handoff_count').notNull().default(0),
+    /**
+     * **Put away, kept whole** (§4.5, LAI-1353): when the task was archived,
+     * null while it is live. An archived task leaves every board, list and
+     * queue (`liveTask()`), keeps its history, and is read-only until it is
+     * restored. Archiving a parent stamps its subtasks with the **same**
+     * instant, which is how a restore knows which of them came along.
+     *
+     * A flag, not a status: a task keeps its status underneath, so a restore
+     * puts it back where it was. No CHECK pairing it with `archived_by` — a
+     * table-level CHECK would make drizzle-kit rebuild `tasks`; the one writer
+     * (`setTaskArchived`) sets both together.
+     */
+    archivedAt: integer('archived_at'),
+    /** Who archived it; null while it is live. `set null`: a task outlives its archiver. */
+    archivedBy: text('archived_by').references(() => users.id, { onDelete: 'set null' }),
+    /**
+     * **In the space's Trash** (§4.5, LAI-1354): when it was deleted, null
+     * otherwise. A soft delete — the row, its key and its history stay, and
+     * it is restorable for 30 days before LAI-1355's scrub. A parent's
+     * subtasks go with it, stamped with the same instant, as archive does.
+     * Independent of `archived_at`: an archived task deleted and restored
+     * comes back archived.
+     */
+    deletedAt: integer('deleted_at'),
+    /** Who deleted it; null otherwise. */
+    deletedBy: text('deleted_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt,
     updatedAt,
   },
@@ -765,6 +793,17 @@ export const tasks = sqliteTable(
     index('tasks_external_ref_idx')
       .on(t.externalRef, t.projectId)
       .where(sql`${t.externalRef} IS NOT NULL`),
+    // A space's Archived view and its count (LAI-1353). Partial: most tasks are
+    // live, and no read of live work wants this index.
+    index('tasks_project_archived_at_idx')
+      .on(t.projectId, t.archivedAt)
+      .where(sql`${t.archivedAt} IS NOT NULL`),
+    index('tasks_archived_by_idx').on(t.archivedBy),
+    // A space's Trash and the scrub's sweep (LAI-1354, LAI-1355). Partial, as above.
+    index('tasks_project_deleted_at_idx')
+      .on(t.projectId, t.deletedAt)
+      .where(sql`${t.deletedAt} IS NOT NULL`),
+    index('tasks_deleted_by_idx').on(t.deletedBy),
     // **Composite, and that is the point** (LAI-738). A plain `status_id`
     // reference would let a task hold another project's status, or a status
     // whose category disagrees with `status` — two ways for the board and the
@@ -1759,7 +1798,9 @@ export const leaveDays = sqliteTable(
  * object; `inline` only when its first bytes prove it is one of five types a
  * browser may show. Removing one is `deleted_at`; the object goes after,
  * `purged_at` saying it went. §11.6's sweep deletes a `pending` row nobody
- * finished and soft-deletes a file nothing linked.
+ * finished and soft-deletes a file nothing linked. An agent's file can also
+ * belong to an unlisted finding (D-162, LAI-1302), `unlisted_work_id`, which
+ * counts as linked until the finding is promoted or dismissed.
  */
 export const attachments = sqliteTable(
   'attachments',
@@ -1770,6 +1811,10 @@ export const attachments = sqliteTable(
       .references(() => projects.id, { onDelete: 'cascade' }),
     taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
     commentId: text('comment_id').references(() => comments.id, { onDelete: 'set null' }),
+    /** The unlisted finding `log_unlisted_work` attached it to (D-162); null otherwise. */
+    unlistedWorkId: text('unlisted_work_id').references(() => unlistedWork.id, {
+      onDelete: 'set null',
+    }),
     uploadedBy: text('uploaded_by')
       .notNull()
       .references(() => users.id),
@@ -1795,6 +1840,7 @@ export const attachments = sqliteTable(
     uniqueIndex('attachments_storage_key_unique').on(t.storageKey),
     index('attachments_task_id_idx').on(t.taskId),
     index('attachments_comment_id_idx').on(t.commentId),
+    index('attachments_unlisted_work_id_idx').on(t.unlistedWorkId),
     index('attachments_state_created_at_idx').on(t.state, t.createdAt),
     index('attachments_project_id_idx').on(t.projectId),
     index('attachments_uploaded_by_idx').on(t.uploadedBy),
@@ -2244,6 +2290,49 @@ export const calendarEvents = sqliteTable(
   ],
 );
 
+// ---------------------------------------------------- §4.107 calendar_away
+
+/**
+ * A span a person's Outlook calendar shows them **out of office** (§4.107,
+ * D-157 amended, LAI-1331), as the calendar sync last read it — by Graph's
+ * immutable event id, with its start and end and nothing else: no subject,
+ * no body, no attendee. **Never time**: it is read beside a person's own
+ * availability (§4.86) to say they are away, and no entry is made from it.
+ *
+ * Retired, not deleted, when a complete read of a window it overlaps no
+ * longer has it (`retired_at`), and back when it returns — the rules
+ * `calendar_events` keeps for meetings.
+ */
+export const calendarAway = sqliteTable(
+  'calendar_away',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Graph's immutable id for the event, or for one occurrence of a series. */
+    eventId: text('event_id').notNull(),
+    /**
+     * Unix ms, UTC. An all-day event's are **UTC midnights standing for its
+     * calendar dates** (the sync reads in UTC), its end the midnight after its
+     * last day: `all_day` says to read them as dates, not instants.
+     */
+    startsAt: integer('starts_at').notNull(),
+    endsAt: integer('ends_at').notNull(),
+    allDay: integer('all_day').notNull().default(0),
+    /** The last sync that read the event. */
+    lastSeenAt: integer('last_seen_at').notNull(),
+    /** When a complete read of a window it overlaps no longer had it; null while it stands. */
+    retiredAt: integer('retired_at'),
+    createdAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.eventId] }),
+    check('calendar_away_span_check', sql.raw('ends_at > starts_at')),
+    check('calendar_away_all_day_check', sql.raw('all_day IN (0, 1)')),
+    check('calendar_away_event_id_check', sql.raw('length(event_id) BETWEEN 1 AND 512')),
+  ],
+);
+
 // ------------------------------------------------ §4.103 org_email_inbound
 
 /**
@@ -2491,6 +2580,133 @@ export const emailInboundAttachments = sqliteTable(
     ),
     check('email_inbound_attachments_size_check', sql.raw('size_bytes >= 0')),
     check('email_inbound_attachments_attempts_check', sql.raw('attempts >= 0')),
+  ],
+);
+
+// ------------------------------------------------------ §4.108 user_directory
+
+/**
+ * What Microsoft's directory says of one person (§4.108, D-161, LAI-1330),
+ * read by the people sync through the Microsoft 365 connection: their Entra
+ * object id, job title, department, manager and whether their account is
+ * enabled, and their profile photo, **kept in the operator's store** so
+ * Microsoft is never asked on a view. **No row is not synced.**
+ *
+ * **Once matched, a person is their Entra object id** (review M1): every later
+ * run reads `/users/{entra_oid}`, never the address again, so a rename does
+ * not lose them and an address given to someone else does not become them.
+ * `seen_at` is when the directory last answered for them; `missing_since`
+ * when that read first answered `404`, and `disabled_since` when it first
+ * said their account is disabled after the read before had it enabled (the
+ * change seen, review round 2) — each the first of the two sightings the
+ * leaver rule needs, cleared when it stops being true. The photo's
+ * four columns are all set or all null, and `photo_etag` is Microsoft's, so
+ * an unchanged photo is never fetched twice.
+ *
+ * Its own table rather than columns on `users`, whose cut-back fixtures name
+ * every column (LAI-1330).
+ */
+export const userDirectory = sqliteTable(
+  'user_directory',
+  {
+    userId: text('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Their Entra object id; null until the directory has answered for them. */
+    entraOid: text('entra_oid'),
+    jobTitle: text('job_title'),
+    department: text('department'),
+    /** Their manager, when the directory names one who is a Laika user. */
+    managerUserId: text('manager_user_id').references(() => users.id, { onDelete: 'set null' }),
+    /** 1 enabled, 0 disabled, null not known. */
+    accountEnabled: integer('account_enabled'),
+    seenAt: integer('seen_at'),
+    missingSince: integer('missing_since'),
+    disabledSince: integer('disabled_since'),
+    /** `u/<user_id>/photo/<id>` in the operator's store. */
+    photoKey: text('photo_key'),
+    photoType: text('photo_type', { enum: USER_PHOTO_TYPES }),
+    /** Microsoft's `@odata.mediaEtag` for the photo stored. */
+    photoEtag: text('photo_etag'),
+    photoUpdatedAt: integer('photo_updated_at'),
+    updatedAt,
+  },
+  (t) => [
+    index('user_directory_manager_idx').on(t.managerUserId),
+    check('user_directory_photo_type_check', oneOfOrNull('photo_type', USER_PHOTO_TYPES)),
+    check(
+      'user_directory_account_enabled_check',
+      sql.raw('account_enabled IS NULL OR account_enabled IN (0, 1)'),
+    ),
+    // A photo has its key, type, tag and time, or none of them.
+    check(
+      'user_directory_photo_check',
+      sql.raw(
+        '(photo_key IS NULL) = (photo_type IS NULL) AND (photo_key IS NULL) = (photo_etag IS NULL) AND (photo_key IS NULL) = (photo_updated_at IS NULL)',
+      ),
+    ),
+    check(
+      'user_directory_oid_check',
+      sql.raw('entra_oid IS NULL OR length(entra_oid) BETWEEN 1 AND 64'),
+    ),
+    check(
+      'user_directory_job_title_check',
+      sql.raw('job_title IS NULL OR length(job_title) BETWEEN 1 AND 200'),
+    ),
+    check(
+      'user_directory_department_check',
+      sql.raw('department IS NULL OR length(department) BETWEEN 1 AND 200'),
+    ),
+    check('user_directory_etag_check', sql.raw('photo_etag IS NULL OR length(photo_etag) <= 200')),
+  ],
+);
+
+// ----------------------------------------------------- §4.109 org_people_sync
+
+/**
+ * The people sync's switches and its last run (§4.109, D-161, LAI-1330). It
+ * reads Microsoft through the calendar's connection (§4.101), so it keeps no
+ * credentials of its own. **No row is both switches off.**
+ *
+ * `profile_enabled` is *Photos and profile*: job title, department, manager
+ * and photo. `leavers_enabled` lets the sync deactivate a person Microsoft
+ * says has left, and may be on only with the first. `leavers_json` is the
+ * last run's leaver review — who it found, and whether it deactivated them,
+ * held them at the breaker, or, with the switch off, only listed them.
+ */
+export const orgPeopleSync = sqliteTable(
+  'org_people_sync',
+  {
+    orgId: text('org_id')
+      .primaryKey()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    profileEnabled: integer('profile_enabled').notNull().default(0),
+    leaversEnabled: integer('leavers_enabled').notNull().default(0),
+    configuredBy: text('configured_by').references(() => users.id, { onDelete: 'set null' }),
+    lastAttemptAt: integer('last_attempt_at'),
+    lastSuccessAt: integer('last_success_at'),
+    lastErrorCode: text('last_error_code', { enum: PEOPLE_SYNC_ERROR_CODES }),
+    /** Laika's own words for the failure — never Microsoft's response text. */
+    lastError: text('last_error'),
+    /** The last complete run's counts, as `PeopleSyncResultView`. */
+    lastResultJson: text('last_result_json'),
+    /** The last complete run's leaver review, as `LeaverReviewView`. */
+    leaversJson: text('leavers_json'),
+    updatedAt,
+  },
+  (t) => [
+    index('org_people_sync_configured_by_idx').on(t.configuredBy),
+    check('org_people_sync_profile_check', sql.raw('profile_enabled IN (0, 1)')),
+    check('org_people_sync_leavers_check', sql.raw('leavers_enabled IN (0, 1)')),
+    // Leavers are found by the profile read: never on without it.
+    check(
+      'org_people_sync_leavers_needs_profile_check',
+      sql.raw('leavers_enabled <= profile_enabled'),
+    ),
+    check(
+      'org_people_sync_last_error_code_check',
+      oneOfOrNull('last_error_code', PEOPLE_SYNC_ERROR_CODES),
+    ),
   ],
 );
 
@@ -5184,6 +5400,8 @@ export type UserAwayPeriod = typeof userAwayPeriods.$inferSelect;
 export type MemberNotice = typeof memberNotices.$inferSelect;
 export type OrgHrSource = typeof orgHrSource.$inferSelect;
 export type OrgCalendarSource = typeof orgCalendarSource.$inferSelect;
+export type UserDirectory = typeof userDirectory.$inferSelect;
+export type OrgPeopleSync = typeof orgPeopleSync.$inferSelect;
 export type HrPerson = typeof hrPeople.$inferSelect;
 export type OrgHoliday = typeof orgHolidays.$inferSelect;
 export type LeaveDay = typeof leaveDays.$inferSelect;

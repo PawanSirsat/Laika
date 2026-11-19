@@ -306,10 +306,14 @@ void describe('Work: everyone’s work across every space (LAI-952)', () => {
         const tab = h.page.locator('.page-tab[data-tab="work"]');
         await tab.waitFor({ timeout: 10_000 });
         assert.ok((await tab.getAttribute('class'))?.includes('page-tab-active'), me.org_role);
-        // Second, after Overview, for everyone.
-        assert.deepEqual(
-          (await h.page.locator('.page-tab').allInnerTexts()).slice(0, 2).map((t) => t.trim()),
-          ['Overview', 'Work'],
+        // Under Records in the settings hub (LAI-1318), for everyone.
+        const records = h.page.locator('.org-nav-group', {
+          has: h.page.locator('.org-nav-heading', { hasText: 'Records' }),
+        });
+        assert.equal(
+          (await records.locator('.page-tab[data-tab="work"]').innerText()).trim(),
+          'Work',
+          me.org_role,
         );
         await h.page.locator('#sidebar .sidebar-link-label').first().waitFor({ timeout: 10_000 });
         assert.equal(

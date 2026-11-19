@@ -1,10 +1,12 @@
-import type {
-  CalendarRuleInput,
-  CalendarRuleKind,
-  CalendarSource,
-  CalendarSourceInput,
-  CalendarSyncResult,
-  CalendarTest,
+import {
+  calendarSyncErrorWords,
+  type CalendarBackfill,
+  type CalendarRuleInput,
+  type CalendarRuleKind,
+  type CalendarSource,
+  type CalendarSourceInput,
+  type CalendarSyncResult,
+  type CalendarTest,
 } from '../../../api/calendar.ts';
 
 /**
@@ -22,6 +24,12 @@ export const MAX_RULES = 50;
 
 /** The longest rule text the server keeps. */
 export const MAX_RULE_TEXT = 120;
+
+/** The most days a backfill reaches back, as the server takes it (LAI-1335). */
+export const MAX_BACKFILL_DAYS = 90;
+
+/** What the backfill's box starts at: the month the owner first asked for. */
+export const DEFAULT_BACKFILL_DAYS = '30';
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** A verified domain, as Entra also accepts in place of the tenant's GUID. */
@@ -202,10 +210,14 @@ export function countsLine(result: CalendarSyncResult): string {
     result.updated > 0 ? `${String(result.updated)} updated` : '',
     result.removed > 0 ? `${String(result.removed)} removed` : '',
     result.kept_edits > 0 ? `${String(result.kept_edits)} left as people changed them` : '',
+    result.kept_older > 0
+      ? `${String(result.kept_older)} from before yesterday left as they were`
+      : '',
     result.skipped > 0 ? `${String(result.skipped)} held back (day full or closed)` : '',
     result.not_a_meeting > 0
       ? `${String(result.not_a_meeting)} of people’s own events left off (not Teams meetings)`
       : '',
+    result.away > 0 ? `${String(result.away)} out of office, kept as away (never time)` : '',
   ].filter((part) => part !== '');
   // The people skipped, by reason (LAI-1316 review F1): each is one person
   // not read, never the run failing.
@@ -241,4 +253,56 @@ export const GRANT_STEP = `An Entra admin grants the app the Microsoft Graph app
 export function statusWord(view: CalendarSource): 'not set up' | 'off' | 'on' {
   if (!view.configured) return 'not set up';
   return view.enabled ? 'on' : 'off';
+}
+
+/**
+ * The days typed into the backfill's box, or why they will not do: a whole
+ * number from 1 to 90 — the server's own refusal, said before it is asked.
+ */
+export function backfillDays(text: string): { days: number } | { problem: string } {
+  const trimmed = text.trim();
+  const days = /^\d+$/.test(trimmed) ? Number(trimmed) : Number.NaN;
+  return Number.isInteger(days) && days >= 1 && days <= MAX_BACKFILL_DAYS
+    ? { days }
+    : { problem: `A whole number of days, from 1 to ${String(MAX_BACKFILL_DAYS)}.` };
+}
+
+/** `1 day`, `30 days`. */
+function daysWords(n: number): string {
+  return count(n, 'day', 'days');
+}
+
+/** The backfill's confirm: what it does, by the rules everyone already has. */
+export function backfillConfirm(days: number): { title: string; body: string } {
+  return {
+    title: `Backfill the last ${daysWords(days)}?`,
+    body:
+      `Laika reads everyone’s Outlook calendar from ${daysWords(days)} ago to tomorrow and logs ` +
+      'their meetings as their time, by the same rules as every sync. Before yesterday it only ' +
+      'adds meetings not yet logged and changes none already there. Days in the closed period ' +
+      'and days already full are held back, and anything a person changed or deleted stays as ' +
+      'they left it. Running it again adds nothing. It can take a few minutes; if this page ' +
+      'loses the answer, it still finishes, and its counts show as the last sync.',
+  };
+}
+
+/**
+ * The line while a backfill runs, `ago` its start in words: Backfill waits
+ * until it is done — one asked for now would only join it (review F1).
+ */
+export function backfillRunningLine(days: number, ago: string): string {
+  return `A backfill of the last ${daysWords(days)} is running, started ${ago}. Its counts show as the last sync when it finishes.`;
+}
+
+/** The line a finished backfill leaves under its control. */
+export function backfillLine(answer: CalendarBackfill): string {
+  const span = `the last ${daysWords(answer.days)}`;
+  const error = answer.connection.last_error;
+  if (error?.code === 'stopped_partway' && answer.result !== null) {
+    return `The backfill of ${span} stopped part-way: the switch was turned off while it ran. Before it stopped: ${countsLine(answer.result)}.`;
+  }
+  if (answer.result !== null) return `Backfilled ${span}: ${countsLine(answer.result)}.`;
+  return error === null
+    ? `The backfill of ${span} wrote nothing: the switch was turned off, or the connection saved again, while it ran.`
+    : `The backfill of ${span} failed: ${calendarSyncErrorWords(error)}. Nothing was logged.`;
 }

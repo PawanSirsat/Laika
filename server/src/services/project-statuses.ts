@@ -469,13 +469,48 @@ export function deleteProjectStatus(
     }
 
     const moving = db
-      .select({ id: tasks.id, number: tasks.number })
+      .select({
+        id: tasks.id,
+        number: tasks.number,
+        archivedAt: tasks.archivedAt,
+        deletedAt: tasks.deletedAt,
+      })
       .from(tasks)
       .where(eq(tasks.statusId, statusId))
       .orderBy(asc(tasks.number))
       .all();
 
     for (const task of moving) {
+      // **An archived task, or one in Trash, is re-filed, not moved**
+      // (LAI-1353 review, LAI-1354). It is read-only, so `changeStatus`
+      // refuses it, and a status nobody can see a reason for must not be
+      // undeletable. Deleting a status is a setting of the space, not an edit
+      // of the task: it goes where its column went, stays where it was put
+      // away, and its history says so.
+      if (task.archivedAt !== null || task.deletedAt !== null) {
+        db.update(tasks)
+          .set({ statusId: moveTo, status: target.category, updatedAt: now })
+          .where(eq(tasks.id, task.id))
+          .run();
+        appendActivity(db, {
+          orgId: project.orgId,
+          projectId: project.id,
+          taskId: task.id,
+          ...activityActor(actor),
+          type: 'task.status_changed',
+          payload: {
+            from: doomed.category,
+            to: target.category,
+            from_status_id: doomed.id,
+            from_status_name: doomed.name,
+            to_status_id: target.id,
+            to_status_name: target.name,
+            via: 'status_deleted',
+          },
+          now,
+        });
+        continue;
+      }
       try {
         changeStatus(db, actor, task.id, { status_id: moveTo }, now);
       } catch (error) {

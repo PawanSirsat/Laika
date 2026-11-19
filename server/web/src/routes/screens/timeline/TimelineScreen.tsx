@@ -21,8 +21,7 @@ import { formatRange, progressFor } from '../sprints/sprint-derive.ts';
 import { SprintKey } from '../sprints/SprintKey.tsx';
 import type { Sprint } from '../../../api/sprints.ts';
 import { listMembers, type Member, type TaskSummary } from '../../../api/tasks.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { LockIcon } from '../../../components/LockIcon.tsx';
 import { useTimeline, type TasksLoad } from './use-timeline.ts';
@@ -883,7 +882,7 @@ function SprintGroup({
               key={task.id}
               task={task}
               who={task.assignee_id === null ? undefined : members.get(task.assignee_id)}
-              ink={task.assignee_id === null ? undefined : avatarColor(task.assignee_id, theme)}
+              theme={theme}
               blocked={
                 task.status === 'done' || task.status === 'cancelled'
                   ? false
@@ -913,14 +912,14 @@ function SprintGroup({
 function TaskRow({
   task,
   who,
-  ink,
+  theme,
   blocked,
   onOpen,
 }: {
   readonly task: TaskSummary;
   readonly who: Member | undefined;
-  /** `undefined` for an unassigned task: a neutral mark, not a colour of its id. */
-  readonly ink: { readonly background: string; readonly foreground: string } | undefined;
+  /** The live theme the assignee's avatar is coloured in. */
+  readonly theme: ReturnType<typeof useTheme>['theme'];
   /** `board-derive`'s answer: `undefined` is "a blocker that is not loaded". */
   readonly blocked: boolean | undefined;
   readonly onOpen: (taskId: string) => void;
@@ -968,19 +967,21 @@ function TaskRow({
         <span className={`timeline-task-status timeline-task-${task.status}`}>
           {statusNameOf(task, statusesById)}
         </span>
-        {ink === undefined ? (
+        {/* Unassigned is a neutral mark, not a colour of an id; anyone else
+            is the shared avatar — their photo, or their initials (LAI-1336). */}
+        {task.assignee_id === null ? (
           <Tooltip content="Unassigned" lazy>
             <span className="tlx-avatar tlx-avatar-none">–</span>
           </Tooltip>
         ) : (
-          <Tooltip content={who?.name ?? 'Unknown member'} lazy>
-            <span
-              className="tlx-avatar"
-              style={{ background: ink.background, color: ink.foreground }}
-            >
-              {who === undefined ? '?' : initials(who.name)}
-            </span>
-          </Tooltip>
+          <Avatar
+            name={who?.name ?? '?'}
+            userId={task.assignee_id}
+            theme={theme}
+            size={22}
+            label={who?.name ?? 'Unknown member'}
+            className="tlx-avatar"
+          />
         )}
       </div>
       <div className="tlx-track" />
@@ -1059,7 +1060,7 @@ function UnscheduledGroup({
               key={task.id}
               task={task}
               who={task.assignee_id === null ? undefined : members.get(task.assignee_id)}
-              ink={task.assignee_id === null ? undefined : avatarColor(task.assignee_id, theme)}
+              theme={theme}
               // Its blockers are not loaded with it; the sprints are the place to judge.
               blocked={false}
               onOpen={onOpenTask}

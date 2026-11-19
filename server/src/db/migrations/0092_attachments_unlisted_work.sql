@@ -1,0 +1,2 @@
+ALTER TABLE `attachments` ADD `unlisted_work_id` text REFERENCES unlisted_work(id) ON UPDATE no action ON DELETE set null;--> statement-breakpoint
+CREATE INDEX `attachments_unlisted_work_id_idx` ON `attachments` (`unlisted_work_id`);

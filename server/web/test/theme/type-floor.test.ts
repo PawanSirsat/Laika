@@ -51,13 +51,11 @@ const SRC = new URL('../../src', import.meta.url).pathname;
  */
 const TINY = [
   // Avatar initials in circles under 28px.
-  '.t-avatar', // the board card's 26px avatar, and the toolbar's assignee stack
+  '.t-avatar', // the shared Avatar's initials at 24px and under — every stack and row (LAI-1336)
   '.dd-avatar', // 22px, in every person dropdown
   '.space-member', // 22px, the space header's member stack
-  '.rail-feed-avatar', // 22px, the board rail's activity feed
-  '.swim-avatar', // 22px, a swimlane's head
   '.dash-avatar', // 24px, the dashboard's contributors
-  '.list-avatar', // 22px, the List view's assignee cell
+  '.list-avatar-empty', // 22px, the List view's unassigned mark
   '.tlx-avatar', // 22px, a timeline row
   '.dep-avatar', // 22px (20px before LAI-828), a linked task in the task panel
   // 22px. Styled in task-panel.css but drawn by no component today; listed so

@@ -1,5 +1,7 @@
 import { eq } from 'drizzle-orm';
+import { loadActor } from '../../../src/auth/resolve-actor.ts';
 import { type AttachmentsEnv } from '../../../src/env.ts';
+import { logUnlistedWork } from '../../../src/services/unlisted.ts';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { activity, attachments, idempotencyKeys, orgs, users } from '../../../src/db/schema.ts';
 import { cacheableRoute } from '../../../src/http/middleware/idempotency.ts';
@@ -507,12 +509,209 @@ describe('a file, from asking to removing', () => {
     });
   });
 
-  it('adds the store to img-src and connect-src, and nowhere else', async () => {
+  it('adds the store to img-src, media-src, frame-src and connect-src, and nowhere else', async () => {
     const csp = (await call('GET', '/org')).headers.get('content-security-policy') ?? '';
     const directive = (name: string) => csp.split('; ').find((d) => d.startsWith(`${name} `));
     expect(directive('img-src')).toBe(`img-src 'self' data: ${FAKE_STORE.endpoint}`);
+    // An inline recording plays through the same 302 (D-162).
+    expect(directive('media-src')).toBe(`media-src 'self' ${FAKE_STORE.endpoint}`);
+    // The output viewer's PDF frame, through the same 302 (LAI-1352).
+    expect(directive('frame-src')).toBe(`frame-src 'self' ${FAKE_STORE.endpoint}`);
     expect(directive('connect-src')).toBe(`connect-src 'self' ${FAKE_STORE.endpoint}`);
-    expect(csp.split(FAKE_STORE.endpoint)).toHaveLength(3);
+    expect(csp.split(FAKE_STORE.endpoint)).toHaveLength(5);
+  });
+});
+
+describe('an agent’s outputs (D-162, LAI-1302)', () => {
+  beforeEach(async () => {
+    await boot(fakeAttachments(4 * 1024 * 1024));
+  });
+
+  const csv = (body: string) => new TextEncoder().encode(body);
+
+  it('takes the task by its key, as every MCP tool does — and another project’s key is a 404', async () => {
+    const asked = await must<Upload>(
+      ask({ filename: 'shot.png', content_type: 'image/png', size_bytes: 3, task_id: 'lai-1' }),
+      201,
+    );
+    expect(asked.attachment.task_id).toBe(taskId);
+
+    await must(call('POST', '/projects', { name: 'Other', slug: 'other', prefix: 'OTH' }), 201);
+    await must(call('POST', '/projects/other/tasks', { title: 'Theirs' }), 201);
+    const refused = await ask({
+      filename: 'shot.png',
+      content_type: 'image/png',
+      size_bytes: 3,
+      task_id: 'OTH-1',
+    });
+    expect(refused.status).toBe(404);
+  });
+
+  it('refuses a text file that holds a secret, deletes it, and never says the secret', async () => {
+    const secret = ['Welcome', '-', '2026', '!'].join('');
+    const body = csv(`email,temp password\nada@example.test,${secret}\n`);
+    const asked = await must<Upload>(
+      ask({ filename: 'accounts.csv', content_type: 'text/csv', size_bytes: body.length }),
+      201,
+    );
+    expect((await browserPut(fake, asked.upload, body)).status).toBe(200);
+
+    const res = await call('POST', `/attachments/${asked.attachment.id}/complete`);
+    expect(res.status).toBe(422);
+    const text = await res.text();
+    expect(text).not.toContain(secret);
+    expect((JSON.parse(text) as ErrorBody).error).toMatchObject({
+      code: 'unprocessable',
+      details: { reason: 'secret_detected', pattern: 'credential_column', line: 2 },
+    });
+    // Gone from the store and from every read; the sweep has nothing left to do.
+    expect(fake.objects.size).toBe(0);
+    expect(h.db.select().from(attachments).get()).toMatchObject({
+      state: 'pending',
+      deletedBy: ownerId,
+      purgedAt: expect.any(Number) as number,
+    });
+    expect((await call('GET', `/attachments/${asked.attachment.id}/content`)).status).toBe(404);
+    expect((await call('POST', `/attachments/${asked.attachment.id}/complete`)).status).toBe(404);
+    expect(verbs()).toEqual([]);
+  });
+
+  it('completes the masked copy of the same file', async () => {
+    const view = await attach(csv('email,temp password\nada@example.test,********\n'), {
+      filename: 'accounts-masked.csv',
+      content_type: 'text/csv',
+    });
+    expect(view).toMatchObject({ inline: false, ready_at: expect.any(Number) as number });
+  });
+
+  it('reads the secret check through one ranged GET of at most 2 MiB', async () => {
+    const big = new Uint8Array(3 * 1024 * 1024).fill(0x61);
+    await attach(big, { filename: 'run.log', content_type: 'text/plain' });
+    const ranges = fake.of('GET').map((r) => r.headers.get('range'));
+    expect(ranges).toEqual([`bytes=0-${String(2 * 1024 * 1024 - 1)}`]);
+  });
+
+  it('shows an mp4 recording inline', async () => {
+    const mp4 = new Uint8Array([
+      0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0x00, 0x00, 0x02,
+      0x00, 0x69, 0x73, 0x6f, 0x6d,
+    ]);
+    const view = await attach(mp4, { filename: 'demo.mp4', content_type: 'video/mp4' });
+    expect(view.inline).toBe(true);
+    const location = new URL(
+      (await call('GET', `/attachments/${view.id}/content`)).headers.get('location')!,
+    );
+    expect(location.searchParams.get('response-content-type')).toBe('video/mp4');
+  });
+
+  /** Ask for and upload a file as given, and complete it: the answer. */
+  async function completeAs(
+    bytes: Uint8Array,
+    filename: string,
+    content_type: string,
+    headers?: Record<string, string>,
+  ): Promise<Response> {
+    const asked = await must<Upload>(
+      ask({ filename, content_type, size_bytes: bytes.length }, headers),
+      201,
+    );
+    expect((await browserPut(fake, asked.upload, bytes)).status).toBe(200);
+    return call('POST', `/attachments/${asked.attachment.id}/complete`, undefined, headers);
+  }
+
+  it('scans a file by what it holds, not what it was called (LAI-1302 review)', async () => {
+    const keyBlock = ['-----BEGIN ', 'OPENSSH ', 'PRIVATE KEY-----'].join('');
+    for (const [bytes, filename, type, pattern] of [
+      [csv(`${keyBlock}\nb3BlbnNzaC1rZXk\n`), 'id_rsa', 'application/octet-stream', 'private_key'],
+      [
+        csv('email,password\nada@example.test,Hunter2-x\n'),
+        'shot.png',
+        'image/png',
+        'credential_column',
+      ],
+      [
+        csv(
+          `registry=x\n//r.example/:_authToken=${'q'.repeat(30)}\nPASS_TOKEN=${'q'.repeat(12)}\n`,
+        ),
+        'npmrc-copy',
+        'application/octet-stream',
+        'env_secret',
+      ],
+    ] as const) {
+      const res = await completeAs(bytes, filename, type);
+      expect(res.status, filename).toBe(422);
+      expect((await errorOf(res)).details, filename).toMatchObject({
+        reason: 'secret_detected',
+        pattern,
+      });
+    }
+  });
+
+  it('leaves a binary file alone, by the NUL in its first bytes', async () => {
+    const binary = new Uint8Array([
+      0x50,
+      0x4b,
+      0x03,
+      0x04,
+      0x14,
+      0x00,
+      ...csv('password: Hunter2-x\n'),
+    ]);
+    const res = await completeAs(binary, 'sheet.bin', 'application/octet-stream');
+    expect(res.status, await res.clone().text()).toBe(200);
+    // One probe of its first bytes, and no read for a scan.
+    expect(fake.of('GET').map((r) => r.headers.get('range'))).toEqual([
+      `bytes=0-${String(binary.length - 1)}`,
+    ]);
+  });
+
+  it('probes a large file not declared as text, then reads 2 MiB of it for the scan', async () => {
+    const big = new Uint8Array(3 * 1024 * 1024).fill(0x61);
+    const res = await completeAs(big, 'dump.bin', 'application/octet-stream');
+    expect(res.status).toBe(200);
+    expect(fake.of('GET').map((r) => r.headers.get('range'))).toEqual([
+      'bytes=0-1023',
+      `bytes=0-${String(2 * 1024 * 1024 - 1)}`,
+    ]);
+  });
+
+  it('serves a file on an unlisted finding only to its uploader and to who reads the pile', async () => {
+    const mia = { Cookie: await join('mia@example.test', 'member') };
+    const vic = { Cookie: await join('vic@example.test', 'member') };
+    const miaId = h.db.select().from(users).where(eq(users.email, 'mia@example.test')).get()!.id;
+    const shot = await attach(PNG, {}, mia);
+    logUnlistedWork(h.db, loadActor(h.db, miaId)!, {
+      repo: 'kvell/laika',
+      note: 'n',
+      attachments: [{ attachment: shot.id, caption: 'c' }],
+    });
+
+    const read = (headers: Record<string, string>) =>
+      call('GET', `/attachments/${shot.id}/content`, undefined, headers);
+    expect((await read(mia)).status).toBe(302);
+    // Owner: `audit_log.export`, as `GET /unlisted` asks.
+    expect((await read({ Cookie: cookie })).status).toBe(302);
+    // Another member of the project it was uploaded under: as if it were not there.
+    expect((await read(vic)).status).toBe(404);
+  });
+
+  it('finishes a task over REST with captioned outputs, as finish_task does', async () => {
+    const shot = await attach();
+    await must(call('POST', `/tasks/${taskId}/status`, { status: 'in_progress' }), 200);
+    await must(
+      call('POST', `/tasks/${taskId}/finish`, {
+        summary: 'Built it',
+        outputs: [{ attachment: shot.id, caption: 'The new board' }],
+      }),
+      200,
+    );
+    const comments = await must<{ data: { body_md: string }[] }>(
+      call('GET', `/tasks/${taskId}/comments`),
+      200,
+    );
+    expect(comments.data.at(-1)?.body_md).toBe(
+      `Built it\n\n**Outputs**\n\n- ![The new board](/api/v1/attachments/${shot.id}/content)`,
+    );
   });
 });
 

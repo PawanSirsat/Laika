@@ -105,7 +105,7 @@ void describe('the org itself', () => {
   void test('its name and settings come from GET /org, and the key never does', async () => {
     const h = await open('/organisation?tab=general', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
-      // The name heads the page since LAI-796; the settings are Overview's.
+      // The name heads the page since LAI-796; the settings are General's (LAI-1318).
       const card = h.page.locator('.org-card', { has: h.page.locator('#org-name') });
       await card.locator('#org-name').waitFor({ timeout: 20_000 });
       assert.equal(

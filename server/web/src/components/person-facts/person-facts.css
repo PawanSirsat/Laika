@@ -1,0 +1,36 @@
+/*
+ * A person's title, department and manager (D-161, LAI-1330): one quiet line
+ * under their name. Existing tokens only (D-020).
+ */
+.person-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  min-width: 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.person-fact {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The manager's name, a link in the line's own quiet ink until pointed at. */
+.person-fact-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.person-fact-link:hover,
+.person-fact-link:focus-visible {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+/* A dot between facts, never before the first. */
+.person-fact + .person-fact::before {
+  content: '·';
+  margin: 0 var(--space-1);
+  color: var(--text-muted);
+}

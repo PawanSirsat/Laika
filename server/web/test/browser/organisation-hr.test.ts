@@ -204,14 +204,14 @@ const refused = (status: number, code: string, reason: string) =>
     error: { code, message: 'Clan said: invalid credentials for user', details: { reason } },
   });
 
-/** Overview, where the Holidays fact is. */
+/** Time & breaks, where the Holidays fact is (LAI-1318). */
 async function organisation(stub: ApiStub, ready = '[data-fact="holidays"]'): Promise<Harness> {
-  const h = await openPage('/organisation', stub);
+  const h = await openPage('/organisation?tab=time', stub);
   await h.page.locator(ready).waitFor({ timeout: 20_000 });
   return h;
 }
 
-/** Integrations, where the HR system card is, beside the GitHub webhook. */
+/** The HR system's own page (LAI-1318), where its card is. */
 async function integrations(stub: ApiStub, ready = '[data-section="hr"]'): Promise<Harness> {
   const h = await openPage('/organisation?tab=hr', stub);
   await h.page.locator(ready).waitFor({ timeout: 20_000 });
@@ -922,10 +922,11 @@ void describe('Holidays', () => {
     }
   });
 
-  void test('a member on Integrations is shown no HR system, and it is never asked', async () => {
+  void test('a member on the HR system’s page is shown no card, and it is never asked', async () => {
+    // Its page says who sets it up, rather than drawing an empty card.
     const h = await integrations(
       orgStub('member', { '/api/v1/org/hr': connected() }),
-      '[data-section="prices"]',
+      '[data-conn-refused]',
     );
     try {
       assert.equal(await hrCard(h).count(), 0);

@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import {
+  backfillCalendar,
+  type CalendarBackfillView,
   type CalendarSourceView,
   disconnectCalendar,
   getCalendarSource,
@@ -18,9 +20,9 @@ import { parseBody, strictObject, z } from '../validation.ts';
  * mounted on `/api/v1/org`.
  *
  * Transport only (CONVENTIONS §2): who may, and every rule, is the services'.
- * Every route is `org.calendar.configure`, signed in. `/calendar/test` and
- * `/calendar/sync` spend their own rate-limit bucket (`calendar:<who>`, 6 a
- * minute) — each calls Microsoft.
+ * Every route is `org.calendar.configure`, signed in. `/calendar/test`,
+ * `/calendar/sync` and `/calendar/backfill` spend their own rate-limit bucket
+ * (`calendar:<who>`, 6 a minute) — each calls Microsoft.
  *
  * **The client secret is in one request body and nowhere else**: validated,
  * handed to the service, and not logged — the request logger records the
@@ -43,6 +45,12 @@ const SaveBody = strictObject({
     // A sanity bound, looser than the service's own `too_many_rules`, which
     // says the limit (LAI-159: never as tight as the service's).
     .max(500),
+});
+
+const BackfillBody = strictObject({
+  // Any number: the service says the bounds, and a fraction, by name
+  // (`days_out_of_range`, LAI-159).
+  days: z.number(),
 });
 
 export interface CalendarRouteOptions {
@@ -90,6 +98,15 @@ export function calendarRoutes(options: CalendarRouteOptions): Hono<AppEnv> {
     if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
     return c.json<CalendarSourceView>(
       await syncCalendarNow(db, actor, serverSecret, depsFor(c.get('log'))),
+    );
+  });
+
+  app.post('/calendar/backfill', async (c) => {
+    const actor = c.get('actor');
+    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+    const body = parseBody(BackfillBody, await c.req.json().catch(() => null));
+    return c.json<CalendarBackfillView>(
+      await backfillCalendar(db, actor, serverSecret, body, depsFor(c.get('log'))),
     );
   });
 

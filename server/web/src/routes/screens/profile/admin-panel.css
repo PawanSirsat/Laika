@@ -46,13 +46,15 @@
   gap: var(--space-2);
 }
 
+/*
+ * The shared Avatar at 24 (LAI-1336), keeping the small, heavy initials the
+ * panel's subtitle drew by hand — a step up from a row's tiny ones.
+ */
 .prof-manage-avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: var(--radius-pill);
+  flex: none;
+}
+
+.prof-manage-avatar .avatar-disc {
   font-size: var(--text-small);
   font-weight: var(--weight-heavy);
 }

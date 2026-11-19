@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, refuse, until, type StubCall } from './harness.ts';
 import { pick } from './dropdown.ts';
-import { MEMBER, OWNER, PEOPLE, user } from './organisation-refine-fixtures.ts';
+import { MEMBER, OWNER, PEOPLE, PROJECTS, user } from './organisation-refine-fixtures.ts';
 
 const rows = '.org-person';
 
@@ -269,10 +269,11 @@ void describe('a failed refresh keeps the last good answer', () => {
     }
   });
 
-  void test('Overview says the settings could not be read, with a Retry that works', async () => {
+  void test('General says the settings could not be read, with a Retry that works', async () => {
     let failing = true;
+    // The settings are General's, in the settings hub (LAI-1318).
     const h = await open(
-      '/organisation',
+      '/organisation?tab=general',
       OWNER({
         '/api/v1/org': () =>
           failing
@@ -439,13 +440,15 @@ void describe('Roles & permissions is a summary, with the inventory on request',
 });
 
 void describe('a wide table says it scrolls', () => {
-  // At 768, not 390: since LAI-1210 a phone gets each person as a card and
-  // nothing to scroll (organisation-tabs.test.ts asserts that); a tablet still
-  // gets the wide table, so this is where the cue is needed.
-  void test('at 768 the People table is a focusable region with a hint, and arrows scroll it', async () => {
+  // At 640, not 390 or 768: since LAI-1210 a phone gets each person as a card
+  // and nothing to scroll (organisation-tabs.test.ts asserts that), and since
+  // LAI-1345 a 768 tablet's table fits by dropping two columns (682px of room
+  // against a 648px floor). A large phone still gets the wide table — 570px
+  // of room — so this is where the cue is needed.
+  void test('at 640 the People table is a focusable region with a hint, and arrows scroll it', async () => {
     const h = await open('/organisation?tab=people', OWNER(), {
       before: async (page) => {
-        await page.setViewportSize({ width: 768, height: 900 });
+        await page.setViewportSize({ width: 640, height: 900 });
       },
     });
     try {
@@ -468,6 +471,148 @@ void describe('a wide table says it scrolls', () => {
     }
   });
 
+  // The owner, 2026-11-18 (LAI-1345): "side menu, table adapts". A laptop
+  // keeps the hub's sections down the side, and People's table makes room
+  // for it rather than scroll sideways.
+  void test('at 1280 the sections are a side menu with their headings, People fits with no sideways scroll, and every section is reachable', async () => {
+    const h = await open('/organisation?tab=people', OWNER(), {
+      before: async (page) => {
+        await page.setViewportSize({ width: 1280, height: 900 });
+      },
+    });
+    try {
+      await ready(h);
+      const region = h.page.locator('[data-scroll-region]').first();
+      await h.page.waitForTimeout(300);
+      assert.equal(await region.getAttribute('data-overflow'), 'false');
+      assert.equal(await region.locator('[data-scroll-hint]').count(), 0);
+      const sideways = await h.page.evaluate(
+        () => document.documentElement.scrollWidth - window.innerWidth,
+      );
+      assert.ok(sideways <= 0, `the page scrolls ${String(sideways)}px sideways`);
+
+      // A column beside the page, not a strip above it.
+      const [nav, body] = await Promise.all([
+        h.page.locator('.org-nav').boundingBox(),
+        h.page.locator('.org-body').boundingBox(),
+      ]);
+      assert.ok(nav !== null && body !== null);
+      assert.ok(nav.x + nav.width <= body.x, 'the sections are not beside the page');
+      assert.ok(Math.abs(nav.y - body.y) <= 1, 'the sections do not start level with the page');
+      assert.ok(nav.height > nav.width, 'the sections are not a column');
+      // A column that never scrolls clips nothing, so a focused section's
+      // ring is whole at the column's edge.
+      assert.equal(
+        await h.page
+          .locator('.org-nav [data-tab-strip]')
+          .evaluate((el) => getComputedStyle(el).overflowX),
+        'visible',
+        'the column clips its items’ focus ring',
+      );
+
+      // Each group's heading is in sight, and its items sit indented under it.
+      const groups = await h.page
+        .locator('.org-nav-group:has(.org-nav-heading)')
+        .evaluateAll((els) =>
+          els.map((el) => {
+            const heading = el.querySelector('.org-nav-heading')!.getBoundingClientRect();
+            const item = el.querySelector('.org-nav-item')!.getBoundingClientRect();
+            return {
+              name: el.querySelector('.org-nav-heading')!.textContent ?? '',
+              heading: { x: heading.x, width: heading.width, height: heading.height },
+              itemX: item.x,
+            };
+          }),
+        );
+      assert.deepEqual(
+        groups.map((g) => g.name),
+        ['Workspace', 'People & access', 'Connections', 'Records'],
+      );
+      for (const g of groups) {
+        assert.ok(g.heading.width > 40 && g.heading.height > 8, `${g.name}'s heading is hidden`);
+        assert.ok(g.itemX >= g.heading.x + 8, `${g.name}'s items are not indented under it`);
+      }
+
+      // Every section in it is reachable: opened, and the page it names is
+      // the one shown — attached, since a page this fixture has no data for
+      // (Time) draws nothing to be seen.
+      const ids = await h.page
+        .locator('.org-nav .page-tab')
+        .evaluateAll((els) => els.map((el) => el.getAttribute('data-tab') ?? ''));
+      for (const id of ['overview', 'general', 'people', 'integrations', 'ai', 'work']) {
+        assert.ok(ids.includes(id), `${id} is not in the menu: ${ids.join(', ')}`);
+      }
+      for (const id of ids) {
+        const item = h.page.locator(`.org-nav .page-tab[data-tab="${id}"]`);
+        await item.scrollIntoViewIfNeeded();
+        await item.click();
+        await h.page
+          .locator(`.org-nav .page-tab[data-tab="${id}"][aria-current="page"]`)
+          .waitFor({ timeout: 10_000 });
+        await h.page
+          .locator(`.org-body[data-tab="${id}"]`)
+          .waitFor({ state: 'attached', timeout: 10_000 });
+        assert.equal(new URL(h.page.url()).searchParams.get('tab') ?? 'overview', id);
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  // LAI-1345 review: the strip is the one tab strip (LAI-1193) — a mouse sees
+  // where it scrolls, the keyboard has one stop and the arrow keys. At 800,
+  // below tablet (900px), where the side menu folds into the row.
+  void test('at 800 the strip fades where it scrolls, is one tab stop, and the arrows move between sections', async () => {
+    const h = await open('/organisation', OWNER(), {
+      before: async (page) => {
+        await page.setViewportSize({ width: 800, height: 900 });
+      },
+    });
+    try {
+      const strip = h.page.locator('.org-nav [data-tab-strip]');
+      await strip.waitFor({ timeout: 20_000 });
+      await until(async () =>
+        ((await strip.getAttribute('class')) ?? '').includes('tab-strip-fade-end'),
+      );
+      assert.match((await strip.getAttribute('class')) ?? '', /tab-strip-fade-end/);
+      assert.equal(await strip.locator('[data-tab-item][tabindex="0"]').count(), 1);
+      assert.equal(
+        await strip.locator('[data-tab-item][tabindex="0"]').getAttribute('data-tab'),
+        'overview',
+      );
+      // The group names are out of sight, not gone: each heading is in the
+      // document as a 1×1 visually hidden box — so a rule that wins by source
+      // order, such as the restyle's padding, shows up here.
+      const headings = await h.page.locator('.org-nav-heading').evaluateAll((els) =>
+        els.map((el) => {
+          const r = el.getBoundingClientRect();
+          return { display: getComputedStyle(el).display, w: r.width, h: r.height };
+        }),
+      );
+      assert.equal(headings.length, 4);
+      for (const box of headings) {
+        assert.notEqual(box.display, 'none');
+        assert.ok(box.w <= 1 && box.h <= 1, `a heading is ${String(box.w)}×${String(box.h)}`);
+      }
+
+      await strip.locator('[data-tab="overview"]').focus();
+      await h.page.keyboard.press('ArrowRight');
+      await h.page.waitForURL((url) => url.searchParams.get('tab') === 'general', {
+        timeout: 10_000,
+      });
+      await h.page.keyboard.press('End');
+      const last = await strip.locator('[data-tab-item]').last().getAttribute('data-tab');
+      await h.page.waitForURL((url) => url.searchParams.get('tab') === last, { timeout: 10_000 });
+      // At the end now, so the start fades.
+      await until(async () =>
+        ((await strip.getAttribute('class')) ?? '').includes('tab-strip-fade-start'),
+      );
+      assert.match((await strip.getAttribute('class')) ?? '', /tab-strip-fade-start/);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('at 1440 nothing is hidden, so there is no hint and no extra tab stop', async () => {
     const h = await open('/organisation?tab=people', OWNER(), {
       before: async (page) => {
@@ -481,6 +626,179 @@ void describe('a wide table says it scrolls', () => {
       assert.equal(await region.getAttribute('data-overflow'), 'false');
       assert.equal(await region.locator('[data-scroll-hint]').count(), 0);
       assert.equal(await region.locator('[role="region"]').getAttribute('tabindex'), null);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+// LAI-1345: beside the side menu, People's table answers to its own room.
+// At 1440 every column shows; narrower, Last sign-in steps out first, then
+// Tools running — out of sight, still read, and each a line under Last
+// active.
+void describe("People's columns adapt to the room beside the side menu", () => {
+  const columns = async (h: Awaited<ReturnType<typeof open>>) =>
+    h.page.locator('.org-people-header [role="columnheader"]').evaluateAll((els) =>
+      els.map((el) => ({
+        name: (el.textContent ?? '').trim(),
+        shown: el.getBoundingClientRect().width > 1,
+      })),
+    );
+
+  for (const [width, out] of [
+    [1440, []],
+    [1366, ['Last sign-in']],
+    [1280, ['Tools running', 'Last sign-in']],
+    // Beside the side menu at its narrowest: 636px of room with the app's
+    // sidebar open (1181 – 1200px scrolled before Person's floor fell to
+    // 11rem) and 622px with its rail, against the 616px floor.
+    [1190, ['Tools running', 'Last sign-in']],
+    [1024, ['Tools running', 'Last sign-in']],
+    // Below the side menu's breakpoint: 682px of room against the 648px floor.
+    [768, ['Tools running', 'Last sign-in']],
+  ] as const) {
+    void test(`at ${String(width)} ${out.length === 0 ? 'every column shows' : `${out.join(' and ')} ${out.length === 1 ? 'steps' : 'step'} out, still read`}`, async () => {
+      const h = await open('/organisation?tab=people', OWNER(), {
+        before: async (page) => {
+          await page.setViewportSize({ width, height: 900 });
+        },
+      });
+      try {
+        await ready(h);
+        await h.page.waitForTimeout(300);
+        const all = await columns(h);
+        // Every header is still in the table — the screen reader's view.
+        assert.deepEqual(
+          all.map((c) => c.name),
+          [
+            '',
+            'Person',
+            'Role',
+            'Spaces',
+            'Tools running',
+            'Last active',
+            'Last sign-in',
+            'Actions',
+          ],
+        );
+        assert.deepEqual(
+          all.filter((c) => !c.shown && c.name !== 'Actions').map((c) => c.name),
+          [...out],
+        );
+        // The table fits its room, and the page does not scroll sideways.
+        assert.equal(
+          await h.page.locator('[data-scroll-region]').first().getAttribute('data-overflow'),
+          'false',
+        );
+        const sideways = await h.page.evaluate(
+          () => document.documentElement.scrollWidth - window.innerWidth,
+        );
+        assert.ok(sideways <= 0, `the page scrolls ${String(sideways)}px sideways`);
+
+        // What stepped out is in sight under Last active — for a keyboard and
+        // a finger, not only a mouse — with no tooltip saying it again, and
+        // still a cell for a screen reader.
+        const gone = new Set<string>(out);
+        const tomas = h.page.locator(rows, { hasText: 'Tomas Nel' });
+        const signIn = tomas.locator('.org-people-also-sign-in');
+        const tools = tomas.locator('.org-people-also-tools');
+        assert.equal(await signIn.isVisible(), gone.has('Last sign-in'));
+        assert.equal(await tools.isVisible(), gone.has('Tools running'));
+        if (gone.has('Last sign-in')) {
+          assert.equal((await signIn.innerText()).trim(), 'Signed in 3h ago');
+        }
+        if (gone.has('Tools running')) assert.equal((await tools.innerText()).trim(), 'No tools');
+        assert.equal(await tomas.locator('[data-last-active]').getAttribute('title'), null);
+        assert.equal((await tomas.locator('[data-last-sign-in]').textContent())?.trim(), '3h ago');
+      } finally {
+        await h.close();
+      }
+    });
+  }
+});
+
+// LAI-1345, the owner: below the glance, People, Access and Recent activity
+// stack down the left and Spaces runs down the right, each column its own
+// height — a long list of spaces no longer stretches People into an empty
+// card with its Invite button pinned to the foot.
+void describe('Overview: People, Access and Recent activity beside Spaces', () => {
+  const MANY = Array.from({ length: 28 }, (_, i) => ({
+    ...PROJECTS[0],
+    id: `p${String(i + 1)}`,
+    slug: `space-${String(i + 1)}`,
+    name: `Space ${String(i + 1)}`,
+  }));
+  const overview = (width: number) =>
+    open(
+      '/organisation',
+      OWNER({
+        '/api/v1/projects': { data: MANY, next_cursor: null },
+        '/api/v1/activity/history': { data: [], next_cursor: null },
+      }),
+      {
+        before: async (page) => {
+          await page.setViewportSize({ width, height: 1000 });
+        },
+      },
+    );
+  const boxes = (h: Awaited<ReturnType<typeof open>>) =>
+    h.page.evaluate(() => {
+      const box = (selector: string) => {
+        const r = document.querySelector(selector)?.getBoundingClientRect();
+        return r === undefined ? null : { x: r.x, y: r.y + scrollY, w: r.width, h: r.height };
+      };
+      return {
+        people: box('[data-tile="people"]'),
+        access: box('[data-tile="access"]'),
+        activity: box('[data-tile="activity"]'),
+        spaces: box('.org-bento .org-spaces'),
+        newest: box('[data-tile="people"] .bento-newest'),
+        invite: box('[data-bento-invite]'),
+      };
+    });
+
+  void test('at 1600 the three stack on the left at their own height, Spaces on the right, Invite under Newest', async () => {
+    const h = await overview(1600);
+    try {
+      await h.page
+        .locator('.org-spaces tbody tr')
+        .nth(27)
+        .waitFor({ state: 'attached', timeout: 20_000 });
+      await h.page.waitForTimeout(300);
+      const b = await boxes(h);
+      assert.ok(b.people && b.access && b.activity && b.spaces && b.newest && b.invite);
+      // One column on the left, in order, and Spaces beside it.
+      assert.equal(b.access.x, b.people.x);
+      assert.equal(b.activity.x, b.people.x);
+      assert.ok(
+        b.people.y < b.access.y && b.access.y < b.activity.y,
+        'not People, Access, Activity',
+      );
+      assert.ok(b.spaces.x >= b.people.x + b.people.w, 'Spaces is not beside the column');
+      assert.ok(Math.abs(b.spaces.y - b.people.y) <= 1, 'Spaces does not start level with People');
+      // Invite sits under Newest, and People ends there — its own height, not
+      // stretched toward Spaces' (the tile's padding and border are 25px).
+      const gap = b.invite.y - (b.newest.y + b.newest.h);
+      assert.ok(gap >= 0 && gap <= 24, `Invite is ${String(gap)}px below Newest`);
+      const foot = b.people.y + b.people.h - (b.invite.y + b.invite.h);
+      assert.ok(foot <= 32, `People runs ${String(foot)}px past its Invite button`);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('at 390 one column: People, Access, Recent activity, then Spaces', async () => {
+    const h = await overview(390);
+    try {
+      await h.page.locator('.org-bento .org-spaces').waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(300);
+      const b = await boxes(h);
+      assert.ok(b.people && b.access && b.activity && b.spaces);
+      assert.ok(
+        b.people.y < b.access.y && b.access.y < b.activity.y && b.activity.y < b.spaces.y,
+        'the order is not People, Access, Recent activity, Spaces',
+      );
+      for (const tile of [b.access, b.activity, b.spaces]) assert.equal(tile.x, b.people.x);
     } finally {
       await h.close();
     }

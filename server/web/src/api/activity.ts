@@ -237,6 +237,13 @@ const LABELS: Readonly<Record<string, string>> = {
   'attachment.added': 'attached a file',
   'attachment.removed': 'removed a file',
 
+  // LAI-1353: put away with its history, and brought back as it was.
+  'task.archived': 'archived this task',
+  'task.restored': 'restored this task from the archive',
+  // LAI-1354: into the space's Trash, and back out of it.
+  'task.deleted': 'moved this task to Trash',
+  'task.undeleted': 'restored this task from Trash',
+
   'project.created': 'created this space',
   'project.updated': 'changed space settings',
   'project.archived': 'archived this space',

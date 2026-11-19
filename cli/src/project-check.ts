@@ -89,7 +89,7 @@ import { planFor } from './tool-add.ts';
  */
 
 /** The instructions template revision this CLI knows (`connect-copy.ts`'s `PROJECT_BLOCK_REVISION`). */
-export const PROJECT_BLOCK_REVISION = 2;
+export const PROJECT_BLOCK_REVISION = 3;
 
 /** `connect-copy.ts`'s end marker. The begin marker carries the revision and the project. */
 export const BLOCK_END = '<!-- laika:end -->';
