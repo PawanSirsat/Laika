@@ -1204,11 +1204,8 @@ export function BoardScreen({
             onInsights={() => {
               setInsightsOpen(true);
             }}
-            onArchived={() => {
+            onShelves={() => {
               setShelfOpen('archived');
-            }}
-            onTrash={() => {
-              setShelfOpen('trash');
             }}
             onViewSettings={(anchor) => {
               setSettingsAt((at) => (at === undefined ? anchor : undefined));
@@ -1293,12 +1290,11 @@ export function BoardScreen({
 
       {shelfOpen !== undefined && slug !== undefined && (
         <BoardShelf
-          key={shelfOpen}
           slug={slug}
-          shelf={shelfOpen}
-          mayRestore={(task) =>
+          initial={shelfOpen}
+          mayRestore={(task, shelf) =>
             project !== undefined &&
-            (shelfOpen === 'archived'
+            (shelf === 'archived'
               ? gates.project(project.id, 'task.archive')
               : // `task.delete`: a lead any task, a member one they created (§3.2).
                 gates.project(project.id, 'task.delete') &&

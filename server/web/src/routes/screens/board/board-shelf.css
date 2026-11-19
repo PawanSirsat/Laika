@@ -96,3 +96,34 @@
   cursor: default;
   opacity: 0.6;
 }
+
+.bshelf-tabs {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.bshelf-tab {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-bold);
+  color: var(--text-muted);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+}
+
+.bshelf-tab[aria-selected='true'] {
+  color: var(--text-primary);
+  background: var(--bg-column);
+}
+
+.bshelf-tab:hover {
+  color: var(--text-primary);
+}
+
+.bshelf-tab:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}

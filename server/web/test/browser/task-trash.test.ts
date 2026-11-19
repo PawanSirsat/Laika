@@ -237,7 +237,10 @@ void describe('the Trash panel (LAI-1354)', () => {
   void test('lists what is in Trash with the days left, and Restore brings it back', async () => {
     const h = await open('/board?project=laika-core', space({ t2: Date.now() - 3 * DAY }));
     try {
-      await h.page.locator('[data-board-action="trash"]').click({ timeout: 20_000 });
+      // One button for both shelves; it opens on Archived, and Trash is a tab.
+      await h.page.locator('[data-board-action="shelves"]').click({ timeout: 20_000 });
+      await h.page.locator('[data-board-shelf="archived"]').waitFor({ timeout: 10_000 });
+      await h.page.locator('[data-shelf-tab="trash"]').click();
       const shelf = h.page.locator('[data-board-shelf="trash"]');
       await shelf.waitFor({ timeout: 10_000 });
       const row = shelf.locator('[data-shelf-row="LC-2"]');

@@ -140,10 +140,12 @@ export interface BoardToolbarProps {
    */
   readonly hiddenColumns?: number | undefined;
   readonly onHiddenColumns?: (() => void) | undefined;
-  /** The space's archived tasks (LAI-1353): drawn when given, before Insights. */
-  readonly onArchived?: (() => void) | undefined;
-  /** The space's Trash (LAI-1354): drawn when given, beside Archived. */
-  readonly onTrash?: (() => void) | undefined;
+  /**
+   * The space's shelves — its archived tasks (LAI-1353) and its Trash
+   * (LAI-1354) — one button, before Insights: the row has room for one more
+   * icon at 920px with the sidebar open, not two.
+   */
+  readonly onShelves?: (() => void) | undefined;
   /** The board's sprint scope, at the end of the active-filter row (LAI-1198). */
   readonly scope?: ReactNode;
 }
@@ -296,8 +298,7 @@ export function BoardToolbar({
   onRefresh,
   hiddenColumns = 0,
   onHiddenColumns,
-  onArchived,
-  onTrash,
+  onShelves,
   scope,
 }: BoardToolbarProps) {
   const [open, setOpen] = useState<'filter' | 'group' | 'members' | undefined>(undefined);
@@ -1018,44 +1019,21 @@ export function BoardToolbar({
             </Tooltip>
           )}
 
-          {/* **Archived** (LAI-1353): the shelf of tasks put away, with Restore. */}
-          {onArchived !== undefined && (
-            <Tooltip content="Archived tasks">
+          {/* **Archived and Trash** (LAI-1353, LAI-1354): tasks put away, with Restore. */}
+          {onShelves !== undefined && (
+            <Tooltip content="Archived and Trash">
               <button
                 type="button"
                 className="bt-icon"
-                data-board-action="archived"
-                aria-label="Archived tasks"
+                data-board-action="shelves"
+                aria-label="Archived and Trash"
                 aria-haspopup="dialog"
-                onClick={onArchived}
+                onClick={onShelves}
               >
                 <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
                   <path d="M3.5 4.5h17v4h-17z" strokeLinejoin="round" />
                   <path d="M5 8.5V19a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8.5" strokeLinejoin="round" />
                   <path d="M10 12.5h4" strokeLinecap="round" />
-                </svg>
-              </button>
-            </Tooltip>
-          )}
-
-          {/* **Trash** (LAI-1354): deleted tasks, the days left, and Restore. */}
-          {onTrash !== undefined && (
-            <Tooltip content="Trash">
-              <button
-                type="button"
-                className="bt-icon"
-                data-board-action="trash"
-                aria-label="Trash"
-                aria-haspopup="dialog"
-                onClick={onTrash}
-              >
-                <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-                  <path d="M4.5 7h15" strokeLinecap="round" />
-                  <path d="M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2" strokeLinejoin="round" />
-                  <path
-                    d="M6.5 7l1 12a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l1-12"
-                    strokeLinejoin="round"
-                  />
                 </svg>
               </button>
             </Tooltip>

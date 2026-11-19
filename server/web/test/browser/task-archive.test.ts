@@ -213,7 +213,7 @@ void describe('the Archived panel (LAI-1353)', () => {
   void test('lists what is put away, newest first, and Restore brings it back', async () => {
     const h = await open('/board?project=laika-core', space(['t2']));
     try {
-      await h.page.locator('[data-board-action="archived"]').click({ timeout: 20_000 });
+      await h.page.locator('[data-board-action="shelves"]').click({ timeout: 20_000 });
       const shelf = h.page.locator('[data-board-shelf="archived"]');
       await shelf.waitFor({ timeout: 10_000 });
       const row = shelf.locator('[data-shelf-row="LC-2"]');

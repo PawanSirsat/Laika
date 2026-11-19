@@ -11,6 +11,7 @@ import {
 } from '../../../api/tasks.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tabs, tabId } from '../../../components/tabs/Tabs.tsx';
 import { useToast } from '../../../components/toast/ToastProvider.tsx';
 import {
   archivedRowMeta,
@@ -26,9 +27,10 @@ export type ShelfKind = 'archived' | 'trash';
 
 export interface BoardShelfProps {
   readonly slug: string;
-  readonly shelf: ShelfKind;
+  /** The tab it opens on. */
+  readonly initial: ShelfKind;
   /** Whether this reader may restore this one: `task.archive`, or `task.delete`'s own rule. */
-  readonly mayRestore: (task: TaskSummary) => boolean;
+  readonly mayRestore: (task: TaskSummary, shelf: ShelfKind) => boolean;
   /** A person's name by id, for who put each task away. */
   readonly nameOf: (userId: string) => string | undefined;
   /** Open a task in the drawer — read-only, with its banner — by id. */
@@ -45,7 +47,6 @@ const PAGE = 200;
 const SHELF = {
   archived: {
     title: 'Archived',
-    label: 'Archived tasks',
     filter: { archived: 'only' },
     stamp: (t: TaskSummary) => t.archived_at ?? null,
     by: (t: TaskSummary) => t.archived_by ?? null,
@@ -58,7 +59,6 @@ const SHELF = {
   },
   trash: {
     title: 'Trash',
-    label: 'Trash',
     filter: { trash: 'only' },
     stamp: (t: TaskSummary) => t.deleted_at ?? null,
     by: (t: TaskSummary) => t.deleted_by ?? null,
@@ -71,9 +71,10 @@ const SHELF = {
 } as const;
 
 /**
- * **A space's shelf: its archived tasks, or its Trash** (LAI-1353, LAI-1354)
- * — the toolbar's archive and trash icons, beside Insights, in its panel's
- * shape.
+ * **A space's shelves: its archived tasks and its Trash** (LAI-1353,
+ * LAI-1354) — the toolbar's one archive icon, beside Insights, in its panel's
+ * shape, a tab for each. One icon, not two, because the row has room for one
+ * at 920px with the sidebar open (`board-sprint-stats.test.ts`).
  *
  * `GET /projects/:slug/tasks?archived=only` or `?trash=only`, every page —
  * the server orders by when a task last changed, and a put-away one cannot
@@ -84,13 +85,14 @@ const SHELF = {
  */
 export function BoardShelf({
   slug,
-  shelf,
+  initial,
   mayRestore,
   nameOf,
   onOpen,
   onRestored,
   onClose,
 }: BoardShelfProps) {
+  const [shelf, setShelf] = useState<ShelfKind>(initial);
   const on = SHELF[shelf];
   const [state, setState] = useState<
     | { status: 'loading' }
@@ -104,6 +106,8 @@ export function BoardShelf({
 
   useEffect(() => {
     const controller = new AbortController();
+    setState({ status: 'loading' });
+    setRefusal(undefined);
     const filter = SHELF[shelf].filter;
     everyPage((cursor) => listTasks(slug, { ...filter, limit: PAGE, cursor }, controller.signal))
       .then(({ items, truncated }) => {
@@ -153,12 +157,35 @@ export function BoardShelf({
   return createPortal(
     <>
       <div className="bi-catcher" aria-hidden="true" onClick={onClose} />
-      <div className="bi bshelf" role="dialog" aria-label={on.label} data-board-shelf={shelf}>
+      <div
+        className="bi bshelf"
+        role="dialog"
+        aria-label="Archived and Trash"
+        data-board-shelf={shelf}
+      >
         <header className="bi-head">
-          <h2 className="bi-title">
-            {on.title}
-            {count !== undefined && <span className="bshelf-count"> · {count}</span>}
-          </h2>
+          <h2 className="visually-hidden">Archived and Trash</h2>
+          <Tabs
+            label="Archived and Trash"
+            className="bshelf-tabs"
+            tabClassName="bshelf-tab"
+            idBase="board-shelf-tab"
+            panelId="board-shelf-panel"
+            selected={shelf}
+            onSelect={setShelf}
+            items={(['archived', 'trash'] as const).map((kind) => ({
+              id: kind,
+              data: { 'data-shelf-tab': kind },
+              label: (
+                <>
+                  {SHELF[kind].title}
+                  {shelf === kind && count !== undefined && (
+                    <span className="bshelf-count"> · {count}</span>
+                  )}
+                </>
+              ),
+            }))}
+          />
           <Tooltip content="Close" shortcut="Escape">
             <button type="button" className="bi-close" onClick={onClose} aria-label="Close">
               <Icon name="close" size="small" />
@@ -166,63 +193,69 @@ export function BoardShelf({
           </Tooltip>
         </header>
 
-        {state.status === 'loading' && <p className="bi-note">Reading…</p>}
-        {state.status === 'error' && (
-          <p className="bi-note" role="alert">
-            {state.why}
-          </p>
-        )}
-        {refusal !== undefined && (
-          <p className="bi-note bshelf-refusal" role="alert">
-            {refusal}
-          </p>
-        )}
+        <div
+          id="board-shelf-panel"
+          role="tabpanel"
+          aria-labelledby={tabId('board-shelf-tab', shelf)}
+        >
+          {state.status === 'loading' && <p className="bi-note">Reading…</p>}
+          {state.status === 'error' && (
+            <p className="bi-note" role="alert">
+              {state.why}
+            </p>
+          )}
+          {refusal !== undefined && (
+            <p className="bi-note bshelf-refusal" role="alert">
+              {refusal}
+            </p>
+          )}
 
-        {state.status === 'ready' &&
-          (state.tasks.length === 0 ? (
-            <p className="bi-note bshelf-empty">{on.empty}</p>
-          ) : (
-            <ul className="bshelf-list">
-              {state.tasks.map((task) => {
-                const stamp = on.stamp(task);
-                const by = on.by(task);
-                return (
-                  <li key={task.id} className="bshelf-row" data-shelf-row={task.key}>
-                    <button
-                      type="button"
-                      className="bshelf-open"
-                      onClick={() => {
-                        onOpen(task.id);
-                      }}
-                    >
-                      <span className="bshelf-key">{task.key}</span>
-                      <span className="bshelf-title">{task.title}</span>
-                      <span className="bshelf-meta">
-                        {stamp === null
-                          ? ''
-                          : on.meta(stamp, by === null ? undefined : nameOf(by), now)}
-                      </span>
-                    </button>
-                    {mayRestore(task) && (
+          {state.status === 'ready' &&
+            (state.tasks.length === 0 ? (
+              <p className="bi-note bshelf-empty">{on.empty}</p>
+            ) : (
+              <ul className="bshelf-list">
+                {state.tasks.map((task) => {
+                  const stamp = on.stamp(task);
+                  const by = on.by(task);
+                  return (
+                    <li key={task.id} className="bshelf-row" data-shelf-row={task.key}>
                       <button
                         type="button"
-                        className="bshelf-restore"
-                        disabled={restoring !== undefined}
-                        aria-busy={restoring === task.id}
-                        aria-label={`Restore ${task.key}`}
+                        className="bshelf-open"
                         onClick={() => {
-                          void restore(task);
+                          onOpen(task.id);
                         }}
                       >
-                        Restore
+                        <span className="bshelf-key">{task.key}</span>
+                        <span className="bshelf-title">{task.title}</span>
+                        <span className="bshelf-meta">
+                          {stamp === null
+                            ? ''
+                            : on.meta(stamp, by === null ? undefined : nameOf(by), now)}
+                        </span>
                       </button>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          ))}
-        {state.status === 'ready' && state.truncated && <p className="bi-note">{on.cut}</p>}
+                      {mayRestore(task, shelf) && (
+                        <button
+                          type="button"
+                          className="bshelf-restore"
+                          disabled={restoring !== undefined}
+                          aria-busy={restoring === task.id}
+                          aria-label={`Restore ${task.key}`}
+                          onClick={() => {
+                            void restore(task);
+                          }}
+                        >
+                          Restore
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            ))}
+          {state.status === 'ready' && state.truncated && <p className="bi-note">{on.cut}</p>}
+        </div>
       </div>
     </>,
     document.body,
