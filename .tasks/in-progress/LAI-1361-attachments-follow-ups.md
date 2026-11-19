@@ -2,10 +2,11 @@
 id: LAI-1361
 title: 'Attachments follow-ups: download=1, unlisted file details, secret-scan weak cases, nested zips'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-1302, LAI-1351, LAI-1352]
-status: backlog
+status: in-progress
+started: 2026-11-19T05:36:46Z
 ---
 
 ## Goal
