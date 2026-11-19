@@ -9447,8 +9447,8 @@ NUL, not an image, PDF or recording) — for known shapes: a private key block,
 an AWS access key id or secret key, a Laika (`lai_`), GitHub (`ghp_`, `gho_`,
 `ghu_`, `ghs_`, `ghr_`, `github_pat_`) or `sk-` token, a `password:`-style
 value — or a `<password>…</password>` element's text — that is **one
-secret-shaped token** (six characters or more, and not a word that describes
-the field, such as `required` or `string`), alone or before a note in
+secret-shaped token** (six characters or more, not a path, and not a word
+that describes the field, such as `required` or `string`), alone or before a note in
 brackets, `hunter22 (temp)` — never prose such as *stored in the team vault*
 — a `.env` line whose name ends in a secret word, credentials in a URL, and
 a table column named for a credential (`password`, `api_key`,
@@ -9456,15 +9456,17 @@ a table column named for a credential (`password`, `api_key`,
 or more than one word; under a bare `pass` or `token` column, a test
 report's or a word list's too, only a cell of eight characters or more with
 letters and digits both (LAI-1361). A masked or placeholder value (`****`,
-`ab**yz`, `<redacted>`, `${VAR}`), or one a script works out when it runs
-(`$(pwd)`), passes. A hit refuses the completion with the rule and the line,
+`ab**yz` — at most four characters shown each side of the stars —
+`<redacted>`, `${VAR}`), or one a script works out when it runs (`$(pwd)`),
+passes. A hit refuses the completion with the rule and the line,
 never the text, and the file is deleted. **Every rule is bounded and linear**:
 the scan runs inside the request, and a crafted 2 MiB file of each rule's
 worst case is timed in `secret-scan.test.ts`. There is no override; the list is `services/secret-scan.ts`, and
 LAI-1351's CLI checks the same list before it uploads — inside a spreadsheet,
 a Word document, a presentation and any other zip as well, a zip within a
-zip four deep, within 64 MiB a part and 128 MiB for the whole file, or it
-refuses the file as one it could not check (LAI-1361). It catches known
+zip four deep, within 64 MiB a part, 128 MiB and 20,000 files for the whole
+file. Past those, or a ZIP64 or LZMA zip, it refuses the file as too large to
+check; one it cannot open at all, as one it could not check (LAI-1361). It catches known
 shapes only: the instruction to mask is the real guard.
 
 **Inbound email is the organisation's choice, and off as it ships** (D-155).
