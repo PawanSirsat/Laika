@@ -128,34 +128,115 @@ export interface SecretHit {
 
 /**
  * A value that is a placeholder or already masked — `********`, `xxxx`,
- * `<password>`, `${DB_PASSWORD}`, `[redacted]`, `ab***yz` — and so not a
- * secret. A masked copy is what D-162 asks an agent to attach, so it must pass.
+ * `<password>`, `${DB_PASSWORD}`, `[redacted]`, `ab**yz` — or one a script
+ * works out when it runs, `$(pwd)`, and so not a secret. A masked copy is
+ * what D-162 asks an agent to attach, so it must pass.
  */
 function isMasked(value: string): boolean {
   const v = value.trim().replace(/^["'`]|["'`]$/g, '');
   if (v === '') return true;
   if (/^[*•xX#.\-_?]+$/.test(v)) return true;
-  if (/\*{3,}|•{3,}/.test(v)) return true;
+  // Two stars or bullets in a row stand for what was taken out: `ab**yz`.
+  if (/\*\*|••/.test(v)) return true;
   if (/^<[^>]*>$/.test(v) || /^\$\{[^}]*\}$/.test(v) || /^\$[A-Za-z_][A-Za-z0-9_]*$/.test(v)) {
     return true;
   }
+  // A shell command's output — `pwd=$(pwd)`, `PASSWORD=$(vault read …)`:
+  // the script asks for it at run time, and nothing is written down.
+  if (v.startsWith('$(')) return true;
   if (/^\{\{[^}]*\}\}$/.test(v)) return true;
   return /^[[(]?(redacted|masked|hidden|removed|omitted|none|null|true|false|changeme|example)[\])]?$/i.test(
     v,
   );
 }
 
+/** A cell under a credential column that is a result or a note, never a credential. */
+const NOT_A_SECRET = new Set([
+  'ok',
+  'yes',
+  'no',
+  'y',
+  'n',
+  'true',
+  'false',
+  'n/a',
+  'na',
+  'none',
+  'null',
+  'pass',
+  'passed',
+  'fail',
+  'failed',
+  'skip',
+  'skipped',
+  'done',
+  'todo',
+  '✓',
+  '✔',
+  '✗',
+  '✘',
+]);
+
 /**
- * Shaped like a secret rather than a word: six characters or more, and a
- * digit, a symbol or both cases — or twelve or more of anything. `hunter22`
- * and `Welcome-2026!` are; `required` and `vault` are not.
+ * Words that say what a password field is or how it went, rather than being
+ * one: a schema's `password: required`, a type's `password: string`, a log's
+ * `password: accepted`. Six letters or more, as anything shorter is never
+ * taken for a password.
+ */
+const DESCRIBES_A_PASSWORD = new Set([
+  'required',
+  'optional',
+  'mandatory',
+  'string',
+  'number',
+  'boolean',
+  'object',
+  'varchar',
+  'undefined',
+  'unknown',
+  'password',
+  'passwd',
+  'passphrase',
+  'secret',
+  'hidden',
+  'hashed',
+  'encrypted',
+  'protected',
+  'provided',
+  'generated',
+  'random',
+  'rotated',
+  'expired',
+  'changed',
+  'updated',
+  'invalid',
+  'incorrect',
+  'missing',
+  'stored',
+  'enabled',
+  'disabled',
+  'prompt',
+  'prompted',
+  'default',
+  'sample',
+  'placeholder',
+  'accepted',
+  'rejected',
+  'matched',
+  'verified',
+  'success',
+  'failure',
+]);
+
+/**
+ * Shaped like a secret rather than a description: six characters or more,
+ * and not a word that says what the field is. `hunter22`, `Welcome-2026!`
+ * and `dragon` are; `required`, `String` and `vault` are not.
  */
 function isSecretShaped(value: string): boolean {
   if (value.length < 6) return false;
-  if (value.length >= 12) return true;
-  return (
-    /\d/.test(value) || /[^A-Za-z0-9]/.test(value) || (/[a-z]/.test(value) && /[A-Z]/.test(value))
-  );
+  const word = value.toLowerCase();
+  return !DESCRIBES_A_PASSWORD.has(word) && !NOT_A_SECRET.has(word);
 }
 
 interface LineRule {
@@ -196,11 +277,21 @@ function lineRules(): LineRule[] {
     },
     { name: 'sk_token', re: /\bsk-[A-Za-z0-9_-]{20,200}/g },
     {
-      // One secret-shaped token that ends its line, its quotes or its field:
-      // `password: hunter22`, `"password": "hunter22",` — never prose such as
-      // `Password: stored in the team vault`.
+      // One secret-shaped token that ends its line, its quotes or its field,
+      // or stands before a note in brackets: `password: hunter22`,
+      // `"password": "hunter22",`, `password: hunter22 (temp)` — never prose
+      // such as `Password: stored in the team vault`.
       name: 'password_value',
-      re: /\b(?:password|passwd|pwd|passphrase)\b["']?[ \t]{0,8}[:=][ \t]{0,8}["']?([^\s"',;<>{}#]{4,128})["']?[ \t]{0,8}(?=$|[,;}\]#])/gim,
+      re: /\b(?:password|passwd|pwd|passphrase)\b["']?[ \t]{0,8}[:=][ \t]{0,8}["']?([^\s"',;<>{}#]{4,128})["']?[ \t]{0,8}(?=$|[,;}\]#]|\([^()\n]{0,64}\)[ \t]{0,8}(?:$|[,;}\]#]))/gim,
+      value: 1,
+      secret: isSecretShaped,
+    },
+    {
+      // The same value as an XML element — `<password>hunter22</password>`,
+      // `<db:adminPassword type="x">…</db:adminPassword>` — its text one
+      // secret-shaped token.
+      name: 'password_value',
+      re: /<(?:[A-Za-z_][\w.:-]{0,31})?(?:password|passwd|pwd|passphrase)(?:[ \t][^<>\n]{0,256})?>[ \t]{0,8}([^\s<>]{4,128})[ \t]{0,8}<\//gi,
       value: 1,
       secret: isSecretShaped,
     },
@@ -220,55 +311,30 @@ function lineRules(): LineRule[] {
 }
 
 /**
- * A header cell naming a credential — `password`, `Temp password`, `api_key`,
- * `clientSecret`, `access_token`. One or two words, so a sentence that
- * mentions a password is not read as a header. **Not a bare `pass` or
- * `token`**: a test report's `suite,pass,fail` and a word list's `token` are
- * columns of results, not of credentials.
+ * Whether a header cell names a column of credentials: `'named'` for
+ * `password`, `Temp password`, `api_key`, `clientSecret`, `access_token`;
+ * `'bare'` for a bare `pass` or `token`, which a test report's
+ * `suite,pass,fail` and a word list's `token` are too; `null` for anything
+ * else. One or two words, so a sentence that mentions a password is not read
+ * as a header.
  */
-function isCredentialColumn(cell: string): boolean {
+function credentialColumn(cell: string): 'named' | 'bare' | null {
   const words = cell
     .toLowerCase()
     .split(/[\s_.-]+/)
     .filter((w) => w !== '');
-  if (words.length === 0 || words.length > 2) return false;
+  if (words.length === 0 || words.length > 2) return null;
   const n = words.join('');
-  if (n.length > 30 || /[^a-z0-9]/.test(n)) return false;
-  if (n.includes('password') || n.includes('passwd') || n.includes('passphrase')) return true;
-  if (n === 'pwd') return true;
+  if (n.length > 30 || /[^a-z0-9]/.test(n)) return null;
+  if (n === 'pass' || n === 'token') return 'bare';
+  if (n.includes('password') || n.includes('passwd') || n.includes('passphrase')) return 'named';
+  if (n === 'pwd') return 'named';
   if (['apikey', 'secretkey', 'privatekey', 'accesskey'].some((end) => n.endsWith(end))) {
-    return true;
+    return 'named';
   }
   // `access_token`, `api token`, `refreshToken` — a token of some kind.
-  return n.endsWith('secret') || (n.endsWith('token') && n !== 'token');
+  return n.endsWith('secret') || n.endsWith('token') ? 'named' : null;
 }
-
-/** A cell under a credential column that is a result or a note, never a credential. */
-const NOT_A_SECRET = new Set([
-  'ok',
-  'yes',
-  'no',
-  'y',
-  'n',
-  'true',
-  'false',
-  'n/a',
-  'na',
-  'none',
-  'null',
-  'pass',
-  'passed',
-  'fail',
-  'failed',
-  'skip',
-  'skipped',
-  'done',
-  'todo',
-  '✓',
-  '✔',
-  '✗',
-  '✘',
-]);
 
 /**
  * A credential column's cell that holds no secret: masked, empty, a number,
@@ -281,6 +347,20 @@ function isNotSecretCell(value: string): boolean {
   if (/\s/.test(v)) return true;
   if (/^[-+]?[\d.,:%]+$/.test(v)) return true;
   return NOT_A_SECRET.has(v.toLowerCase());
+}
+
+/**
+ * Whether a cell holds a secret: under a named column, any that is not
+ * `isNotSecretCell`; under a bare `pass` or `token`, only one that reads as a
+ * credential — eight characters or more, letters and digits both, as
+ * `Welcome-2026!` and `abc123def456` do and a count, a result or a word
+ * never does.
+ */
+function isSecretCell(value: string, kind: 'named' | 'bare'): boolean {
+  if (isNotSecretCell(value)) return false;
+  if (kind === 'named') return true;
+  const v = value.trim();
+  return v.length >= 8 && /[A-Za-z]/.test(v) && /\d/.test(v);
 }
 
 const DELIMITERS = [',', '\t', ';', '|'] as const;
@@ -304,8 +384,12 @@ function cells(line: string, delimiter: string, limit?: number): string[] {
  * credential and an unmasked value under it. A header row starts a table and
  * a blank line ends it, so a table in the middle of a report is read too.
  */
-function credentialColumn(lines: readonly string[]): SecretHit | null {
-  let table: { delimiter: string; columns: number[]; limit: number } | null = null;
+function credentialTable(lines: readonly string[]): SecretHit | null {
+  let table: {
+    delimiter: string;
+    columns: { at: number; kind: 'named' | 'bare' }[];
+    limit: number;
+  } | null = null;
   for (const [i, line] of lines.entries()) {
     if (line.trim() === '') {
       table = null;
@@ -313,8 +397,7 @@ function credentialColumn(lines: readonly string[]): SecretHit | null {
     }
     if (table !== null) {
       const row = cells(line, table.delimiter, table.limit);
-      const values = table.columns.map((c) => row[c] ?? '');
-      if (values.some((value) => !isNotSecretCell(value))) {
+      if (table.columns.some(({ at, kind }) => isSecretCell(row[at] ?? '', kind))) {
         return { pattern: 'credential_column', line: i + 1 };
       }
       continue;
@@ -323,10 +406,13 @@ function credentialColumn(lines: readonly string[]): SecretHit | null {
     for (const delimiter of DELIMITERS) {
       const header = cells(line, delimiter);
       if (header.length < 2 || header.some((name) => name.length > 40)) continue;
-      const columns = header.flatMap((name, c) => (isCredentialColumn(name) ? [c] : []));
+      const columns = header.flatMap((name, at) => {
+        const kind = credentialColumn(name);
+        return kind === null ? [] : [{ at, kind }];
+      });
       if (columns.length > 0) {
         // A markdown row's leading `|` is one more cell before the split drops it.
-        table = { delimiter, columns, limit: Math.max(...columns) + 2 };
+        table = { delimiter, columns, limit: Math.max(...columns.map(({ at }) => at)) + 2 };
         break;
       }
     }
@@ -350,7 +436,7 @@ export function scanForSecrets(text: string): SecretHit | null {
     }
   }
 
-  const table = credentialColumn(lines);
+  const table = credentialTable(lines);
   if (table !== null && (first === null || table.line < first.line)) first = table;
   return first;
 }

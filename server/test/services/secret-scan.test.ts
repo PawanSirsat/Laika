@@ -99,6 +99,11 @@ describe('a clean file, and a masked one, pass', () => {
       'GITHUB_TOKEN=****',
       'password: [redacted]',
       'postgres://laika:${PW}@db.example.test/laika',
+      // Partly masked, and the shortest masks (LAI-1361).
+      'password: p****d',
+      'password: ab**yz',
+      'API_TOKEN=***',
+      '<password>********</password>',
     ].join('\n');
     expect(scanForSecrets(masked)).toBeNull();
   });
@@ -176,6 +181,105 @@ describe('what D-162 tells an agent to write is not refused (LAI-1302 review)', 
     ]) {
       expect(scanForSecrets(secret)?.pattern, secret).toBe('password_value');
     }
+  });
+});
+
+/**
+ * The cases review-405 found the narrowed rules missing or still refusing
+ * (LAI-1361). Each pair is a must-pass and the same shape holding a real
+ * secret, which must be caught — so every fix narrows or widens one rule
+ * rather than switching it off.
+ */
+describe('the weak cases review-405 found (LAI-1361)', () => {
+  const cases: [string, string, string, SecretPatternName][] = [
+    [
+      'a plain word as the value: a description passes, a password does not',
+      'password: required\npassword: String\n<password>hidden</password>',
+      'password: dragon',
+      'password_value',
+    ],
+    [
+      'a note in brackets after the value',
+      'password: required (at least 12)\nPassword: stored (team vault)',
+      'password: hunter22 (temp)',
+      'password_value',
+    ],
+    [
+      'an XML element',
+      '<password>${DB_PASSWORD}</password>\n<password><redacted></password>\n<password/>',
+      '<config>\n  <password>Hunter22!</password>\n</config>',
+      'password_value',
+    ],
+    [
+      'an XML element with a prefix and attributes',
+      '<db:adminPassword type="x">********</db:adminPassword>',
+      '<db:adminPassword type="x">Hunter22!</db:adminPassword>',
+      'password_value',
+    ],
+    [
+      'a shell script that keeps the working directory in pwd',
+      '#!/bin/sh\npwd=$(pwd)\nDB_PASSWORD=$(vault read -field=pw db)\ncd "$pwd"',
+      '#!/bin/sh\npwd=hunter22\ncd /tmp',
+      'password_value',
+    ],
+    ['a partly masked value', 'password: ab**yz', 'password: ab12yz', 'password_value'],
+    [
+      'a bare pass column of results, and one of passwords',
+      'user,pass\nada,yes\nbrin,12\ncal,passed',
+      'user,pass\nada,hunter22',
+      'credential_column',
+    ],
+    [
+      'a bare token column of words, and one of tokens',
+      'index,token\n1,the\n2,quickest\n3,covid19',
+      'user,token\nada,abc123def456',
+      'credential_column',
+    ],
+    [
+      'a markdown table with a bare Pass column',
+      '| Suite | Pass | Fail |\n|---|---|---|\n| unit | 120 | 0 |\n| e2e | 98% | 2 |',
+      '| User | Pass |\n|---|---|\n| ada | Welcome-2026! |',
+      'credential_column',
+    ],
+  ];
+  for (const [what, clean, secret, pattern] of cases) {
+    it(`passes ${what}, and catches the secret in the same shape`, () => {
+      expect(scanForSecrets(clean), clean).toBeNull();
+      expect(scanForSecrets(secret)?.pattern, secret).toBe(pattern);
+    });
+  }
+
+  it('says the line of an XML password, as of any other', () => {
+    expect(scanForSecrets('<config>\n  <password>Hunter22!</password>\n</config>')).toEqual({
+      pattern: 'password_value',
+      line: 2,
+    });
+  });
+
+  it('times the shapes it added at the full size, each in well under a second', () => {
+    const fill = (unit: string, prefix = '') =>
+      (prefix + unit.repeat(Math.ceil(SECRET_SCAN_BYTES / unit.length))).slice(
+        0,
+        SECRET_SCAN_BYTES,
+      );
+    const worst: Record<string, string> = {
+      'an XML element never closed': fill('<password>abcd'),
+      'XML attributes with no end': fill(`<${'a'.repeat(31)}password ${'b'.repeat(250)}`),
+      'a bracket never closed': fill(`password: hunter22 (${'x'.repeat(70)}\n`),
+      'a bare pass column of counts': fill(',1234\n', 'a,pass\n'),
+      'a bare token column of words': fill(',abcdefgh\n', 'a,token\n'),
+      'command substitutions': fill('pwd=$(pwd)\n'),
+    };
+    let total = 0;
+    for (const [what, text] of Object.entries(worst)) {
+      expect(text.length, what).toBe(SECRET_SCAN_BYTES);
+      const started = performance.now();
+      scanForSecrets(text);
+      const took = performance.now() - started;
+      expect(took, `${what} took ${took.toFixed(0)} ms`).toBeLessThan(750);
+      total += took;
+    }
+    expect(total).toBeLessThan(1500);
   });
 });
 
