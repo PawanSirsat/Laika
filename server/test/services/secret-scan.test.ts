@@ -249,6 +249,50 @@ describe('the weak cases review-405 found (LAI-1361)', () => {
     });
   }
 
+  it('passes a word that says how the field is, and still catches dragon (LAI-1361 review)', () => {
+    for (const clean of [
+      'password: unchanged',
+      'password: configured',
+      'password: correct',
+      'password: strong',
+      'password: present',
+      'password: reset',
+      'Password: Same',
+    ]) {
+      expect(scanForSecrets(clean), clean).toBeNull();
+    }
+    for (const secret of ['password: dragon', 'password: hunter22 (temp)']) {
+      expect(scanForSecrets(secret)?.pattern, secret).toBe('password_value');
+    }
+  });
+
+  it('takes two stars as a mask only with at most four characters shown each side (LAI-1361 review)', () => {
+    for (const clean of ['password: p****d', 'password: ab**yz', 'API_TOKEN=abcd**wxyz']) {
+      expect(scanForSecrets(clean), clean).toBeNull();
+    }
+    for (const [secret, pattern] of [
+      ['password: Pa**w0rd!x', 'password_value'],
+      ['password: hunter**22real', 'password_value'],
+      ['DB_PASSWORD=Xy**9kLmN2pQ', 'env_secret'],
+    ] as const) {
+      expect(scanForSecrets(secret)?.pattern, secret).toBe(pattern);
+    }
+  });
+
+  it('reads a path in pwd as where, not what: it passes, and a password there is caught (LAI-1361 review)', () => {
+    for (const clean of [
+      'PWD=/home/runner/work/Laika/Laika',
+      'PWD=C:\\Users\\ada\\src',
+      'pwd: /home/ada/src',
+      'pwd = ~/src/laika',
+    ]) {
+      expect(scanForSecrets(clean), clean).toBeNull();
+    }
+    for (const secret of ['pwd=hunter22', 'Driver={ODBC};Server=db;Uid=sa;Pwd=Hunter22!;']) {
+      expect(scanForSecrets(secret)?.pattern, secret).toBe('password_value');
+    }
+  });
+
   it('says the line of an XML password, as of any other', () => {
     expect(scanForSecrets('<config>\n  <password>Hunter22!</password>\n</config>')).toEqual({
       pattern: 'password_value',

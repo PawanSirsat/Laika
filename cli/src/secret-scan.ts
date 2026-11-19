@@ -127,8 +127,10 @@ function isMasked(value: string): boolean {
   const v = value.trim().replace(/^["'`]|["'`]$/g, '');
   if (v === '') return true;
   if (/^[*•xX#.\-_?]+$/.test(v)) return true;
-  // Two stars or bullets in a row stand for what was taken out: `ab**yz`.
-  if (/\*\*|••/.test(v)) return true;
+  // Two stars or bullets in a row, at most four characters shown on either
+  // side, stand for what was taken out: `p****d`, `ab**yz` — never
+  // `Pa**w0rd!x`, a password that happens to hold two stars.
+  if (/^[^*•]{0,4}(?:\*{2,256}|•{2,256})[^*•]{0,4}$/.test(v)) return true;
   if (/^<[^>]*>$/.test(v) || /^\$\{[^}]*\}$/.test(v) || /^\$[A-Za-z_][A-Za-z0-9_]*$/.test(v)) {
     return true;
   }
@@ -171,10 +173,20 @@ const NOT_A_SECRET = new Set([
 /**
  * Words that say what a password field is or how it went, rather than being
  * one: a schema's `password: required`, a type's `password: string`, a log's
- * `password: accepted`. Six letters or more, as anything shorter is never
- * taken for a password.
+ * `password: accepted` or `password: unchanged`. The short ones — `set`,
+ * `same` — are passed by length already, and listed so the list does not
+ * lean on it.
  */
 const DESCRIBES_A_PASSWORD = new Set([
+  'set',
+  'reset',
+  'same',
+  'none',
+  'unchanged',
+  'configured',
+  'correct',
+  'strong',
+  'present',
   'required',
   'optional',
   'mandatory',
@@ -221,11 +233,14 @@ const DESCRIBES_A_PASSWORD = new Set([
 
 /**
  * Shaped like a secret rather than a description: six characters or more,
- * and not a word that says what the field is. `hunter22`, `Welcome-2026!`
- * and `dragon` are; `required`, `String` and `vault` are not.
+ * not a path, and not a word that says what the field is. `hunter22`,
+ * `Welcome-2026!` and `dragon` are; `required`, `String`, `vault` and
+ * `/home/runner/work` are not.
  */
 function isSecretShaped(value: string): boolean {
   if (value.length < 6) return false;
+  // A path says where something is: `PWD=/home/runner/…`, `pwd: C:\Users\…`.
+  if (/^(?:~?\/|[A-Za-z]:\\)/.test(value)) return false;
   const word = value.toLowerCase();
   return !DESCRIBES_A_PASSWORD.has(word) && !NOT_A_SECRET.has(word);
 }
