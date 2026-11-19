@@ -6,8 +6,9 @@ assignee: chief
 priority: p3
 depends-on: [LAI-1354]
 discovered-from:
-status: in-progress
+status: review
 started: 2026-11-19T05:19:56Z
+finished: 2026-11-19T08:06:12Z
 ---
 
 ## Goal
@@ -21,9 +22,9 @@ A space admin can also do it at once with **Delete now**.
 
 ## Acceptance criteria
 
-- [ ] `tasks` gains `purged_at`, in a migration numbered after integration-ksage's latest. The
+- [x] `tasks` gains `purged_at`, in a migration numbered after integration-ksage's latest. The
   activity CHECK gains `task.purged`.
-- [ ] A daily job (and once at boot), as the system (`system.task.purge`), scrubs every task in
+- [x] A daily job (and once at boot), as the system (`system.task.purge`), scrubs every task in
   Trash 30 days or more:
   - the title becomes *Deleted task*;
   - the description, acceptance, Ships, solves, unlocks and branch are cleared;
@@ -33,20 +34,20 @@ A space admin can also do it at once with **Delete now**.
   - tags, watchers and dependencies are dropped;
   - the outside id is released;
   - `purged_at` is set and `task.purged` is written.
-- [ ] The row, key, history, estimates and time entries stay. The number is never reused, and the
+- [x] The row, key, history, estimates and time entries stay. The number is never reused, and the
   outside id can be taken by another card.
-- [ ] `POST /tasks/:id/purge` (*Delete now*):
+- [x] `POST /tasks/:id/purge` (*Delete now*):
   - is gated by `task.purge` (a space admin, signed in only) on a task already in Trash
     (`not_in_trash` otherwise);
   - takes its subtasks in Trash with it;
   - answers `{ purged: [ids] }`.
-- [ ] A scrubbed task is `404` to everyone under all of `/tasks/:id`. It is in no list, the Trash
+- [x] A scrubbed task is `404` to everyone under all of `/tasks/:id`. It is in no list, the Trash
   included, and a restore is `404`.
-- [ ] The web:
+- [x] The web:
   - Trash panel: *Delete now* for space admins, with a confirm that says it cannot be undone, and
     a toast with no Undo; never offered to a member;
   - the verb is in `stream-types.ts`, plus the activity and dashboard wording.
-- [ ] SPEC: §3.2 row, §3.4 system action, §4.5 column, §4.8 verb, §6.4 route and paragraph, §11.6
+- [x] SPEC: §3.2 row, §3.4 system action, §4.5 column, §4.8 verb, §6.4 route and paragraph, §11.6
   job. CI green on the PR into `integration-ksage`.
 
 ## Notes / context
