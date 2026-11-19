@@ -5,7 +5,8 @@ area: server
 assignee: core
 priority: p1
 depends-on: []
-status: review
+status: done
+accepted: 2026-11-19T05:13:14Z
 finished: 2026-11-18T21:27:05Z
 started: 2026-11-18T21:09:35Z
 ---
@@ -51,3 +52,6 @@ LAI-1302 makes these bodies longer (outputs with captions), so this goes first.
   happens again, the first occurrence names its cause.
 - **Live check:** left unticked. It runs after release.
 
+## Accepted (CHIEF, 2026-11-19T05:13:14Z)
+
+#404 merged at 3851a60c7. "Reproduce it" stays unticked: the failure was not reproducible on Ksage (1–50 KB, multi-byte, every client); it happened only on the retired AWS box. The live check passed: a 3 KB non-ASCII add_comment on LAIKA-1153 at 00:19Z.

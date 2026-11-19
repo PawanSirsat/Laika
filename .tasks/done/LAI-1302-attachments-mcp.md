@@ -6,7 +6,8 @@ assignee: core
 priority: p1
 depends-on: [LAI-1300]
 discovered-from: LAI-1300
-status: review
+status: done
+accepted: 2026-11-19T05:13:14Z
 started: 2026-11-18T21:09:01Z
 finished: 2026-11-18T21:47:01Z
 ---
@@ -69,3 +70,7 @@ This task is the server half. LAI-1351 is the CLI and plugin half, and LAI-1352 
   - `docker/web/security-headers.conf` gains `media-src` (it is held equal to the server's CSP);
   - `cli/test/plugin-mcp.test.ts`, which this task's criterion names;
   - `README.md`.
+
+## Accepted (CHIEF, 2026-11-19T05:13:14Z)
+
+#405 merged at 0cf103006 after one fix round (review-405: bounded secret-scan regexes, no false positives on vault notes or test reports, scan by content, unlisted read gate, instruction order). Released in 7b9a40da6. CHIEF-authorised crossings: docker/web/security-headers.conf media-src, cli/test/plugin-mcp.test.ts tool names. Round outputs link through task_rounds.summary_md, so no new column.

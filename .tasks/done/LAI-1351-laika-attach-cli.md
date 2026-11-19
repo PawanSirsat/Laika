@@ -5,7 +5,8 @@ area: cli
 assignee: core
 priority: p1
 depends-on: [LAI-1302]
-status: review
+status: done
+accepted: 2026-11-19T05:13:14Z
 finished: 2026-11-18T22:28:50Z
 started: 2026-11-18T21:56:47Z
 ---
@@ -99,3 +100,6 @@ once #405 lands, so the PR shows only this task's diff.
 
   A zip inside a file is not opened: a known limit.
 
+## Accepted (CHIEF, 2026-11-19T05:13:14Z)
+
+#407 merged at 7b9a40da6 (head b8ac130a4), paired with #409 as a §4.4 two-owner change. Four review rounds: loud cleanup, linear office scan, a 128 MiB budget on the extracted text, no Authorization on the store PUT. Released. The live attach to LAIKA-1153 worked.

@@ -8153,3 +8153,16 @@ nobody checked, and a client able to widen the scopes.
 - Agents must know the rule: it goes into `MCP_INSTRUCTIONS`, the tool descriptions, repo block revision 3, a plugin skill and the launcher prompt.
 - Storage grows with recordings.
 - The secret scan catches known patterns only; the instruction to mask is the primary guard.
+
+**Built (amendment, 2026-11-19).**
+
+- **Round outputs.** `task_rounds` gets no new column: a round's outputs are the attachment links in its own `summary_md`, which `finish_task` writes in the same transaction and never rewrites. Captions are the link text, with `\[]` escaped.
+- **Secret check.**
+  - The scan is decided by content, not only by declared type: a 1 KiB probe, then up to 2 MiB.
+  - Every pattern is bounded, and timing tests cover the 2 MiB worst cases.
+  - Masked values and prose notes such as "stored in the vault" pass.
+  - The CLI (`laika attach`) runs the same module word for word, plus xlsx and docx text, within a 128 MiB budget on the extracted text.
+- **Unlisted findings.** Their files are readable only by the uploader and `audit_log.export` holders until the finding is promoted. Pasting a file's URL into a comment doesn't link it.
+- **CSP.** The store origin joins `media-src` (inline video) and `frame-src` (inline PDF), both in the server and in `docker/web` (CHIEF-authorised crossings, LAI-1302 and LAI-1352).
+- **Rules everywhere.** Every setup path writes repo block revision 3 with rules 7 and 8, the classic Projects tab included.
+- **Released** in 7b9a40da6 and 2c280771e. Follow-ups are in LAI-1361.
