@@ -27,6 +27,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, test } from 'node:test';
+import { webRule } from './support/block-rules.ts';
 
 import type { EventRecord } from '../src/agent-events.ts';
 import { handoffsDir, PREPARE_RETRY } from '../src/agent-handoff.ts';
@@ -1826,6 +1827,24 @@ void describe('LAI-1039: the prompt and the run summary', () => {
     ]) {
       assert.throws(() => workRequestPrompt({ ...ok, ...bad }), JSON.stringify(bad));
     }
+  });
+
+  void test('workRequestPrompt says repo block rules 7 and 8, a line each, in the web’s words (LAI-1351, LAI-1352)', () => {
+    const ok = {
+      taskKey: 'LAI-1',
+      slug: 'laika',
+      branch: 'LAI-1-auto-abcdef',
+      defaultBranch: 'main',
+      sha: 'a'.repeat(40),
+    };
+    const lines = workRequestPrompt(ok)
+      .split('\n')
+      .map((l) => l.trim());
+    assert.ok(lines.includes(webRule('SHOW_THE_RESULT')), 'rule 7 is not a line, word for word');
+    assert.ok(
+      lines.includes(webRule('ONE_PARENT_PER_FEATURE')),
+      'rule 8 is not a line, word for word',
+    );
   });
 
   void test('runSummary keeps only the four Claude fields and Codex’s thread and failure', () => {

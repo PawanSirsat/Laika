@@ -8,6 +8,7 @@ import { credentialPath } from './agent-session.ts';
 import { detectAgents } from './agents.ts';
 import { entryKind, readClaudeLaika } from './claude-mcp.ts';
 import { normaliseUrl } from './api.ts';
+import { attachCredential, boardCap, storeReachable, uploadableProjects } from './attach.ts';
 import { readSettings } from './config.ts';
 import { PROTOCOL } from './protocol.ts';
 import { tildePath, versionInfo, type VersionDeps, type VersionInfo } from './version.ts';
@@ -634,6 +635,79 @@ async function boardChecks(
   ];
 }
 
+/**
+ * Whether `laika attach` would work from here (D-162, LAI-1351): the
+ * credential it would use, the board's largest file — or attachments off —
+ * whether that credential is a lead or member of a project it could upload
+ * to, and whether the file store the board names answers from this machine.
+ * `GET`s only, to the credential's own board and the store's origin: nothing
+ * is uploaded. A token's scope is not readable with a `GET`, so a read-only
+ * one is found out by the upload itself.
+ */
+async function attachCheck(io: DoctorIo, offline: boolean): Promise<Check> {
+  const name = 'attach';
+  if (offline) return { name, status: 'skipped', detail: 'not asked (--offline)' };
+  const chosen = await attachCredential(io.home, io.env);
+  if ('refused' in chosen) {
+    return {
+      name,
+      status: 'info',
+      detail: `laika attach has no credential to use: ${chosen.refused}`,
+    };
+  }
+  const shown = displayUrl(chosen.url);
+  const cap = await boardCap(io.fetch, chosen);
+  if (!cap.ok && cap.status === 404) {
+    return {
+      name,
+      status: 'info',
+      detail: `${shown} does not say whether it takes files: a board older than laika attach`,
+    };
+  }
+  if (!cap.ok) {
+    return {
+      name,
+      status: 'unknown',
+      detail: `could not read ${shown}'s settings with ${chosen.via}: ${cap.why}`,
+    };
+  }
+  if (cap.maxBytes === null) {
+    return {
+      name,
+      status: 'info',
+      detail: `attachments are off on ${shown}: laika attach cannot upload there`,
+    };
+  }
+  const limit = `files up to ${String(Math.floor(cap.maxBytes / 1_048_576))} MB`;
+  const projects = await uploadableProjects(io.fetch, chosen);
+  if (projects.ok && projects.count === 0) {
+    return {
+      name,
+      status: 'action',
+      detail: `${chosen.via} is a lead or member of no project, so laika attach cannot upload with it (${limit} on ${shown})`,
+    };
+  }
+  const store = await storeReachable(io.fetch, chosen.url);
+  if (store.origin === null) {
+    return {
+      name,
+      status: 'unknown',
+      detail: `${shown} did not name its file store, so it was not tried (${limit})`,
+    };
+  }
+  if (store.answered !== true) {
+    return {
+      name,
+      status: 'action',
+      detail: `the file store ${store.origin} does not answer from this machine, so uploads would fail (${limit} on ${shown})`,
+    };
+  }
+  const may = projects.ok
+    ? `${chosen.via} may upload to ${String(projects.count)} project${projects.count === 1 ? '' : 's'}`
+    : `${chosen.via} (its projects not read: ${projects.why})`;
+  return { name, status: 'ok', detail: `${may}; store ${store.origin} answers; ${limit}` };
+}
+
 export function exitCode(checks: readonly Check[]): number {
   if (checks.some((c) => c.status === 'action')) return 1;
   if (checks.some((c) => c.status === 'unknown')) return 2;
@@ -676,6 +750,7 @@ export async function doctor(argv: readonly string[], io: DoctorIo = CONSOLE): P
     checkoutCheck(info),
     ...(await boardChecks(io, info, board, offline)),
     ...(await toolChecks(io, offline)),
+    await attachCheck(io, offline),
     ...legacyChecks(io),
   ];
   const code = exitCode(checks);
