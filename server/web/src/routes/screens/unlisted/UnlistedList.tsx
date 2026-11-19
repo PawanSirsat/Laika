@@ -185,8 +185,15 @@ export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedLis
           const open = expanded === row.id;
           const promotedKey =
             justPromoted?.unlistedId === row.id ? justPromoted.taskKey : undefined;
-          // The files an agent attached to it (D-162 item 8), under the note.
+          // The files an agent attached to it (D-162 item 8), under the note:
+          // those this reader may open, by name, type and size (LAI-1361) —
+          // one it may not, or one removed since, is left out as a task's is.
           const { text, refs } = splitAttached(row.note);
+          const outputs = outputItems(
+            refs,
+            row.files,
+            outputBy(who, row.token_id === null ? null : HIDDEN_AGENT),
+          );
 
           return (
             <li key={row.id} className={`unl-row unl-row-${state}${open ? ' unl-row-open' : ''}`}>
@@ -259,13 +266,9 @@ export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedLis
               {open && (
                 <div className="unl-detail">
                   <p className="unl-note">{text}</p>
-                  {refs.length > 0 && (
+                  {outputs.length > 0 && (
                     <OutputsStrip
-                      items={outputItems(
-                        refs,
-                        undefined,
-                        outputBy(who, row.token_id === null ? null : HIDDEN_AGENT),
-                      )}
+                      items={outputs}
                       label={`Files attached to the note from ${row.repo}`}
                     />
                   )}

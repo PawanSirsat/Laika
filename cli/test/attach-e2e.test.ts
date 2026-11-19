@@ -263,6 +263,45 @@ void describe('a secret is refused here, before anything is sent', () => {
     assert.ok(!JSON.stringify(answer).includes(token));
     assert.equal(attachmentCreates(), creates);
   });
+
+  void test('a .env inside a zip inside the zip is refused by its path, and nothing is sent (LAI-1361)', async () => {
+    const inner = zip({ '.env': 'NODE_ENV=production\nDATABASE_PASSWORD=s3cr3t-value\n' });
+    const bundle = file('bundle.zip', zip({ 'notes.txt': 'All green.\n', 'inner.zip': inner }));
+    const creates = attachmentCreates();
+    const puts = storePuts();
+
+    const ran = await run(['LAI-1', bundle, '--json']);
+
+    assert.equal(ran.code, 1);
+    const answer = JSON.parse(ran.out.join('\n')) as { ok: boolean; errors: string[] };
+    assert.equal(answer.ok, false);
+    assert.match(
+      answer.errors[0] ?? '',
+      /bundle\.zip: holds a secret in an environment line \(inner\.zip › \.env, line 2\)/,
+    );
+    assert.ok(!JSON.stringify(answer).includes('s3cr3t'));
+    assert.equal(attachmentCreates(), creates);
+    assert.equal(storePuts(), puts);
+  });
+
+  void test('a zip too large to check says so, and asks for a smaller export (LAI-1361 review)', async () => {
+    const lzma = zip({ 'notes.txt': 'clean\n' });
+    // Method 14, LZMA, in the local and the central header.
+    lzma.writeUInt16LE(14, 8);
+    lzma.writeUInt16LE(14, lzma.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02])) + 10);
+    const archive = file('archive.zip', lzma);
+    const creates = attachmentCreates();
+
+    const ran = await run(['LAI-1', archive, '--json']);
+
+    assert.equal(ran.code, 1);
+    const answer = JSON.parse(ran.out.join('\n')) as { ok: boolean; errors: string[] };
+    assert.equal(
+      answer.errors[0],
+      `${archive}: too large to check for secrets; attach a smaller export (PDF or CSV)`,
+    );
+    assert.equal(attachmentCreates(), creates);
+  });
 });
 
 void describe('all or none', () => {
