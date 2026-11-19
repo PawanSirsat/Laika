@@ -29,8 +29,11 @@ export type ScanVerdict =
   | { readonly ok: true; readonly scanned: 'text' | 'office' | 'archive' | 'binary' }
   | {
       readonly ok: false;
-      /** A rule from `SECRET_PATTERNS`, or `unreadable` for a zip this could not open. */
-      readonly pattern: SecretPatternName | 'unreadable';
+      /**
+       * A rule from `SECRET_PATTERNS`; `unreadable` for a zip this could not
+       * open; `too_large` for one holding more than it reads (LAI-1361 review).
+       */
+      readonly pattern: SecretPatternName | 'unreadable' | 'too_large';
       /**
        * Where, in words: `line 3`, `sheet 1, row 4`, `its name` — and inside
        * a zip, the path first: `config/.env, line 2`, `inner.zip › .env, line 2`.
@@ -53,19 +56,20 @@ export function isKeyName(filename: string): boolean {
 export const MAX_DEPTH = 4;
 
 const UNREADABLE: ScanVerdict = { ok: false, pattern: 'unreadable', where: 'its contents' };
+const TOO_LARGE: ScanVerdict = { ok: false, pattern: 'too_large', where: 'its size' };
 const BY_NAME: ScanVerdict = { ok: false, pattern: 'private_key', where: 'its name' };
 
 /**
  * Whether `bytes`, called `filename`, may be uploaded. `limits` is the most
- * inflated from one part and from the whole file, every zip inside it
- * included; a test passes smaller ones.
+ * inflated from one part and from the whole file, and the most files looked
+ * at in it, every zip inside it included; a test passes smaller ones.
  */
 export function scanFile(
   filename: string,
   bytes: Uint8Array,
   limits: OfficeLimits = DEFAULT_LIMITS,
 ): ScanVerdict {
-  return scanOne(filename, bytes, new Budget(limits.total), limits.part, 0);
+  return scanOne(filename, bytes, new Budget(limits.total, limits.files), limits.part, 0);
 }
 
 function scanOne(
@@ -89,7 +93,7 @@ function scanOne(
 function scanZip(bytes: Uint8Array, budget: Budget, part: number, depth: number): ScanVerdict {
   if (depth >= MAX_DEPTH) return UNREADABLE;
   const contents = zipContents(bytes, budget, part);
-  if (contents === undefined) return UNREADABLE;
+  if ('refused' in contents) return contents.refused === 'too_large' ? TOO_LARGE : UNREADABLE;
   for (const text of contents.parts) {
     const hit = scanForSecrets(text.text);
     if (hit === null) continue;
@@ -110,7 +114,9 @@ function scanZip(bytes: Uint8Array, budget: Budget, part: number, depth: number)
 }
 
 /** What each rule is, in words, for the refusal: never the value it matched. */
-export const SECRET_WORDS: Readonly<Record<SecretPatternName | 'unreadable', string>> = {
+export const SECRET_WORDS: Readonly<
+  Record<SecretPatternName | 'unreadable' | 'too_large', string>
+> = {
   private_key: 'a private key',
   aws_access_key_id: 'an AWS access key id',
   aws_secret_access_key: 'an AWS secret access key',
@@ -122,4 +128,5 @@ export const SECRET_WORDS: Readonly<Record<SecretPatternName | 'unreadable', str
   url_credentials: 'a password in a URL',
   credential_column: 'a credentials column with values in it',
   unreadable: 'a zip or an office file that could not be opened to check it',
+  too_large: 'a zip or an office file too large to check',
 };

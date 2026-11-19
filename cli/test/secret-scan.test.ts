@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 import { isKeyName, MAX_DEPTH, scanFile } from '../src/attach-scan.ts';
-import { officeText } from '../src/office-text.ts';
+import { MAX_FILES, officeText } from '../src/office-text.ts';
 import {
   SECRET_PATTERNS,
   SECRET_SCAN_BYTES,
@@ -377,6 +377,50 @@ void describe('the weak cases review-405 found, as the board has them (LAI-1361)
     });
   }
 
+  void test('passes a word that says how the field is, and still catches dragon (LAI-1361 review)', () => {
+    for (const clean of [
+      'password: unchanged',
+      'password: configured',
+      'password: correct',
+      'password: strong',
+      'password: present',
+      'password: reset',
+      'Password: Same',
+    ]) {
+      assert.equal(scanForSecrets(clean), null, clean);
+    }
+    for (const secret of ['password: dragon', 'password: hunter22 (temp)']) {
+      assert.equal(scanForSecrets(secret)?.pattern, 'password_value', secret);
+    }
+  });
+
+  void test('two stars are a mask only with at most four characters shown each side (LAI-1361 review)', () => {
+    for (const clean of ['password: p****d', 'password: ab**yz', 'API_TOKEN=abcd**wxyz']) {
+      assert.equal(scanForSecrets(clean), null, clean);
+    }
+    for (const [secret, pattern] of [
+      ['password: Pa**w0rd!x', 'password_value'],
+      ['password: hunter**22real', 'password_value'],
+      ['DB_PASSWORD=Xy**9kLmN2pQ', 'env_secret'],
+    ] as const) {
+      assert.equal(scanForSecrets(secret)?.pattern, pattern, secret);
+    }
+  });
+
+  void test('a path in pwd is where, not what: it passes, and a password there is caught (LAI-1361 review)', () => {
+    for (const clean of [
+      'PWD=/home/runner/work/Laika/Laika',
+      'PWD=C:\\Users\\ada\\src',
+      'pwd: /home/ada/src',
+      'pwd = ~/src/laika',
+    ]) {
+      assert.equal(scanForSecrets(clean), null, clean);
+    }
+    for (const secret of ['pwd=hunter22', 'Driver={ODBC};Server=db;Uid=sa;Pwd=Hunter22!;']) {
+      assert.equal(scanForSecrets(secret)?.pattern, 'password_value', secret);
+    }
+  });
+
   void test('a pwd=$(pwd) shell script is uploaded, read as text', () => {
     assert.deepEqual(scanFile('deploy.sh', Buffer.from('#!/bin/sh\npwd=$(pwd)\ncd "$pwd"\n')), {
       ok: true,
@@ -545,7 +589,7 @@ void describe('zips inside an upload are opened and checked', () => {
     });
     assert.equal(
       (scanFile('two.zip', two, { part: 4096, total: 1500 }) as { pattern?: string }).pattern,
-      'unreadable',
+      'too_large',
     );
   });
 
@@ -559,10 +603,90 @@ void describe('zips inside an upload are opened and checked', () => {
     const took = performance.now() - started;
     assert.deepEqual(verdict, {
       ok: false,
-      pattern: 'unreadable',
-      where: 'inner.zip › its contents',
+      pattern: 'too_large',
+      where: 'inner.zip › its size',
     });
     assert.ok(took < 1000, `took ${took.toFixed(0)} ms`);
+  });
+
+  /** `file` with every entry's compression method set to `method`, in both headers. */
+  const withMethod = (file: Buffer, method: number): Buffer => {
+    const out = Buffer.from(file);
+    for (const [signature, at] of [
+      [0x04034b50, 8],
+      [0x02014b50, 10],
+    ] as const) {
+      const marker = Buffer.alloc(4);
+      marker.writeUInt32LE(signature);
+      for (let i = out.indexOf(marker); i >= 0; i = out.indexOf(marker, i + 4)) {
+        out.writeUInt16LE(method, i + at);
+      }
+    }
+    return out;
+  };
+
+  void test('a zip in a form kept for large archives — LZMA, ZIP64 — is too large, not unopenable (LAI-1361 review)', () => {
+    const plain = zip({ 'notes.txt': 'clean\n' });
+    // 14 is LZMA, as 7-Zip writes it.
+    assert.deepEqual(scanFile('lzma.zip', withMethod(plain, 14)), {
+      ok: false,
+      pattern: 'too_large',
+      where: 'its size',
+    });
+    const zip64 = Buffer.from(plain);
+    // The end record's entry count at 0xFFFF says "read the ZIP64 record".
+    zip64.writeUInt16LE(0xffff, zip64.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06])) + 10);
+    assert.deepEqual(scanFile('big.zip', zip64), {
+      ok: false,
+      pattern: 'too_large',
+      where: 'its size',
+    });
+    assert.deepEqual(scanFile('outer.zip', zip({ 'inner.zip': withMethod(plain, 14) })), {
+      ok: false,
+      pattern: 'too_large',
+      where: 'inner.zip › its size',
+    });
+  });
+
+  void test('files are counted across every zip in the upload, not per zip (LAI-1361 review)', () => {
+    const inner = (n: number): Buffer =>
+      zip(
+        Object.fromEntries(
+          Array.from({ length: 20 }, (_, i) => [`${String(n)}/${String(i)}.txt`, 'ok\n']),
+        ),
+        true,
+      );
+    const outer = zip({ 'a.zip': inner(1), 'b.zip': inner(2), 'c.zip': inner(3) });
+    const limits = { part: 1 << 20, total: 1 << 20 };
+    // 3 inner zips and 60 files in them: 63 looked at.
+    assert.deepEqual(scanFile('three.zip', outer, { ...limits, files: 63 }), {
+      ok: true,
+      scanned: 'archive',
+    });
+    assert.deepEqual(scanFile('three.zip', outer, { ...limits, files: 62 }), {
+      ok: false,
+      pattern: 'too_large',
+      where: 'c.zip › its size',
+    });
+  });
+
+  void test(`zips of ${String(9_000)} entries each pass the per-zip limit, and still stop at ${String(MAX_FILES)} files in under two seconds`, () => {
+    const inner = (n: number): Buffer =>
+      zip(
+        Object.fromEntries(
+          Array.from({ length: 9_000 }, (_, i) => [`${String(n)}/${String(i)}`, '']),
+        ),
+        true,
+      );
+    const outer = zip({ 'a.zip': inner(1), 'b.zip': inner(2), 'c.zip': inner(3) }, true);
+    const heap = process.memoryUsage().heapUsed;
+    const started = performance.now();
+    const verdict = scanFile('many.zip', outer);
+    const took = performance.now() - started;
+    const grewMiB = (process.memoryUsage().heapUsed - heap) / 1_048_576;
+    assert.deepEqual(verdict, { ok: false, pattern: 'too_large', where: 'c.zip › its size' });
+    assert.ok(took < 2000, `took ${took.toFixed(0)} ms`);
+    assert.ok(grewMiB < 128, `the heap grew ${grewMiB.toFixed(0)} MiB`);
   });
 });
 
@@ -714,7 +838,7 @@ void describe('text multiplied out of small XML is spent against the budget, not
     };
   };
 
-  void test('one 1 MiB shared string referenced by 600 cells: unreadable, in under a second, with no 600 MiB built', () => {
+  void test('one 1 MiB shared string referenced by 600 cells: too large, in under a second, with no 600 MiB built', () => {
     const rows = Array.from(
       { length: 600 },
       (_, i) => `<row r="${String(i + 1)}"><c r="A${String(i + 1)}" t="s"><v>0</v></c></row>`,
@@ -728,12 +852,13 @@ void describe('text multiplied out of small XML is spent against the budget, not
 
     const { verdict, ms, grewMiB } = measured('amplified.xlsx', file);
 
-    assert.deepEqual(verdict, { ok: false, pattern: 'unreadable', where: 'its contents' });
+    // The budget, not the reading: too large, since LAI-1361's review.
+    assert.deepEqual(verdict, { ok: false, pattern: 'too_large', where: 'its size' });
     assert.ok(ms < 1000, `took ${ms.toFixed(0)} ms`);
     assert.ok(grewMiB < 128, `the heap grew ${grewMiB.toFixed(0)} MiB`);
   });
 
-  void test('20,000 rows with one cell at column ZZZ: unreadable, in under a second, with no padding built', () => {
+  void test('20,000 rows with one cell at column ZZZ: too large, in under a second, with no padding built', () => {
     const rows = Array.from(
       { length: 20_000 },
       (_, i) => `<row r="${String(i + 1)}"><c r="ZZZ${String(i + 1)}"/></row>`,
@@ -745,7 +870,7 @@ void describe('text multiplied out of small XML is spent against the budget, not
 
     const { verdict, ms, grewMiB } = measured('padded.xlsx', file);
 
-    assert.deepEqual(verdict, { ok: false, pattern: 'unreadable', where: 'its contents' });
+    assert.deepEqual(verdict, { ok: false, pattern: 'too_large', where: 'its size' });
     assert.ok(ms < 1000, `took ${ms.toFixed(0)} ms`);
     assert.ok(grewMiB < 128, `the heap grew ${grewMiB.toFixed(0)} MiB`);
   });

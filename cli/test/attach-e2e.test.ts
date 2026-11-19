@@ -283,6 +283,25 @@ void describe('a secret is refused here, before anything is sent', () => {
     assert.equal(attachmentCreates(), creates);
     assert.equal(storePuts(), puts);
   });
+
+  void test('a zip too large to check says so, and asks for a smaller export (LAI-1361 review)', async () => {
+    const lzma = zip({ 'notes.txt': 'clean\n' });
+    // Method 14, LZMA, in the local and the central header.
+    lzma.writeUInt16LE(14, 8);
+    lzma.writeUInt16LE(14, lzma.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02])) + 10);
+    const archive = file('archive.zip', lzma);
+    const creates = attachmentCreates();
+
+    const ran = await run(['LAI-1', archive, '--json']);
+
+    assert.equal(ran.code, 1);
+    const answer = JSON.parse(ran.out.join('\n')) as { ok: boolean; errors: string[] };
+    assert.equal(
+      answer.errors[0],
+      `${archive}: too large to check for secrets; attach a smaller export (PDF or CSV)`,
+    );
+    assert.equal(attachmentCreates(), creates);
+  });
 });
 
 void describe('all or none', () => {

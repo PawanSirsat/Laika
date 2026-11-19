@@ -17,11 +17,14 @@ import { inflateRawSync } from 'node:zlib';
  * budget.
  *
  * It reads only what it needs and refuses what it cannot read rather than
- * guessing: a ZIP64 archive, an encrypted entry, a part that inflates past
+ * guessing. **Too large** (LAI-1361 review): a ZIP64 archive, an entry
+ * compressed other than by deflate, a part that inflates past
  * {@link MAX_PART_BYTES}, a file whose inflated parts **and the text read out
- * of them** together pass {@link MAX_TOTAL_BYTES}, XML with a character
- * reference no character has, or anything else the reader throws is
- * `undefined`, and the caller treats that as a file it could not check.
+ * of them** together pass {@link MAX_TOTAL_BYTES}, or more than
+ * {@link MAX_FILES} files across every zip in it. **Unreadable**: an
+ * encrypted entry, a broken archive, XML with a character reference no
+ * character has, or anything else the reader throws. Either way the caller
+ * treats it as a file it could not check, and says which.
  *
  * **Every scan is linear** (LAI-1351 review). The XML is the file's, so it may
  * be crafted: elements are found with `indexOf` — an opening tag, its `>`, its
@@ -36,28 +39,49 @@ export const MAX_PART_BYTES = 64 * 1024 * 1024;
 /** The most inflated across every part read from one file. */
 export const MAX_TOTAL_BYTES = 128 * 1024 * 1024;
 
+/** The most files looked at in one upload, every zip inside it counted (LAI-1361 review). */
+export const MAX_FILES = 20_000;
+
 /** XML this cannot read for what it says: a reference to no character. */
 class UnreadableXml extends Error {}
+
+/**
+ * More than this reads (LAI-1361 review): past a budget, too many files, or
+ * a zip written in a form kept for very large archives — ZIP64, or a method
+ * other than deflate such as LZMA. Told apart from a file that cannot be
+ * opened at all, because the answer to it is a smaller export.
+ */
+class TooLarge extends Error {}
 
 /**
  * One allowance for a file, spent by the bytes inflated **and by the text
  * read out of them** (LAI-1351 review): a 1 KiB shared string referenced by a
  * thousand cells, or a cell at column ZZZ on every row, multiplies small XML
- * into text far larger than it. Spending past the end makes the file
- * unreadable before that text is built.
+ * into text far larger than it. Spending past the end makes the file too
+ * large to check before that text is built. **It counts files too**, every
+ * zip inside the upload included (LAI-1361 review): forty zips of 9,999
+ * entries each are under any one zip's limit and hold 400,000 files.
  */
 export class Budget {
-  // A field, not a parameter property: the CLI runs with Node's type
+  // Fields, not parameter properties: the CLI runs with Node's type
   // stripping, which refuses `constructor(public left …)`.
   left: number;
+  filesLeft: number;
 
-  constructor(left: number) {
+  constructor(left: number, files: number = MAX_FILES) {
     this.left = left;
+    this.filesLeft = files;
   }
 
   spend(n: number): void {
     this.left -= n;
-    if (this.left < 0) throw new UnreadableXml('more text than this reads');
+    if (this.left < 0) throw new TooLarge('more text than this reads');
+  }
+
+  /** `n` more files looked at: a zip's entries, before any of them is read. */
+  count(n: number): void {
+    this.filesLeft -= n;
+    if (this.filesLeft < 0) throw new TooLarge('more files than this reads');
   }
 }
 
@@ -83,7 +107,10 @@ export function isZip(bytes: Uint8Array): boolean {
   );
 }
 
-/** The central directory's entries, or `undefined` for an archive this cannot read. */
+/**
+ * The central directory's entries, or `undefined` for an archive this cannot
+ * read. ZIP64, or more entries than {@link MAX_ENTRIES}, is too large.
+ */
 function zipEntries(buf: Buffer): ZipEntry[] | undefined {
   // The end-of-central-directory record is 22 bytes plus a comment of at
   // most 65,535, so it is somewhere in the last 65,557 bytes.
@@ -98,7 +125,9 @@ function zipEntries(buf: Buffer): ZipEntry[] | undefined {
   if (end < 0) return undefined;
   const count = buf.readUInt16LE(end + 10);
   const offset = buf.readUInt32LE(end + 16);
-  if (count === 0xffff || offset === 0xffffffff || count > MAX_ENTRIES) return undefined;
+  if (count === 0xffff || offset === 0xffffffff || count > MAX_ENTRIES) {
+    throw new TooLarge('a ZIP64 archive, or more entries than this reads');
+  }
 
   const entries: ZipEntry[] = [];
   let at = offset;
@@ -111,7 +140,9 @@ function zipEntries(buf: Buffer): ZipEntry[] | undefined {
     const extraLength = buf.readUInt16LE(at + 30);
     const commentLength = buf.readUInt16LE(at + 32);
     const localOffset = buf.readUInt32LE(at + 42);
-    if (compressedSize === 0xffffffff || localOffset === 0xffffffff) return undefined;
+    if (compressedSize === 0xffffffff || localOffset === 0xffffffff) {
+      throw new TooLarge('a ZIP64 entry');
+    }
     const name = buf.toString('utf8', at + 46, at + 46 + nameLength);
     entries.push({ name, method, flags, compressedSize, localOffset });
     at += 46 + nameLength + extraLength + commentLength;
@@ -119,7 +150,11 @@ function zipEntries(buf: Buffer): ZipEntry[] | undefined {
   return entries;
 }
 
-/** One entry's bytes, inflated to at most `limit`, or `undefined` when it cannot be read. */
+/**
+ * One entry's bytes, inflated to at most `limit`, or `undefined` when it
+ * cannot be read. Past `limit`, or compressed other than by deflate — LZMA,
+ * bzip2, deflate64 — is too large.
+ */
 function readEntry(buf: Buffer, entry: ZipEntry, limit: number): Buffer | undefined {
   // Bit 0: the entry is encrypted, and there is nothing to read without its key.
   if ((entry.flags & 1) !== 0) return undefined;
@@ -128,11 +163,19 @@ function readEntry(buf: Buffer, entry: ZipEntry, limit: number): Buffer | undefi
   const start = at + 30 + buf.readUInt16LE(at + 26) + buf.readUInt16LE(at + 28);
   const data = buf.subarray(start, start + entry.compressedSize);
   if (data.length !== entry.compressedSize) return undefined;
-  if (entry.method === 0) return data.length > limit ? undefined : data;
-  if (entry.method !== 8) return undefined;
+  if (entry.method === 0) {
+    if (data.length > limit) throw new TooLarge('a stored entry past the limit');
+    return data;
+  }
+  if (entry.method !== 8) throw new TooLarge(`compression method ${String(entry.method)}`);
   try {
     return inflateRawSync(data, { maxOutputLength: limit });
-  } catch {
+  } catch (err) {
+    // zlib refuses to grow past `maxOutputLength` with this code; anything
+    // else is data that is not deflate.
+    if ((err as { code?: unknown }).code === 'ERR_BUFFER_TOO_LARGE') {
+      throw new TooLarge('an entry past the limit');
+    }
     return undefined;
   }
 }
@@ -367,13 +410,21 @@ function documentText(xml: string, where: string, budget: Budget): PartText {
   return { where, text: lines.join('\n'), rows: lines.map((_, i) => i + 1) };
 }
 
-/** The most inflated from one part, and from one file — every archive inside it included. */
+/**
+ * The most inflated from one part, and from one file — every archive inside
+ * it included — and the most files looked at in it ({@link MAX_FILES}).
+ */
 export interface OfficeLimits {
   readonly part: number;
   readonly total: number;
+  readonly files?: number | undefined;
 }
 
-export const DEFAULT_LIMITS: OfficeLimits = { part: MAX_PART_BYTES, total: MAX_TOTAL_BYTES };
+export const DEFAULT_LIMITS: OfficeLimits = {
+  part: MAX_PART_BYTES,
+  total: MAX_TOTAL_BYTES,
+  files: MAX_FILES,
+};
 
 /**
  * The text of a spreadsheet's sheets, a Word document's parts or a
@@ -384,8 +435,8 @@ export function officeText(
   bytes: Uint8Array,
   limits: OfficeLimits = DEFAULT_LIMITS,
 ): PartText[] | null | undefined {
-  const contents = zipContents(bytes, new Budget(limits.total), limits.part);
-  if (contents === undefined) return undefined;
+  const contents = zipContents(bytes, new Budget(limits.total, limits.files), limits.part);
+  if ('refused' in contents) return undefined;
   return contents.office ? contents.parts : null;
 }
 
@@ -409,24 +460,31 @@ export interface ZipContents {
   readonly files: ZipFile[];
 }
 
+/** Why a zip was not read: it cannot be opened, or it holds more than this reads. */
+export interface ZipRefusal {
+  readonly refused: 'unreadable' | 'too_large';
+}
+
 /**
  * Everything a zip holds that the scan reads, spending `budget` — which the
  * caller shares with every archive found inside this one, so nesting never
- * buys a second allowance — and inflating no entry past `part`. `undefined`
- * for a zip this cannot read, as `officeText` says.
+ * buys a second allowance — and inflating no entry past `part`; or why not.
  */
 export function zipContents(
   bytes: Uint8Array,
   budget: Budget,
   part: number = MAX_PART_BYTES,
-): ZipContents | undefined {
+): ZipContents | ZipRefusal {
   try {
-    return readZip(bytes, budget, part);
-  } catch {
-    // Unreadable XML, a budget spent, or anything else the reader throws —
-    // a `RangeError` from a string too long among them: a file this could
-    // not check, refused, never a crash with nothing said.
-    return undefined;
+    return readZip(bytes, budget, part) ?? { refused: 'unreadable' };
+  } catch (err) {
+    // A budget spent, too many files, ZIP64 or LZMA, or a string too long
+    // for the engine is more than this reads; unreadable XML, or anything
+    // else the reader throws, is a file it could not open. Either is
+    // refused, never a crash with nothing said.
+    return {
+      refused: err instanceof TooLarge || err instanceof RangeError ? 'too_large' : 'unreadable',
+    };
   }
 }
 
@@ -442,11 +500,12 @@ function readZip(bytes: Uint8Array, budget: Budget, part: number): ZipContents |
   const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const entries = zipEntries(buf);
   if (entries === undefined) return undefined;
+  budget.count(entries.length);
   const byName = new Map(entries.map((e) => [e.name, e]));
   // Every entry read counts against one budget, so many small parts cannot
   // add up to what one large part is refused for.
   const read = (entry: ZipEntry): Buffer | undefined => {
-    if (budget.left <= 0) return undefined;
+    if (budget.left <= 0) throw new TooLarge('the budget is spent');
     const data = readEntry(buf, entry, Math.min(part, budget.left));
     if (data === undefined) return undefined;
     budget.spend(data.length);

@@ -625,9 +625,11 @@ function checkFiles(args: Args): { readonly files: Local[]; readonly problems: s
     const verdict = scanFile(filename, bytes);
     if (!verdict.ok) {
       problems.push(
-        verdict.pattern === 'unreadable'
-          ? `${path}: could not be opened to check it for secrets${verdict.where === 'its contents' ? '' : ` (${verdict.where})`} — attach a PDF or CSV export of it, or the files inside it, instead`
-          : `${path}: holds ${SECRET_WORDS[verdict.pattern]} (${verdict.where}). Mask it — ****, <redacted> — or attach the list of accounts without their secrets, and say where the real file is kept`,
+        verdict.pattern === 'too_large'
+          ? `${path}: too large to check for secrets${verdict.where === 'its size' ? '' : ` (${verdict.where})`}; attach a smaller export (PDF or CSV)`
+          : verdict.pattern === 'unreadable'
+            ? `${path}: could not be opened to check it for secrets${verdict.where === 'its contents' ? '' : ` (${verdict.where})`} — attach a PDF or CSV export of it, or the files inside it, instead`
+            : `${path}: holds ${SECRET_WORDS[verdict.pattern]} (${verdict.where}). Mask it — ****, <redacted> — or attach the list of accounts without their secrets, and say where the real file is kept`,
       );
       continue;
     }
