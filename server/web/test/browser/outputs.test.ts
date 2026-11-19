@@ -25,6 +25,7 @@ import {
   closeBrowser,
   fakeStream,
   open,
+  refuse,
   reply,
   setTheme,
   until,
@@ -446,16 +447,31 @@ const SIZES = [
   { name: '390', width: 390, height: 844 },
 ] as const;
 
+interface PanelOptions extends ContentOptions {
+  readonly policy?: string;
+  /** The task's file list answers `500`: the Outputs line keeps the links as written. */
+  readonly filesFail?: boolean;
+  /** Runs before the app boots, after the routes above: a route a test holds. */
+  readonly before?: (page: Page) => Promise<void>;
+}
+
+const FILES_PATH = '/api/v1/tasks/t3/attachments';
+
 async function panel(
   size: (typeof SIZES)[number] = SIZES[0],
-  options: ContentOptions & { readonly policy?: string } = {},
+  options: PanelOptions = {},
 ): Promise<Harness> {
-  const h = await open('/board?project=laika-core&task=t3', stub(), {
+  const routes =
+    options.filesFail === true
+      ? { ...stub(), [FILES_PATH]: refuse(500, 'internal', 'Something went wrong.') }
+      : stub();
+  const h = await open('/board?project=laika-core&task=t3', routes, {
     before: async (page) => {
       await page.setViewportSize({ width: size.width, height: size.height });
       await fakeStream(page);
       await routeContent(page, options);
       if (options.policy !== undefined) await withPolicy(page, options.policy);
+      await options.before?.(page);
     },
   });
   await h.page.locator('[data-section="proof"]').waitFor({ timeout: 20_000 });
@@ -535,9 +551,12 @@ void describe('the Outputs line under Proof (D-162)', () => {
           await setTheme(h.page, theme);
           // Folded in review, with the round's Outputs line right under it.
           await h.page.locator('[data-section="proof"][data-folded]').waitFor({ timeout: 10_000 });
-          assert.equal(
-            (await fold(h).locator('summary').innerText()).trim(),
-            'Outputs · 6 — 3 screenshots · 1 recording · 1 sheet · 1 report',
+          const line = 'Outputs · 6 — 3 screenshots · 1 recording · 1 sheet · 1 report';
+          await settle(
+            async () =>
+              (await fold(h).count()) === 1 &&
+              (await fold(h).locator('summary').innerText()).trim() === line,
+            'the Outputs line, counted from the file list',
           );
           assert.equal(await fold(h).getAttribute('open'), null, 'it starts folded');
           assert.equal(
@@ -619,6 +638,58 @@ void describe('the Outputs line under Proof (D-162)', () => {
       });
     }
   }
+});
+
+void describe('the Outputs line counts once, from the file list', () => {
+  void test('while the list is on its way no line is drawn, so it never changes under a reader', async () => {
+    // From the links alone the sheet, the report and the recording are only
+    // *files*: CI caught the line saying so for a moment (#407, run 44422424529).
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((done) => {
+      release = done;
+    });
+    let asked = false;
+    const h = await panel(SIZES[0], {
+      before: async (page) => {
+        await page.route(`**${FILES_PATH}`, async (route) => {
+          asked = true;
+          await held;
+          await route.fallback();
+        });
+      },
+    });
+    try {
+      await h.page.locator('[data-section="proof"][data-folded]').waitFor({ timeout: 10_000 });
+      await settle(() => asked, 'the file list was asked for');
+      // Held: the round's summary has been read, and no line is drawn yet.
+      assert.equal(await h.page.locator('[data-section="proof"] .ev-round').count(), 1);
+      assert.equal(await fold(h).count(), 0, 'a line was drawn before the file list came');
+      release();
+      await settle(async () => (await fold(h).count()) === 1, 'the line came with the list');
+      assert.equal(
+        (await fold(h).locator('summary').innerText()).trim(),
+        'Outputs · 6 — 3 screenshots · 1 recording · 1 sheet · 1 report',
+      );
+    } finally {
+      release();
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('a list that fails still settles it: every link counted as written', async () => {
+    const h = await panel(SIZES[0], { filesFail: true });
+    try {
+      await settle(async () => (await fold(h).count()) === 1, 'the line after a failed read');
+      // Without the list only the images are known for what they are.
+      assert.equal(
+        (await fold(h).locator('summary').innerText()).trim(),
+        'Outputs · 6 — 3 screenshots · 3 files',
+      );
+    } finally {
+      await h.close();
+    }
+  });
 });
 
 void describe('the viewer', () => {

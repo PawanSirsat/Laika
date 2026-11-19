@@ -436,13 +436,19 @@ export function EvidenceSection({
    * types and whether they are shown inline are the task's file list's, read
    * only when a round attached any — the Attachments section reads the same
    * path, and the client shares a read in flight.
+   *
+   * **The Outputs line waits for that read**, so what it counts never changes
+   * under the reader: drawn from the links alone, a sheet and a report are
+   * just *files* until the list lands. A read that fails settles it too —
+   * every link is then kept as written (`null`).
    */
   const refs = useMemo(() => roundOutputs(rounds?.rounds ?? []), [rounds]);
   const wantsFiles = [...refs.values()].some((list) => list.length > 0);
   const [filesRead, setFilesRead] = useState<
-    { readonly taskId: string; readonly files: readonly Attachment[] } | undefined
+    { readonly taskId: string; readonly files: readonly Attachment[] | null } | undefined
   >(undefined);
-  const files = filesRead?.taskId === taskId ? filesRead.files : undefined;
+  const settled = filesRead?.taskId === taskId;
+  const files = settled ? (filesRead.files ?? undefined) : undefined;
   useEffect(() => {
     if (!wantsFiles) return;
     const controller = new AbortController();
@@ -451,14 +457,14 @@ export function EvidenceSection({
         if (!controller.signal.aborted) setFilesRead({ taskId, files: answer.data });
       })
       .catch(() => {
-        // Unread, every link is kept as written: the strip still opens them.
+        if (!controller.signal.aborted) setFilesRead({ taskId, files: null });
       });
     return () => {
       controller.abort();
     };
   }, [taskId, refreshKey, wantsFiles]);
   const outputsOf = (round: Round): readonly OutputItem[] =>
-    outputItems(refs.get(round.number) ?? [], files, roundBy(round, nameOf));
+    settled ? outputItems(refs.get(round.number) ?? [], files, roundBy(round, nameOf)) : [];
 
   if (hideWhenEmpty === true && sendBack === null && rounds !== undefined && latest === undefined) {
     return null;
