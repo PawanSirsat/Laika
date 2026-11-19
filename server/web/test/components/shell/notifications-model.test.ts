@@ -70,6 +70,7 @@ const note = (id: string, at: number, over: Partial<UnlistedWork> = {}): Unliste
   promoted_task_id: null,
   dismissed_at: null,
   created_at: at,
+  files: [],
   ...over,
 });
 
