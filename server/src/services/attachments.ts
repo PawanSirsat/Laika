@@ -555,33 +555,45 @@ async function refuseSecret(
 // --------------------------------------------------------------------- read
 
 /**
+ * Whether `actor` may read `row`'s bytes: ready, not removed, in a project
+ * they can read — and, for **a file on an unlisted finding not yet
+ * promoted**, only its uploader and those who read the pile
+ * (`audit_log.export`, as `GET /unlisted` asks): a finding is nobody's
+ * project work yet, and the project its file was uploaded under is only
+ * where the upload was asked for (D-162 item 8, LAI-1302 review). The one
+ * gate the content route and `GET /unlisted`'s file list both ask.
+ */
+function mayReadFile(actor: ResolvedActor, row: AttachmentRow): boolean {
+  if (row.state !== 'ready' || row.deletedAt !== null) return false;
+  if (!can(withProject(actor, row.projectId), 'project.read', { projectId: row.projectId })) {
+    return false;
+  }
+  const onFinding = row.unlistedWorkId !== null && row.taskId === null;
+  return !onFinding || row.uploadedBy === actor.userId || can(actor, 'audit_log.export');
+}
+
+/**
  * Where a ready file's bytes are (`GET /attachments/:id/content`): a
  * presigned `GET`, five minutes long, with the type and disposition the
  * store must answer with — the declared type and `inline` only for an
  * `inline` file, `application/octet-stream` and `attachment` for anything
- * else. Pending, removed, or in a project the caller cannot read, is the
- * same `404` — and so is **a file on an unlisted finding not yet promoted**
- * to anyone but its uploader and those who read the pile (`audit_log.export`,
- * as `GET /unlisted` asks): a finding is nobody's project work yet, and the
- * project its file was uploaded under is only where the upload was asked for
- * (D-162 item 8, LAI-1302 review).
+ * else. **`download`** (`?download=1`, LAI-1361) makes every file
+ * `attachment`, so a browser saves an image or a PDF it would otherwise
+ * open: a link's `download` attribute is ignored across the 302 to the
+ * store's origin. A file `mayReadFile` refuses is the same `404` as one
+ * that is not there.
  */
 export function attachmentContentUrl(
   db: Db,
   actor: ResolvedActor,
   deps: AttachmentsDeps | undefined,
   id: string,
+  download = false,
 ): string {
   const store = storeFor(deps);
   const row = db.select().from(attachments).where(eq(attachments.id, id)).get();
-  const missing = ApiError.notFound(`No attachment with id "${id}"`);
-  if (row?.state !== 'ready' || row.deletedAt !== null) throw missing;
-  if (!can(withProject(actor, row.projectId), 'project.read', { projectId: row.projectId })) {
-    throw missing;
-  }
-  const onFinding = row.unlistedWorkId !== null && row.taskId === null;
-  if (onFinding && row.uploadedBy !== actor.userId && !can(actor, 'audit_log.export')) {
-    throw missing;
+  if (row === undefined || !mayReadFile(actor, row)) {
+    throw ApiError.notFound(`No attachment with id "${id}"`);
   }
 
   const inline = row.inline === 1;
@@ -589,7 +601,10 @@ export function attachmentContentUrl(
     row.storageKey,
     {
       contentType: inline ? row.contentType : 'application/octet-stream',
-      contentDisposition: contentDisposition(inline ? 'inline' : 'attachment', row.filename),
+      contentDisposition: contentDisposition(
+        inline && !download ? 'inline' : 'attachment',
+        row.filename,
+      ),
     },
     clockOf(deps),
   ).url;
@@ -993,6 +1008,56 @@ export function describeTaskFiles(
 }
 
 // -------------------------------------------- unlisted findings (D-162 item 8)
+
+/** A finding's file as `GET /unlisted` lists it (LAI-1361): what its link cannot say. */
+export interface UnlistedFileView {
+  id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  /** Shown in the page; otherwise a download (D-150 item 4). */
+  inline: boolean;
+}
+
+/**
+ * The files on each of `unlistedIds`, by finding, oldest first — **only those
+ * `actor` may open** (`mayReadFile`, the content route's own gate), so the
+ * list never names a file its link would answer `404` for. A finding with
+ * none is absent from the map. One query for the page, not one per finding.
+ */
+export function unlistedFiles(
+  db: Db,
+  actor: ResolvedActor,
+  unlistedIds: readonly string[],
+): Map<string, UnlistedFileView[]> {
+  const byFinding = new Map<string, UnlistedFileView[]>();
+  if (unlistedIds.length === 0) return byFinding;
+  const rows = db
+    .select()
+    .from(attachments)
+    .where(
+      and(
+        inArray(attachments.unlistedWorkId, [...unlistedIds]),
+        eq(attachments.state, 'ready'),
+        isNull(attachments.deletedAt),
+      ),
+    )
+    .orderBy(asc(attachments.createdAt), asc(attachments.id))
+    .all();
+  for (const row of rows) {
+    if (row.unlistedWorkId === null || !mayReadFile(actor, row)) continue;
+    const files = byFinding.get(row.unlistedWorkId) ?? [];
+    files.push({
+      id: row.id,
+      filename: row.filename,
+      content_type: row.contentType,
+      size_bytes: row.sizeBytes,
+      inline: row.inline === 1,
+    });
+    byFinding.set(row.unlistedWorkId, files);
+  }
+  return byFinding;
+}
 
 /**
  * Attach files to the unlisted finding `unlistedId` (`log_unlisted_work`),

@@ -4,7 +4,7 @@ import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { readPayload } from '../../src/db/activity.ts';
 import { type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
-import { activity, orgs, unlistedWork, users } from '../../src/db/schema.ts';
+import { activity, attachments, orgs, projects, unlistedWork, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { createProject } from '../../src/services/projects.ts';
 import { dismissUnlisted, listUnlisted, promoteUnlisted } from '../../src/services/unlisted.ts';
@@ -123,6 +123,40 @@ describe('reading the pile is org-level (§3.1 Export audit log)', () => {
     const viewerId = makeUser('viewer', 'viewer');
 
     expect(() => listUnlisted(t.db, actor(viewerId), LIST)).toThrowError(ApiError);
+  });
+
+  it('names a file only to a reader its content route would serve it to (LAI-1361)', () => {
+    const id = note();
+    const projectId = t.db.select().from(projects).where(eq(projects.slug, 'laika')).get()!.id;
+    const fileId = newId();
+    t.db
+      .insert(attachments)
+      .values({
+        id: fileId,
+        projectId,
+        unlistedWorkId: id,
+        uploadedBy: ownerId,
+        filename: 'deploy.log',
+        contentType: 'text/plain',
+        sizeBytes: 10,
+        storageKey: `p/${projectId}/${fileId}`,
+        state: 'ready',
+        inline: 0,
+        createdAt: 1,
+        readyAt: 1,
+      })
+      .run();
+    expect(listUnlisted(t.db, actor(ownerId), LIST)[0]?.files.map((f) => f.id)).toEqual([fileId]);
+
+    // An admin who reads the pile and may not open every project: the
+    // finding, and not the file uploaded under a project they cannot read.
+    const adminId = makeUser('admin', 'admin');
+    const narrowed: ResolvedActor = {
+      ...actor(adminId),
+      orgGrants: { admin: ['see_org_activity'], member: [], viewer: [] },
+    };
+    const rows = listUnlisted(t.db, narrowed, LIST);
+    expect(rows.map((row) => [row.id, row.files])).toEqual([[id, []]]);
   });
 });
 

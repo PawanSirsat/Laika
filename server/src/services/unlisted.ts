@@ -17,6 +17,8 @@ import {
   attachToUnlisted,
   moveUnlistedAttachments,
   removeUnlistedAttachments,
+  unlistedFiles,
+  type UnlistedFileView,
 } from './attachments.ts';
 import { createTask, type TaskView } from './tasks.ts';
 
@@ -62,6 +64,15 @@ export interface UnlistedView {
   promoted_task_id: string | null;
   dismissed_at: number | null;
   created_at: number;
+}
+
+/**
+ * A finding as `GET /unlisted` lists it: the row, and **the files attached to
+ * it** that the reader may open (D-162 item 8, LAI-1361) — so the Inbox can
+ * name, size and draw a file its note only links. Oldest first; none is `[]`.
+ */
+export interface UnlistedEntryView extends UnlistedView {
+  files: UnlistedFileView[];
 }
 
 type UnlistedRow = typeof unlistedWork.$inferSelect;
@@ -188,7 +199,7 @@ export interface ListUnlistedOptions {
 }
 
 /**
- * The pile, newest first.
+ * The pile, newest first, each finding with its files (`unlistedFiles`).
  *
  * Newest-first because it is a feed of things noticed, read from the top — the
  * same order as the activity feed and the opposite of `listComments`, for the
@@ -198,7 +209,7 @@ export function listUnlisted(
   db: Db,
   actor: ResolvedActor,
   options: ListUnlistedOptions,
-): UnlistedView[] {
+): UnlistedEntryView[] {
   assertCan(actor, 'audit_log.export');
 
   const conditions: SQL[] = [];
@@ -217,14 +228,19 @@ export function listUnlisted(
     );
   }
 
-  return db
+  const rows = db
     .select()
     .from(unlistedWork)
     .where(conditions.length === 0 ? undefined : and(...conditions))
     .orderBy(desc(unlistedWork.createdAt), desc(unlistedWork.id))
     .limit(options.limit + 1)
-    .all()
-    .map(toView);
+    .all();
+  const files = unlistedFiles(
+    db,
+    actor,
+    rows.map((row) => row.id),
+  );
+  return rows.map((row) => ({ ...toView(row), files: files.get(row.id) ?? [] }));
 }
 
 export interface PromoteUnlistedInput {

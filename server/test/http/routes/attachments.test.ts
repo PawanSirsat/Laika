@@ -278,6 +278,39 @@ describe('a file, from asking to removing', () => {
     expect(location.searchParams.get('response-content-disposition')).toMatch(/^attachment; /);
   });
 
+  it('?download=1 makes the store send even an image as an attachment, signed and honoured (LAI-1361)', async () => {
+    const shot = await attach(PNG, { filename: 'Board – dark.png' });
+    expect(shot.inline).toBe(true);
+    const dispositionOf = async (query: string) => {
+      const res = await call('GET', `/attachments/${shot.id}/content${query}`);
+      expect(res.status, query).toBe(302);
+      expect(res.headers.get('cache-control')).toBe('private, max-age=60');
+      return new URL(res.headers.get('location')!);
+    };
+
+    const saved = await dispositionOf('?download=1');
+    expect(saved.searchParams.get('response-content-disposition')).toBe(
+      `attachment; filename="Board _ dark.png"; filename*=UTF-8''Board%20%E2%80%93%20dark.png`,
+    );
+    // The type stays the file's, so the saved file opens as what it is.
+    expect(saved.searchParams.get('response-content-type')).toBe('image/png');
+    // The store checks the signature over the disposition, and answers with it.
+    const fetched = await fake.fetchImpl(saved.href);
+    expect(fetched.status).toBe(200);
+    expect(fetched.headers.get('content-disposition')).toMatch(/^attachment; /);
+    expect(new Uint8Array(await fetched.arrayBuffer())).toEqual(PNG);
+
+    for (const shown of ['', '?download=0', '?download=']) {
+      expect(
+        (await dispositionOf(shown)).searchParams.get('response-content-disposition'),
+        shown,
+      ).toMatch(/^inline; /);
+    }
+    const bad = await call('GET', `/attachments/${shot.id}/content?download=yes`);
+    expect(bad.status).toBe(400);
+    expect((await errorOf(bad)).details).toEqual({ download: 'yes' });
+  });
+
   it('refuses one byte over the largest with 413 and max_bytes, and takes the largest exactly', async () => {
     const over = await errorOf(
       ask({ filename: 'big.bin', content_type: 'application/zip', size_bytes: MAX + 1 }),
@@ -693,6 +726,13 @@ describe('an agent’s outputs (D-162, LAI-1302)', () => {
     expect((await read({ Cookie: cookie })).status).toBe(302);
     // Another member of the project it was uploaded under: as if it were not there.
     expect((await read(vic)).status).toBe(404);
+    // Asking to save it is the same gate (LAI-1361).
+    expect(
+      (await call('GET', `/attachments/${shot.id}/content?download=1`, undefined, vic)).status,
+    ).toBe(404);
+    expect(
+      (await call('GET', `/attachments/${shot.id}/content?download=1`, undefined, mia)).status,
+    ).toBe(302);
   });
 
   it('finishes a task over REST with captioned outputs, as finish_task does', async () => {
