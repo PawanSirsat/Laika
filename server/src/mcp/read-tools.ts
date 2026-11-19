@@ -1,3 +1,4 @@
+import { ApiError } from '../errors.ts';
 import { z } from 'zod';
 import { type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
@@ -338,7 +339,13 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
 
         const related = new Map<string, TaskView>();
         for (const id of [...view.blocked_by, ...view.blocks]) {
-          related.set(id, getTask(db, actor, id));
+          // One in Trash does not exist to a token (LAI-1354): reported as not
+          // visible, as a parent it cannot see is, rather than failing the call.
+          try {
+            related.set(id, getTask(db, actor, id));
+          } catch (error) {
+            if (!(error instanceof ApiError) || error.code !== 'not_found') throw error;
+          }
         }
 
         // Soft-deleted comments are dropped, not tombstoned. A tombstone exists so

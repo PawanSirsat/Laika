@@ -704,6 +704,8 @@ function requireTask(
 function assertParentAllowed(
   db: Db,
   input: { taskId: string | null; projectId: string; parentId: string },
+  /** Who asks: a parent in Trash is `404` to a token, as any read of it is (LAI-1354). */
+  actor?: ServiceCaller,
 ): void {
   if (input.taskId !== null && input.parentId === input.taskId) {
     throw parentRefused('self', 'A task cannot be a subtask of itself');
@@ -725,7 +727,7 @@ function assertParentAllowed(
   }
   // A subtask added under an archived parent would be archived work nobody
   // archived (LAI-1353).
-  assertTaskLive(parent);
+  assertTaskLive(parent, actor);
   if (parent.parentTaskId !== null) {
     throw parentRefused('depth', 'That task is itself a subtask — subtasks go one level deep');
   }
@@ -1027,7 +1029,7 @@ export function createTask(
     // between the check and the insert.
     const parentId = input.parent_task_id ?? null;
     if (parentId !== null) {
-      assertParentAllowed(db, { taskId: null, projectId: project.id, parentId });
+      assertParentAllowed(db, { taskId: null, projectId: project.id, parentId }, actor);
     }
 
     // Inside the write lock: `nextTaskNumber` reads MAX(number), and a deferred
@@ -1769,11 +1771,15 @@ export function updateTask(
     // is two concurrent PATCHes forming a two-deep chain, recorded in LAI-493
     // as accepted rather than threading `sqlite` through every caller.
     if (input.parent_task_id !== null) {
-      assertParentAllowed(db, {
-        taskId,
-        projectId: project.id,
-        parentId: input.parent_task_id,
-      });
+      assertParentAllowed(
+        db,
+        {
+          taskId,
+          projectId: project.id,
+          parentId: input.parent_task_id,
+        },
+        actor,
+      );
     }
     changes.parentTaskId = input.parent_task_id;
   }

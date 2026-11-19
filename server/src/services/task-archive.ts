@@ -1,4 +1,7 @@
+import { eq } from 'drizzle-orm';
 import { type ServiceCaller } from '../auth/resolve-actor.ts';
+import { type Db } from '../db/client.ts';
+import { tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 
 /**
@@ -45,4 +48,26 @@ export function assertTaskLive(
   throw new ApiError('conflict', 'This task is archived. Restore it before changing it.', {
     reason: TASK_ARCHIVED,
   });
+}
+
+/**
+ * **The whole of `/tasks/:id` answers a token `404` for a task in Trash**
+ * (LAI-1354 review): its comments, files, rounds, checkpoints, offers,
+ * watchers, estimate, time and usage, read or written — not only the task
+ * itself. Asked once, ahead of every route under it (`trashGate`), so no
+ * route can be the one that forgot. A person, and an id that names nothing,
+ * pass through to the route's own answer.
+ */
+export function assertTaskReachable(
+  db: Db,
+  actor: ServiceCaller | null | undefined,
+  taskId: string,
+): void {
+  if (!isTokenCaller(actor ?? undefined)) return;
+  const row = db
+    .select({ deletedAt: tasks.deletedAt })
+    .from(tasks)
+    .where(eq(tasks.id, taskId))
+    .get();
+  if (row !== undefined && row.deletedAt !== null) throw noSuchTask(taskId);
 }

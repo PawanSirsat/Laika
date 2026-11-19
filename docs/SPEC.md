@@ -5305,8 +5305,11 @@ is still in Trash, and a restore never brings a subtask back live under a parent
 that is archived); the live claim is released, live offers and the open work
 request close `task_closed`. **A task in Trash is read-only** — every write but
 the restore is `409 conflict` with `reason: deleted` — **and to a token it does
-not exist**: `GET /tasks/:id`, every MCP tool and every write answer `404`, as
-for an id that names nothing. It
+not exist**: every route under `/tasks/:id` — the task, its comments, files,
+rounds, checkpoints, offers, watchers, estimate, time and usage, read or
+written — and every MCP tool answer `404`, as for an id that names nothing; as
+a parent it is that `404` too, and beside a live task (a blocker) MCP shows it
+as `{ id, visible: false }`. It
 is never archived or restored from the archive while in Trash; an archived task
 deleted and restored comes back archived.
 **`null` clears a field; absent leaves it alone** — they are different requests,

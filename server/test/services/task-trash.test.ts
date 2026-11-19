@@ -241,6 +241,12 @@ describe('a task in Trash', () => {
     expect(refusal(() => getTask(t.db, actor, gone.id)).code).toBe('not_found');
     expect(refusal(() => updateTask(t.db, actor, gone.id, { title: 'No' })).code).toBe('not_found');
     expect(refusal(() => addComment(t.db, actor, gone.id, 'Hello')).code).toBe('not_found');
+    // …and as a parent, the 404 too, never `deleted` (review finding).
+    expect(
+      refusal(() =>
+        createTask(t.sqlite, t.db, actor, 'laika', { title: 'Child', parent_task_id: gone.id }),
+      ).code,
+    ).toBe('not_found');
     expect(refusal(() => startWorking(t.sqlite, t.db, actor, gone.id, { now: T0 + 11 })).code).toBe(
       'not_found',
     );
