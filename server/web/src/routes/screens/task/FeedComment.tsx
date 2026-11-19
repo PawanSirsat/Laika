@@ -29,6 +29,8 @@ export interface FeedCommentProps {
   readonly onDeleted: (commentId: string) => void;
   /** Attach files while editing (D-150); absent where the board has no store. */
   readonly attach?: EditorAttach | undefined;
+  /** Who its images came from, as the viewer says it: *by Ada’s Claude Code* (LAI-1352). */
+  readonly imagesBy?: string | undefined;
 }
 
 /** How tall a folded finish summary stands (the design's 112px). */
@@ -58,6 +60,7 @@ export function FeedComment({
   onChanged,
   onDeleted,
   attach,
+  imagesBy,
 }: FeedCommentProps) {
   const [editing, setEditing] = useState(false);
   /** What the server answered a save with, until the thread's read catches up. */
@@ -177,6 +180,7 @@ export function FeedComment({
           body={body}
           people={people}
           meId={meId}
+          imagesBy={imagesBy}
           foot={
             edited !== null || actions !== null ? (
               <>
@@ -193,7 +197,7 @@ export function FeedComment({
               <Icon name="reply" size="tiny" /> Sent back
             </span>
           )}
-          <CommentBody body={body} people={people} meId={meId} />
+          <CommentBody body={body} people={people} meId={meId} imagesBy={imagesBy} />
           {(edited !== null || actions !== null) && (
             <div className="cmt-card-foot">
               {edited}
@@ -227,6 +231,7 @@ interface FinishSummaryProps {
   readonly body: string;
   readonly people: readonly MentionCandidate[];
   readonly meId?: string | undefined;
+  readonly imagesBy?: string | undefined;
   readonly foot: ReactNode;
 }
 
@@ -235,7 +240,7 @@ interface FinishSummaryProps {
  * fade at its foot and *Show full summary · N more points* under it. A summary
  * short enough to fit is drawn whole, with no button to press for nothing.
  */
-function FinishSummary({ round, body, people, meId, foot }: FinishSummaryProps) {
+function FinishSummary({ round, body, people, meId, imagesBy, foot }: FinishSummaryProps) {
   const [open, setOpen] = useState(false);
   const [tall, setTall] = useState(false);
   const box = useRef<HTMLDivElement | null>(null);
@@ -289,7 +294,7 @@ function FinishSummary({ round, body, people, meId, foot }: FinishSummaryProps) 
         data-folded={folded ? 'true' : 'false'}
         style={folded ? { maxHeight: `${String(FOLD_PX)}px` } : undefined}
       >
-        <CommentBody body={body} people={people} meId={meId} />
+        <CommentBody body={body} people={people} meId={meId} imagesBy={imagesBy} />
       </div>
       {(tall || foot !== null) && (
         <div className="cmt-card-foot">

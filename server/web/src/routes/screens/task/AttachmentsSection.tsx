@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import type { EditorAttach } from '../../../api/attachment-upload.ts';
 import {
   deleteAttachment,
@@ -7,6 +7,7 @@ import {
 } from '../../../api/attachments.ts';
 import { ApiError } from '../../../api/errors.ts';
 import { subscribeToEvents } from '../../../api/event-stream.ts';
+import type { Round } from '../../../api/review.ts';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
@@ -20,7 +21,18 @@ import {
 } from './attachments-derive.ts';
 import { fileKind, filesFrom } from './editor/attach.ts';
 import { FileGlyph } from './FileGlyph.tsx';
+import { OutputViewer } from './OutputViewer.tsx';
+import {
+  ATTACHMENT_GROUP_TITLES,
+  groupAttachments,
+  outputBy,
+  outputItem,
+  roundBy,
+  roundOutputs,
+  type OutputItem,
+} from './outputs-derive.ts';
 import './attachments.css';
+import './outputs.css';
 
 export interface AttachmentsSectionProps {
   readonly slug: string;
@@ -37,6 +49,12 @@ export interface AttachmentsSectionProps {
   readonly reader: AttachmentReader;
   /** A person's name for an id, as the panel knows them. */
   readonly nameOf: (userId: string) => string;
+  /**
+   * The task's rounds, newest first, as the panel read them (LAI-1117): a
+   * file a round's summary links is one of an agent's **outputs** (D-162),
+   * with the caption and the agent that link names.
+   */
+  readonly rounds?: readonly Round[] | undefined;
 }
 
 /** A file on its way from this section, or one that did not make it. */
@@ -70,6 +88,7 @@ export function AttachmentsSection({
   mayAttach,
   reader,
   nameOf,
+  rounds,
 }: AttachmentsSectionProps) {
   const [open, setOpen] = useState(true);
   const [listing, setListing] = useState<Listing>({ status: 'loading' });
@@ -78,10 +97,27 @@ export function AttachmentsSection({
   const [removing, setRemoving] = useState<string | undefined>(undefined);
   const [removeError, setRemoveError] = useState<string | undefined>(undefined);
   const [dragging, setDragging] = useState(false);
+  const [viewing, setViewing] = useState<number | null>(null);
   const sendSeq = useRef(0);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const confirm = useConfirm();
   const on = attach !== undefined;
+
+  /*
+   * Which files are outputs (D-162): each round's own, with its caption and
+   * who it came from. The round, not the file, knows the agent — the file's
+   * `uploaded_by` is the person it acted for.
+   */
+  const outputs = useMemo(() => {
+    const byId = new Map<string, { readonly caption: string; readonly by: string }>();
+    const own = roundOutputs(rounds ?? []);
+    for (const round of rounds ?? []) {
+      for (const ref of own.get(round.number) ?? []) {
+        byId.set(ref.id, { caption: ref.caption, by: roundBy(round, nameOf) });
+      }
+    }
+    return byId;
+  }, [rounds, nameOf]);
 
   const reload = useCallback(() => {
     setReads((n) => n + 1);
@@ -115,7 +151,21 @@ export function AttachmentsSection({
   if (listing.status === 'ready' && files.length === 0 && !mayAttach && sending.length === 0) {
     return null;
   }
-  const rows = attachmentRows(files, reader, nameOf, Date.now());
+  // Grouped — Outputs, In comments, Other — and drawn in that order, which is
+  // also the order the viewer steps through them.
+  const groups = groupAttachments(files, new Set(outputs.keys()));
+  const ordered = groups.flatMap((entry) => entry.files);
+  const rows = attachmentRows(ordered, reader, nameOf, Date.now());
+  const items: OutputItem[] = ordered.map((file) => {
+    const output = outputs.get(file.id);
+    return outputItem(
+      { id: file.id, caption: output?.caption ?? file.filename, image: false },
+      file,
+      output?.by ?? outputBy(nameOf(file.uploaded_by), null),
+    );
+  });
+  // One group of files with no output or comment among them needs no heading.
+  const headed = groups.length > 1 || groups[0]?.group !== 'other';
 
   const send = (chosen: readonly File[]): void => {
     for (const file of chosen) {
@@ -248,55 +298,94 @@ export function AttachmentsSection({
             </p>
           )}
 
-          {rows.length > 0 && (
-            <ul className="att-list" aria-label="Files on this task">
-              {rows.map((row) => {
-                const file = files.find((f) => f.id === row.id);
-                return (
-                  <li key={row.id} className="att-row">
-                    <span className="att-icon" aria-hidden="true">
-                      <FileGlyph kind={row.kind} size={18} />
-                    </span>
-                    <span className="att-main">
-                      <a
-                        className="att-name"
-                        href={row.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {row.filename}
-                      </a>
-                      <span className="att-meta">
-                        {row.size} · {row.uploader} ·{' '}
-                        <Tooltip content={row.when.full}>
-                          <time
-                            dateTime={row.when.iso}
-                            tabIndex={0}
-                            aria-label={`${row.when.text}, ${row.when.full}`}
-                          >
-                            {row.when.text}
-                          </time>
-                        </Tooltip>
-                      </span>
-                    </span>
-                    {row.mayDelete && file !== undefined && (
+          {groups.map((entry) => (
+            <div key={entry.group} className="att-group" data-group={entry.group}>
+              {headed && (
+                <h4 className="att-group-title">
+                  {ATTACHMENT_GROUP_TITLES[entry.group]}{' '}
+                  <span className="att-group-count">{entry.files.length}</span>
+                </h4>
+              )}
+              <ul
+                className="att-list"
+                aria-label={
+                  headed
+                    ? `${ATTACHMENT_GROUP_TITLES[entry.group]} on this task`
+                    : 'Files on this task'
+                }
+              >
+                {entry.files.map((file) => {
+                  const at = ordered.indexOf(file);
+                  const row = rows[at];
+                  const item = items[at];
+                  if (row === undefined || item === undefined) return null;
+                  return (
+                    <li key={row.id} className="att-row" data-kind={item.kind}>
                       <button
                         type="button"
-                        className="att-remove"
-                        aria-label={`Remove ${row.filename}`}
-                        disabled={removing !== undefined}
-                        onClick={() => void remove(file)}
+                        className="att-icon att-preview"
+                        aria-label={`Preview ${row.filename}`}
+                        onClick={() => {
+                          setViewing(at);
+                        }}
                       >
-                        {removing === row.id && (
-                          <Spinner size="sm" label={`Removing ${row.filename}`} />
+                        {item.show === 'image' ? (
+                          <img src={row.url} alt="" loading="lazy" decoding="async" />
+                        ) : (
+                          <FileGlyph kind={row.kind} size={18} />
                         )}
-                        Remove
                       </button>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+                      <span className="att-main">
+                        <a
+                          className="att-name"
+                          href={row.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {row.filename}
+                        </a>
+                        <span className="att-meta">
+                          {row.size} · {row.uploader} ·{' '}
+                          <Tooltip content={row.when.full}>
+                            <time
+                              dateTime={row.when.iso}
+                              tabIndex={0}
+                              aria-label={`${row.when.text}, ${row.when.full}`}
+                            >
+                              {row.when.text}
+                            </time>
+                          </Tooltip>
+                        </span>
+                      </span>
+                      {row.mayDelete && (
+                        <button
+                          type="button"
+                          className="att-remove"
+                          aria-label={`Remove ${row.filename}`}
+                          disabled={removing !== undefined}
+                          onClick={() => void remove(file)}
+                        >
+                          {removing === row.id && (
+                            <Spinner size="sm" label={`Removing ${row.filename}`} />
+                          )}
+                          Remove
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+
+          {viewing !== null && (
+            <OutputViewer
+              items={items}
+              start={viewing}
+              onClose={() => {
+                setViewing(null);
+              }}
+            />
           )}
 
           {removeError !== undefined && (

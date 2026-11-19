@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { RegisteredAgent } from '../../../../../src/api/agents.ts';
 import type { ProjectSetup } from '../../../../../src/api/project-setups.ts';
+import { PROJECT_BLOCK_REVISION } from '../../../../../src/routes/screens/connect/connect-copy.ts';
 import {
   deviceLine,
   NO_TOOL,
@@ -47,7 +48,8 @@ const check = (
   repo_key: LAIKA,
   instructions_path: 'CLAUDE.md',
   block_found: true,
-  template_revision: 2,
+  // A current record: whatever the template's revision is (3 since LAI-1352).
+  template_revision: PROJECT_BLOCK_REVISION,
   project_match: true,
   prefix_match: true,
   source: 'local_check',

@@ -23,6 +23,7 @@ import {
 } from '../../src/routes/screens/developer/v3/overview-state.ts';
 import { closeBrowser, open, refuse, setTheme, type ApiStub, type Harness } from './harness.ts';
 import { NEVER_REPORTED } from '../helpers/launcher.ts';
+import { PROJECT_BLOCK_REVISION } from '../../src/routes/screens/connect/connect-copy.ts';
 import { tipText } from './tooltip-probe.ts';
 
 type Mode = 'classic' | 'preview' | 'v3';
@@ -578,7 +579,7 @@ const setupRecord = (over: Record<string, unknown> & { id: string }) => ({
   repo_key: '',
   instructions_path: 'CLAUDE.md',
   block_found: true,
-  template_revision: 2,
+  template_revision: PROJECT_BLOCK_REVISION,
   project_match: null,
   prefix_match: null,
   source: 'self_reported_browser',

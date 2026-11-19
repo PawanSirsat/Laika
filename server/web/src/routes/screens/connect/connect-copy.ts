@@ -16,8 +16,8 @@
  *    single paste; the page says so plainly and names the revoke path.
  *  - {@link projectBlock} **must not.** It is committed to a git repository.
  *    A token in it is a leak, not a bug, and `connect-copy.test.ts` asserts its
- *    absence rather than trusting this paragraph. {@link projectPrompt} wraps
- *    it for an agent to write, and carries no token either.
+ *    absence rather than trusting this paragraph. {@link projectSetupPrompt}
+ *    wraps it for an agent to write, and carries no token either.
  *
  * ## Two prompts, two scopes (LAI-507)
  *
@@ -45,6 +45,27 @@ export interface ProjectRef {
 }
 
 /**
+ * Rule 7 of the block, from revision 3 (D-162, LAI-1352): an agent shows a
+ * person the result they need to see — captioned, never a secret. The CLI's
+ * repo check (`cli/src/project-check.ts`, LAI-1351) holds the same revision.
+ */
+export const SHOW_THE_RESULT = `7. **Show the result.** When a person needs to see what you did — a UI
+   change, a generated file — attach screenshots or outputs with
+   \`laika attach\` or \`request_upload\`, each with a caption, and pass them to
+   \`finish_task\` as \`outputs\`. Skip it when tests are the whole proof. Never
+   upload a secret: attach a masked copy, and say where the real file is kept.`;
+
+/**
+ * Rule 8, from revision 3: the owner's parent and child rule (2026-11-19,
+ * LAI-1360 has the server's words for it).
+ */
+export const ONE_PARENT_PER_FEATURE = `8. **One parent per feature.** A new feature with several parts gets one
+   parent task, with each part as a child task (\`create_task\` with
+   \`parent\`). Work on an existing feature becomes a new child of its parent.
+   A genuinely small one-off may stand alone. The main outputs go on the
+   parent, a child's own outputs on the child.`;
+
+/**
  * The block a lead commits, so later sessions mirror work onto the board
  * without being told to.
  *
@@ -58,8 +79,19 @@ export interface ProjectRef {
  * ones the server hands every agent as `instructions` and `laika_whoami`'s
  * `how_to_work` (LAI-736) — this adds the per-project lines the server cannot
  * know.
+ *
+ * `revision` 3 or more adds rules 7 and 8 ({@link SHOW_THE_RESULT},
+ * {@link ONE_PARENT_PER_FEATURE}), and the current revision is the default:
+ * every setup path writes them (the owner, 2026-11-19, LAI-1352). Revision 1's
+ * text is what a repository set up before the markers holds, and what
+ * {@link replaceLaikaBlock} finds and replaces; nothing writes it any more.
  */
-export function projectBlock(origin: string, project: ProjectRef): string {
+export function projectBlock(
+  origin: string,
+  project: ProjectRef,
+  revision: number = PROJECT_BLOCK_REVISION,
+): string {
+  const added = revision >= 3 ? `\n${SHOW_THE_RESULT}\n${ONE_PARENT_PER_FEATURE}` : '';
   return `## Laika
 
 This project is tracked on a Laika board. Mirror work onto it as you go — the
@@ -93,7 +125,7 @@ Every session working in this repo:
    with their reason in \`get_task_context\`: fix that first, then
    \`finish_task\` again with fresh proof.
 6. **Stray findings** — a broken script, a stale dependency — go to
-   \`log_unlisted_work\` so they are triaged rather than lost.
+   \`log_unlisted_work\` so they are triaged rather than lost.${added}
 
 If the Laika tools are not available, this session is not connected: say so and
 stop, rather than working untracked.`;
@@ -127,6 +159,10 @@ export const ACTIVITY_ON = `${PLUGIN_HOME}/cli/bin/laika activity on --yes`;
  *
  * Idempotent on purpose: a machine already set up is told to skip the install
  * and go to the check, so a developer who pastes it twice loses nothing.
+ *
+ * It ends with the two rules the board's tools do not carry yet for every
+ * session (LAI-1352), worded as the repo block's 7 and 8: show the result,
+ * and one parent per feature.
  */
 export function machinePrompt({ origin, secret, insightsOn }: MachinePromptInput): string {
   const token = secret ?? PLACEHOLDER_TOKEN;
@@ -188,45 +224,17 @@ ${activityStep}
 6. Then stop. Do not try to use the Laika tools in this session — Claude Code
    loads plugins at startup, so they cannot exist in a session that started
    before the install. I will quit and restart with \`laika-claude\`. Adding a
-   project to the board is a separate, shorter paste from the Projects tab.`;
+   project to the board is a separate, shorter paste from the Projects tab.
+
+Later, in a session that has the tools, two rules besides the board's own:
+show the result a person needs to see — captioned screenshots or files, with
+\`laika attach\` or \`request_upload\`, never a secret — and give a feature with
+several parts one parent task, with each part a child task and the main outputs
+on the parent.`;
 }
 
-export interface ProjectPromptInput {
-  readonly origin: string;
-  readonly project: ProjectRef;
-  /** The agent's instructions file, from `instructionsTarget` — `CLAUDE.md`, `AGENTS.md`, … */
-  readonly path: string;
-  /** The block as the file should carry it, already wrapped for the agent. */
-  readonly block: string;
-}
-
-/** The first line of the block, which is what the prompt looks for before writing. */
+/** The block's third line, by which a block from before the markers is found. */
 export const BLOCK_MARKER = 'This project is tracked on a Laika board.';
-
-/**
- * The short paste that adds **one project** (LAI-507): it writes the block
- * into the agent's instructions file in the repo it is run in, and nothing
- * else. No install, no token, no check — the machine prompt did those once.
- */
-export function projectPrompt({ origin, project, path, block }: ProjectPromptInput): string {
-  return `Add this repository's project on the Laika board (${origin}) to ${path}. This
-is once per project; it installs nothing and carries no token.
-
-1. If ./${path} contains the line "${BLOCK_MARKER}", the block is already
-   there: tell me so and stop.
-2. Otherwise append the block below to ./${path}, keeping everything already
-   in the file. Create the file if it does not exist. Copy the block exactly —
-   it deliberately contains no token, and it must not gain one.
-3. Change nothing else, and do not commit: I will review the diff.
-4. Report in one line: whether you created the file or appended to it.
-
---- begin block ---
-${block}
---- end block ---
-
-The project is \`${project.slug}\` (${project.name}); its task keys look like
-\`${project.prefix}-42\`.`;
-}
 
 /**
  * The repository file's template version (plan LAI-1042 §G, LAI-1052). It
@@ -234,11 +242,14 @@ The project is \`${project.slug}\` (${project.name}); its task keys look like
  * `context_revision`, which versions the project brief the board serves over
  * MCP. The two never share a name, a field or a line on the page.
  *
- * Revision 1 is the unmarked block {@link projectBlock} still writes on the
- * classic Projects tab; revision 2 wraps the same text in begin and end
- * markers so a later revision can replace exactly it.
+ * Revision 1 is the unmarked block the classic Projects tab wrote until
+ * LAI-1352; revision 2 wraps the same text in begin and end markers so a
+ * later revision can replace exactly it; revision 3 adds rule 7, *Show the
+ * result* (D-162), and rule 8, one parent per feature (LAI-1352). A
+ * repository still on 2 reads *Update available* on Developer access, and
+ * both Projects tabs now hand over this revision ({@link projectHandover}).
  */
-export const PROJECT_BLOCK_REVISION = 2;
+export const PROJECT_BLOCK_REVISION = 3;
 
 /** The end marker. The begin marker carries the revision and the project. */
 export const BLOCK_END = '<!-- laika:end -->';
@@ -253,13 +264,13 @@ const BEGIN = /<!-- laika:begin revision=(\d+)(?: project=([^\s>]+))?[^>]*-->/;
 const TASK_KEYS = /Task keys look like `([^`]+)-42`/;
 
 /**
- * Revision 2: {@link projectBlock} unchanged between the markers, so its first
- * line is still `## Laika` and its third still {@link BLOCK_MARKER} — the line
- * `laika activity`'s *Only repos set up for Laika* scope looks for.
+ * The current revision: {@link projectBlock} at it, between the markers, so
+ * its first line is still `## Laika` and its third still {@link BLOCK_MARKER}
+ * — the line `laika activity`'s *Only repos set up for Laika* scope looks for.
  */
 export function markedProjectBlock(origin: string, project: ProjectRef): string {
   return `${blockBegin(project.slug)}
-${projectBlock(origin, project)}
+${projectBlock(origin, project, PROJECT_BLOCK_REVISION)}
 ${BLOCK_END}`;
 }
 
@@ -367,8 +378,9 @@ export interface ProjectSetupPromptInput {
 }
 
 /**
- * The Project setup prompt (plan §G, LAI-1052): the revision-2 successor to
- * {@link projectPrompt}, which the classic tab still uses unchanged.
+ * The Project setup prompt (plan §G, LAI-1052), on both Projects tabs since
+ * LAI-1352: the classic tab's own prompt stopped at a block already there, so
+ * it could never bring an older one up to date.
  *
  * It **updates in place**: it reads the file first, touches only the Laika
  * block — {@link replaceLaikaBlock}'s rules, in words — shows the diff before
@@ -498,4 +510,43 @@ ${block}
 export function manualCommands(): string {
   return `git clone ${PLUGIN_REPO} ${PLUGIN_HOME}
 ${PLUGIN_HOME}/plugin/scripts/install.sh`;
+}
+
+/** The parts of an instructions file the Projects tab needs (`instructionsTarget`). */
+export interface InstructionsFile {
+  readonly path: string;
+  /** The file's content around the block — Cursor's rule frontmatter. */
+  readonly wrap: (block: string) => string;
+  /** False where there is no file, only a box in the tool's UI. */
+  readonly committable: boolean;
+}
+
+/**
+ * What the classic Projects tab hands over for one project and tool
+ * (LAI-507): the block to commit by hand, and the prompt that has the agent
+ * write it — none for a tool with no file.
+ *
+ * **The current marked block and the Project setup prompt**, as Project setup
+ * hands over, since the owner asked that every setup path write rules 7 and 8
+ * (2026-11-19, LAI-1352): the prompt brings an older block up to date in place
+ * rather than stopping at one already there.
+ */
+export function projectHandover(
+  origin: string,
+  project: ProjectRef,
+  file: InstructionsFile,
+): { readonly block: string; readonly prompt: string | undefined } {
+  const marked = markedProjectBlock(origin, project);
+  return {
+    block: file.wrap(marked),
+    prompt: file.committable
+      ? projectSetupPrompt({
+          origin,
+          project,
+          path: file.path,
+          block: marked,
+          preamble: file.wrap('').trimEnd(),
+        })
+      : undefined,
+  };
 }
