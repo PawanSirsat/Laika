@@ -2,15 +2,15 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
-import { isKeyName, scanFile } from '../src/attach-scan.ts';
-import { officeText } from '../src/office-text.ts';
+import { isKeyName, MAX_DEPTH, scanFile } from '../src/attach-scan.ts';
+import { MAX_FILES, officeText } from '../src/office-text.ts';
 import {
   SECRET_PATTERNS,
   SECRET_SCAN_BYTES,
   type SecretPatternName,
   scanForSecrets,
 } from '../src/secret-scan.ts';
-import { docx, xlsx, zip } from './support/zip.ts';
+import { docx, pptx, xlsx, zip } from './support/zip.ts';
 
 /**
  * The secret check `laika attach` runs before an upload (D-162 item 4,
@@ -216,6 +216,11 @@ void describe('what must pass: masked copies, reports and prose (no false positi
         'GITHUB_TOKEN=****',
         'password: [redacted]',
         'postgres://laika:${PW}@db.example.test/laika',
+        // Partly masked, and the shortest masks (LAI-1361).
+        'password: p****d',
+        'password: ab**yz',
+        'API_TOKEN=***',
+        '<password>********</password>',
       ].join('\n'),
     );
   });
@@ -306,6 +311,382 @@ void describe('what D-162 tells an agent to write passes, and the same shape wit
     ]) {
       assert.equal(scanForSecrets(secret)?.pattern, 'password_value', secret);
     }
+  });
+});
+
+/**
+ * The cases review-405 found (LAI-1361), pair for pair as the server's test
+ * has them: a must-pass, and the same shape holding a secret, which is caught.
+ */
+void describe('the weak cases review-405 found, as the board has them (LAI-1361)', () => {
+  const cases: [string, string, string, SecretPatternName][] = [
+    [
+      'a plain word as the value: a description passes, a password does not',
+      'password: required\npassword: String\n<password>hidden</password>',
+      'password: dragon',
+      'password_value',
+    ],
+    [
+      'a note in brackets after the value',
+      'password: required (at least 12)\nPassword: stored (team vault)',
+      'password: hunter22 (temp)',
+      'password_value',
+    ],
+    [
+      'an XML element',
+      '<password>${DB_PASSWORD}</password>\n<password><redacted></password>\n<password/>',
+      '<config>\n  <password>Hunter22!</password>\n</config>',
+      'password_value',
+    ],
+    [
+      'an XML element with a prefix and attributes',
+      '<db:adminPassword type="x">********</db:adminPassword>',
+      '<db:adminPassword type="x">Hunter22!</db:adminPassword>',
+      'password_value',
+    ],
+    [
+      'a shell script that keeps the working directory in pwd',
+      '#!/bin/sh\npwd=$(pwd)\nDB_PASSWORD=$(vault read -field=pw db)\ncd "$pwd"',
+      '#!/bin/sh\npwd=hunter22\ncd /tmp',
+      'password_value',
+    ],
+    ['a partly masked value', 'password: ab**yz', 'password: ab12yz', 'password_value'],
+    [
+      'a bare pass column of results, and one of passwords',
+      'user,pass\nada,yes\nbrin,12\ncal,passed',
+      'user,pass\nada,hunter22',
+      'credential_column',
+    ],
+    [
+      'a bare token column of words, and one of tokens',
+      'index,token\n1,the\n2,quickest\n3,covid19',
+      'user,token\nada,abc123def456',
+      'credential_column',
+    ],
+    [
+      'a markdown table with a bare Pass column',
+      '| Suite | Pass | Fail |\n|---|---|---|\n| unit | 120 | 0 |\n| e2e | 98% | 2 |',
+      '| User | Pass |\n|---|---|\n| ada | Welcome-2026! |',
+      'credential_column',
+    ],
+  ];
+  for (const [what, clean, secret, pattern] of cases) {
+    void test(`passes ${what}, and catches the secret in the same shape`, () => {
+      assert.equal(scanForSecrets(clean), null, clean);
+      assert.equal(scanForSecrets(secret)?.pattern, pattern, secret);
+    });
+  }
+
+  void test('passes a word that says how the field is, and still catches dragon (LAI-1361 review)', () => {
+    for (const clean of [
+      'password: unchanged',
+      'password: configured',
+      'password: correct',
+      'password: strong',
+      'password: present',
+      'password: reset',
+      'Password: Same',
+    ]) {
+      assert.equal(scanForSecrets(clean), null, clean);
+    }
+    for (const secret of ['password: dragon', 'password: hunter22 (temp)']) {
+      assert.equal(scanForSecrets(secret)?.pattern, 'password_value', secret);
+    }
+  });
+
+  void test('two stars are a mask only with at most four characters shown each side (LAI-1361 review)', () => {
+    for (const clean of ['password: p****d', 'password: ab**yz', 'API_TOKEN=abcd**wxyz']) {
+      assert.equal(scanForSecrets(clean), null, clean);
+    }
+    for (const [secret, pattern] of [
+      ['password: Pa**w0rd!x', 'password_value'],
+      ['password: hunter**22real', 'password_value'],
+      ['DB_PASSWORD=Xy**9kLmN2pQ', 'env_secret'],
+    ] as const) {
+      assert.equal(scanForSecrets(secret)?.pattern, pattern, secret);
+    }
+  });
+
+  void test('a path in pwd is where, not what: it passes, and a password there is caught (LAI-1361 review)', () => {
+    for (const clean of [
+      'PWD=/home/runner/work/Laika/Laika',
+      'PWD=C:\\Users\\ada\\src',
+      'pwd: /home/ada/src',
+      'pwd = ~/src/laika',
+    ]) {
+      assert.equal(scanForSecrets(clean), null, clean);
+    }
+    for (const secret of ['pwd=hunter22', 'Driver={ODBC};Server=db;Uid=sa;Pwd=Hunter22!;']) {
+      assert.equal(scanForSecrets(secret)?.pattern, 'password_value', secret);
+    }
+  });
+
+  void test('a pwd=$(pwd) shell script is uploaded, read as text', () => {
+    assert.deepEqual(scanFile('deploy.sh', Buffer.from('#!/bin/sh\npwd=$(pwd)\ncd "$pwd"\n')), {
+      ok: true,
+      scanned: 'text',
+    });
+  });
+
+  void test('times the shapes it added at the full size, each in well under a second', () => {
+    const fill = (unit: string, prefix = ''): string =>
+      (prefix + unit.repeat(Math.ceil(SECRET_SCAN_BYTES / unit.length))).slice(
+        0,
+        SECRET_SCAN_BYTES,
+      );
+    const worst: Record<string, string> = {
+      'an XML element never closed': fill('<password>abcd'),
+      'XML attributes with no end': fill(`<${'a'.repeat(31)}password ${'b'.repeat(250)}`),
+      'a bracket never closed': fill(`password: hunter22 (${'x'.repeat(70)}\n`),
+      // A bare `token` column takes the same path, cell for cell.
+      'a bare pass column of counts': fill(',1234\n', 'a,pass\n'),
+      'command substitutions': fill('pwd=$(pwd)\n'),
+    };
+    let total = 0;
+    for (const [what, text] of Object.entries(worst)) {
+      assert.equal(text.length, SECRET_SCAN_BYTES, what);
+      const started = performance.now();
+      scanForSecrets(text);
+      const took = performance.now() - started;
+      assert.ok(took < 750, `${what} took ${took.toFixed(0)} ms`);
+      total += took;
+    }
+    assert.ok(total < 1500, `all of them took ${total.toFixed(0)} ms`);
+  });
+});
+
+/**
+ * A zip inside the upload, or the upload a zip (LAI-1361): opened, and every
+ * file in it checked as a file is — within the one budget for the upload, or
+ * refused as a file that could not be checked. LAI-1351 left this as a known
+ * limit: a zip that was not a spreadsheet or a document passed unread.
+ */
+void describe('zips inside an upload are opened and checked', () => {
+  const ENV = 'NODE_ENV=production\nDATABASE_PASSWORD=s3cr3t-value\n';
+  const DER = Buffer.from([0x30, 0x82, 0, 1]);
+
+  void test('a nested zip holding a .env with a secret is refused, naming the path to it', () => {
+    const inner = zip({ 'README.md': '# Deploy\n', '.env': ENV });
+    const outer = zip({ 'notes.txt': 'All green.\n', 'inner.zip': inner });
+    const verdict = scanFile('bundle.zip', outer);
+    assert.deepEqual(verdict, {
+      ok: false,
+      pattern: 'env_secret',
+      where: 'inner.zip › .env, line 2',
+    });
+    assert.ok(!JSON.stringify(verdict).includes('s3cr3t'));
+  });
+
+  void test('a zip of files is read file by file, and a clean one passes', () => {
+    assert.deepEqual(scanFile('config.zip', zip({ 'app/config/.env': ENV })), {
+      ok: false,
+      pattern: 'env_secret',
+      where: 'app/config/.env, line 2',
+    });
+    const clean = zip({
+      'report.txt': 'Tests 42 passed\n',
+      'shots/': '',
+      'shots/board.png': Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]),
+      'nested.zip': zip({ 'more.txt': 'nothing here\n' }),
+    });
+    assert.deepEqual(scanFile('outputs.zip', clean), { ok: true, scanned: 'archive' });
+  });
+
+  void test('a presentation is read slide by slide, and one nested in a zip as well', () => {
+    const token = ['gh', 'p_', 'Zz9'.repeat(12)].join('');
+    const deck = pptx([
+      ['Release notes', 'All green'],
+      ['Rotate this:', `CI uses ${token}`],
+    ]);
+    assert.deepEqual(scanFile('review.pptx', deck), {
+      ok: false,
+      pattern: 'github_token',
+      where: 'slide 2, line 2',
+    });
+    assert.deepEqual(scanFile('handover.zip', zip({ 'decks/review.pptx': deck })), {
+      ok: false,
+      pattern: 'github_token',
+      where: 'decks/review.pptx › slide 2, line 2',
+    });
+    assert.deepEqual(scanFile('clean.pptx', pptx([['Release notes', 'All green']])), {
+      ok: true,
+      scanned: 'office',
+    });
+  });
+
+  void test('a zip or a workbook embedded in an office file is opened as well', () => {
+    const doc = zip({
+      '[Content_Types].xml': '<?xml version="1.0"?><Types/>',
+      'word/document.xml':
+        '<w:document><w:body><w:p><w:r><w:t>See the attached bundle.</w:t></w:r></w:p></w:body></w:document>',
+      'word/embeddings/bundle.zip': zip({ '.env': ENV }),
+    });
+    assert.deepEqual(scanFile('handover.docx', doc), {
+      ok: false,
+      pattern: 'env_secret',
+      where: 'word/embeddings/bundle.zip › .env, line 2',
+    });
+    const sheet = xlsx([
+      ['email', 'temp password'],
+      ['ada@example.test', 'Welcome-2026!'],
+    ]);
+    const deck = pptx([['Accounts']], { 'ppt/embeddings/Microsoft_Excel_Worksheet.xlsx': sheet });
+    assert.deepEqual(scanFile('accounts.pptx', deck), {
+      ok: false,
+      pattern: 'credential_column',
+      where: 'ppt/embeddings/Microsoft_Excel_Worksheet.xlsx › sheet 1, row 2',
+    });
+  });
+
+  void test('a keystore or a binary key inside a zip is refused by its name', () => {
+    assert.deepEqual(scanFile('keys.zip', zip({ 'certs/deploy.p12': DER })), {
+      ok: false,
+      pattern: 'private_key',
+      where: 'certs/deploy.p12, its name',
+    });
+    assert.deepEqual(scanFile('keys.zip', zip({ 'ssh/id_rsa': DER })), {
+      ok: false,
+      pattern: 'private_key',
+      where: 'ssh/id_rsa, its name',
+    });
+  });
+
+  void test(`zips nested more than ${String(MAX_DEPTH)} deep cannot be checked, and are refused`, () => {
+    let file = zip({ 'notes.txt': 'clean\n' });
+    for (let level = 1; level < MAX_DEPTH; level++) {
+      file = zip({ [`level${String(level)}.zip`]: file });
+    }
+    assert.deepEqual(scanFile('deep.zip', file), { ok: true, scanned: 'archive' });
+    const verdict = scanFile('deeper.zip', zip({ 'one-more.zip': file }));
+    assert.equal(verdict.ok, false);
+    assert.equal((verdict as { pattern?: string }).pattern, 'unreadable');
+  });
+
+  void test('an encrypted entry is refused, at the top or nested', () => {
+    const encrypted = zip({ '.env': ENV });
+    // Bit 0 of the general-purpose flags, in the local and the central header.
+    encrypted.writeUInt16LE(1, 6);
+    encrypted.writeUInt16LE(1, encrypted.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02])) + 8);
+    assert.deepEqual(scanFile('locked.zip', encrypted), {
+      ok: false,
+      pattern: 'unreadable',
+      where: 'its contents',
+    });
+    assert.deepEqual(scanFile('outer.zip', zip({ 'locked.zip': encrypted })), {
+      ok: false,
+      pattern: 'unreadable',
+      where: 'locked.zip › its contents',
+    });
+  });
+
+  void test('nesting buys no second budget: files across zips spend one allowance', () => {
+    const block = 'x'.repeat(900);
+    const two = zip({ 'a.zip': zip({ 'a.txt': block }), 'b.zip': zip({ 'b.txt': block }) });
+    // Each inner zip, and each text inside it, is spent once: 4 KiB covers both.
+    assert.deepEqual(scanFile('two.zip', two, { part: 4096, total: 4096 }), {
+      ok: true,
+      scanned: 'archive',
+    });
+    assert.equal(
+      (scanFile('two.zip', two, { part: 4096, total: 1500 }) as { pattern?: string }).pattern,
+      'too_large',
+    );
+  });
+
+  void test('a part that inflates past 64 MiB, two zips down, is refused in well under a second', () => {
+    // 65 MiB of zeros deflate to some 65 KiB: a bomb, nested so only the
+    // shared limits stop it.
+    const outer = zip({ 'inner.zip': zip({ 'zeros.bin': Buffer.alloc(65 * 1024 * 1024) }) });
+    assert.ok(outer.length < 1024 * 1024, `the crafted file is ${String(outer.length)} bytes`);
+    const started = performance.now();
+    const verdict = scanFile('bomb.zip', outer);
+    const took = performance.now() - started;
+    assert.deepEqual(verdict, {
+      ok: false,
+      pattern: 'too_large',
+      where: 'inner.zip › its size',
+    });
+    assert.ok(took < 1000, `took ${took.toFixed(0)} ms`);
+  });
+
+  /** `file` with every entry's compression method set to `method`, in both headers. */
+  const withMethod = (file: Buffer, method: number): Buffer => {
+    const out = Buffer.from(file);
+    for (const [signature, at] of [
+      [0x04034b50, 8],
+      [0x02014b50, 10],
+    ] as const) {
+      const marker = Buffer.alloc(4);
+      marker.writeUInt32LE(signature);
+      for (let i = out.indexOf(marker); i >= 0; i = out.indexOf(marker, i + 4)) {
+        out.writeUInt16LE(method, i + at);
+      }
+    }
+    return out;
+  };
+
+  void test('a zip in a form kept for large archives — LZMA, ZIP64 — is too large, not unopenable (LAI-1361 review)', () => {
+    const plain = zip({ 'notes.txt': 'clean\n' });
+    // 14 is LZMA, as 7-Zip writes it.
+    assert.deepEqual(scanFile('lzma.zip', withMethod(plain, 14)), {
+      ok: false,
+      pattern: 'too_large',
+      where: 'its size',
+    });
+    const zip64 = Buffer.from(plain);
+    // The end record's entry count at 0xFFFF says "read the ZIP64 record".
+    zip64.writeUInt16LE(0xffff, zip64.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06])) + 10);
+    assert.deepEqual(scanFile('big.zip', zip64), {
+      ok: false,
+      pattern: 'too_large',
+      where: 'its size',
+    });
+    assert.deepEqual(scanFile('outer.zip', zip({ 'inner.zip': withMethod(plain, 14) })), {
+      ok: false,
+      pattern: 'too_large',
+      where: 'inner.zip › its size',
+    });
+  });
+
+  void test('files are counted across every zip in the upload, not per zip (LAI-1361 review)', () => {
+    const inner = (n: number): Buffer =>
+      zip(
+        Object.fromEntries(
+          Array.from({ length: 20 }, (_, i) => [`${String(n)}/${String(i)}.txt`, 'ok\n']),
+        ),
+        true,
+      );
+    const outer = zip({ 'a.zip': inner(1), 'b.zip': inner(2), 'c.zip': inner(3) });
+    const limits = { part: 1 << 20, total: 1 << 20 };
+    // 3 inner zips and 60 files in them: 63 looked at.
+    assert.deepEqual(scanFile('three.zip', outer, { ...limits, files: 63 }), {
+      ok: true,
+      scanned: 'archive',
+    });
+    assert.deepEqual(scanFile('three.zip', outer, { ...limits, files: 62 }), {
+      ok: false,
+      pattern: 'too_large',
+      where: 'c.zip › its size',
+    });
+  });
+
+  void test(`zips of ${String(9_000)} entries each pass the per-zip limit, and still stop at ${String(MAX_FILES)} files in under two seconds`, () => {
+    const inner = (n: number): Buffer =>
+      zip(
+        Object.fromEntries(
+          Array.from({ length: 9_000 }, (_, i) => [`${String(n)}/${String(i)}`, '']),
+        ),
+        true,
+      );
+    const outer = zip({ 'a.zip': inner(1), 'b.zip': inner(2), 'c.zip': inner(3) }, true);
+    const heap = process.memoryUsage().heapUsed;
+    const started = performance.now();
+    const verdict = scanFile('many.zip', outer);
+    const took = performance.now() - started;
+    const grewMiB = (process.memoryUsage().heapUsed - heap) / 1_048_576;
+    assert.deepEqual(verdict, { ok: false, pattern: 'too_large', where: 'c.zip › its size' });
+    assert.ok(took < 2000, `took ${took.toFixed(0)} ms`);
+    assert.ok(grewMiB < 128, `the heap grew ${grewMiB.toFixed(0)} MiB`);
   });
 });
 
@@ -457,7 +838,7 @@ void describe('text multiplied out of small XML is spent against the budget, not
     };
   };
 
-  void test('one 1 MiB shared string referenced by 600 cells: unreadable, in under a second, with no 600 MiB built', () => {
+  void test('one 1 MiB shared string referenced by 600 cells: too large, in under a second, with no 600 MiB built', () => {
     const rows = Array.from(
       { length: 600 },
       (_, i) => `<row r="${String(i + 1)}"><c r="A${String(i + 1)}" t="s"><v>0</v></c></row>`,
@@ -471,12 +852,13 @@ void describe('text multiplied out of small XML is spent against the budget, not
 
     const { verdict, ms, grewMiB } = measured('amplified.xlsx', file);
 
-    assert.deepEqual(verdict, { ok: false, pattern: 'unreadable', where: 'its contents' });
+    // The budget, not the reading: too large, since LAI-1361's review.
+    assert.deepEqual(verdict, { ok: false, pattern: 'too_large', where: 'its size' });
     assert.ok(ms < 1000, `took ${ms.toFixed(0)} ms`);
     assert.ok(grewMiB < 128, `the heap grew ${grewMiB.toFixed(0)} MiB`);
   });
 
-  void test('20,000 rows with one cell at column ZZZ: unreadable, in under a second, with no padding built', () => {
+  void test('20,000 rows with one cell at column ZZZ: too large, in under a second, with no padding built', () => {
     const rows = Array.from(
       { length: 20_000 },
       (_, i) => `<row r="${String(i + 1)}"><c r="ZZZ${String(i + 1)}"/></row>`,
@@ -488,7 +870,7 @@ void describe('text multiplied out of small XML is spent against the budget, not
 
     const { verdict, ms, grewMiB } = measured('padded.xlsx', file);
 
-    assert.deepEqual(verdict, { ok: false, pattern: 'unreadable', where: 'its contents' });
+    assert.deepEqual(verdict, { ok: false, pattern: 'too_large', where: 'its size' });
     assert.ok(ms < 1000, `took ${ms.toFixed(0)} ms`);
     assert.ok(grewMiB < 128, `the heap grew ${grewMiB.toFixed(0)} MiB`);
   });

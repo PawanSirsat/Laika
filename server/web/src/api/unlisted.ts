@@ -11,7 +11,8 @@ import type { Project } from './projects.ts';
  * rows accumulated where nobody looked.
  */
 
-export interface UnlistedWork {
+/** A note as promoting it answers: the row, without its files. */
+export interface UnlistedNote {
   readonly id: string;
   readonly user_id: string;
   /** Which token logged it — agent provenance, nullable (§4.14). */
@@ -22,6 +23,25 @@ export interface UnlistedWork {
   readonly promoted_task_id: string | null;
   readonly dismissed_at: number | null;
   readonly created_at: number;
+}
+
+/** A file attached to a note, as the list names it (D-162 item 8, LAI-1361). */
+export interface UnlistedFile {
+  readonly id: string;
+  readonly filename: string;
+  readonly content_type: string;
+  readonly size_bytes: number;
+  /** Shown in the page; otherwise a download. */
+  readonly inline: boolean;
+}
+
+/**
+ * A note as the list answers it: the row, and **the files attached to it
+ * that this reader may open** (LAI-1361), oldest first — what its
+ * `**Attached**` links cannot say: each file's name, type and size.
+ */
+export interface UnlistedWork extends UnlistedNote {
+  readonly files: readonly UnlistedFile[];
 }
 
 export interface UnlistedFilter {
@@ -60,7 +80,7 @@ export interface PromoteInput {
 
 /** The note and the task it became, so the caller need not re-read the pile. */
 export interface PromotedUnlisted {
-  readonly unlisted: UnlistedWork;
+  readonly unlisted: UnlistedNote;
   readonly task: Task;
 }
 
@@ -88,14 +108,14 @@ export type UnlistedState = 'pending' | 'promoted' | 'dismissed';
  * server answers `409` to a second promote, so a promoted row must never be
  * offered one again (LAI-413 AC4).
  */
-export function unlistedState(row: UnlistedWork): UnlistedState {
+export function unlistedState(row: UnlistedNote): UnlistedState {
   if (row.promoted_task_id !== null) return 'promoted';
   if (row.dismissed_at !== null) return 'dismissed';
   return 'pending';
 }
 
 /** Only an untriaged row can be promoted — everything else has been decided. */
-export function mayPromote(row: UnlistedWork): boolean {
+export function mayPromote(row: UnlistedNote): boolean {
   return unlistedState(row) === 'pending';
 }
 
@@ -165,7 +185,7 @@ export interface UnlistedView {
 export const ALL_UNLISTED: UnlistedView = { state: 'all', source: 'any', repo: null };
 
 /** An agent's note carries the token it was logged with (§4.14); a person's does not. */
-export function fromAgent(row: UnlistedWork): boolean {
+export function fromAgent(row: UnlistedNote): boolean {
   return row.token_id !== null;
 }
 

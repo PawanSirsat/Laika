@@ -7,7 +7,7 @@ import {
   listUnlisted,
   promoteUnlisted,
   TASK_PRIORITIES,
-  type UnlistedView,
+  type UnlistedEntryView,
 } from '../../services/unlisted.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
@@ -79,7 +79,7 @@ export function unlistedRoutes(options: UnlistedRouteOptions): Hono<AppEnv> {
 
     // Newest first, so the cursor is `(created_at, id)` — the order the service
     // sorts in, not the `(updated_at, id)` most other lists use.
-    const page: Page<UnlistedView> = buildPage(rows, limit, (row) => ({
+    const page: Page<UnlistedEntryView> = buildPage(rows, limit, (row) => ({
       sortKey: row.created_at,
       id: row.id,
     }));

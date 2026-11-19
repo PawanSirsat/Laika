@@ -295,10 +295,24 @@ const PAIRS: readonly Pair[] = [
     client: 'TokenView',
     clientFile: 'tokens.ts',
   },
+  // LAI-1361: the list's row carries its files; promoting answers the note
+  // alone. Three shapes, each named on both sides.
   {
     server: 'UnlistedView',
     serverFile: 'services/unlisted.ts',
+    client: 'UnlistedNote',
+    clientFile: 'unlisted.ts',
+  },
+  {
+    server: 'UnlistedEntryView',
+    serverFile: 'services/unlisted.ts',
     client: 'UnlistedWork',
+    clientFile: 'unlisted.ts',
+  },
+  {
+    server: 'UnlistedFileView',
+    serverFile: 'services/attachments.ts',
+    client: 'UnlistedFile',
     clientFile: 'unlisted.ts',
   },
   {

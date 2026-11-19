@@ -34,6 +34,7 @@ function row(patch: Partial<UnlistedWork> = {}): UnlistedWork {
     promoted_task_id: null,
     dismissed_at: null,
     created_at: 1,
+    files: [],
     ...patch,
   };
 }

@@ -112,20 +112,25 @@ function extensionOf(name: string): string {
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
 }
 
-/** The fields of a file an output reads. */
+/**
+ * The fields of a file an output reads. `url` is the board's own, and a file
+ * that does not carry it — an unlisted finding's, as `GET /unlisted` names
+ * it (LAI-1361) — is opened at its content route.
+ */
 export type OutputFile = Pick<
   Attachment,
-  'id' | 'filename' | 'content_type' | 'size_bytes' | 'inline' | 'url'
->;
+  'id' | 'filename' | 'content_type' | 'size_bytes' | 'inline'
+> & { readonly url?: string | undefined };
 
 /**
  * One output from its link and, when the board listed it, its file.
  *
  * Shown in the page only when the server said so (`inline`, from the file's
  * first bytes): an image, an mp4 or webm recording, a PDF. A link with no
- * file behind it — an unlisted finding's, which no list serves — is shown
- * only when it was written as an image; anything else is a card, because a
- * file the server would not show inline is served as a download.
+ * file behind it — read before its list arrived, or with the list's read
+ * failed — is shown only when it was written as an image; anything else is a
+ * card, because a file the server would not show inline is served as a
+ * download.
  */
 export function outputItem(
   ref: OutputRef,
@@ -183,6 +188,16 @@ export function outputItems(
     const file = byId.get(ref.id);
     return file === undefined ? [] : [outputItem(ref, file, by)];
   });
+}
+
+/**
+ * The link that saves a file rather than opening it (LAI-1361): the board
+ * answers `?download=1` with a store link that sends it as an attachment —
+ * which a browser keeps across the 302, as it does not keep a link's
+ * `download` once the redirect leaves the board's origin.
+ */
+export function downloadUrl(url: string): string {
+  return `${url}${url.includes('?') ? '&' : '?'}download=1`;
 }
 
 const KIND_ORDER: readonly OutputKind[] = ['screenshot', 'recording', 'sheet', 'report', 'file'];

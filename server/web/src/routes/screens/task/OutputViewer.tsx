@@ -4,7 +4,7 @@ import { Icon } from '../../../components/icon/Icon.tsx';
 import { Dialog } from '../../../components/overlay/Dialog.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { FileGlyph } from './FileGlyph.tsx';
-import type { OutputItem } from './outputs-derive.ts';
+import { downloadUrl, type OutputItem } from './outputs-derive.ts';
 
 export interface OutputViewerProps {
   readonly items: readonly OutputItem[];
@@ -110,16 +110,15 @@ export function OutputViewer({ items, start, onClose }: OutputViewerProps) {
             Open in a new tab
           </a>
           {/*
-            A new tab as well as `download`: across the 302 to the store a
-            browser ignores `download` and opens the file instead, and this
-            way it never takes the board's own tab with it.
+            Saved, never opened (LAI-1361): `?download=1` has the store send
+            the file as an attachment, so even an image or a PDF is saved and
+            the board stays in its tab. `download` is ignored across the 302
+            to the store, so the disposition is what does it.
           */}
           <a
             className="button button-secondary button-sm ovw-action"
-            href={item.url}
+            href={downloadUrl(item.url)}
             download={item.filename ?? ''}
-            target="_blank"
-            rel="noopener noreferrer"
           >
             <Icon name="download" size="small" />
             Download

@@ -140,6 +140,7 @@ const C_ONE = id(10);
 const NOTE_SHOT = id(11);
 const NOTE_LOG = id(12);
 const NOTE_GONE = id(13);
+const NOTE_HIDDEN = id(14);
 const url = (id: string): string => `/api/v1/attachments/${id}/content`;
 
 const CORE = {
@@ -453,6 +454,8 @@ interface PanelOptions extends ContentOptions {
   readonly filesFail?: boolean;
   /** Runs before the app boots, after the routes above: a route a test holds. */
   readonly before?: (page: Page) => Promise<void>;
+  /** More of the stub board, over `stub()`'s. */
+  readonly stub?: ApiStub;
 }
 
 const FILES_PATH = '/api/v1/tasks/t3/attachments';
@@ -461,10 +464,13 @@ async function panel(
   size: (typeof SIZES)[number] = SIZES[0],
   options: PanelOptions = {},
 ): Promise<Harness> {
-  const routes =
-    options.filesFail === true
-      ? { ...stub(), [FILES_PATH]: refuse(500, 'internal', 'Something went wrong.') }
-      : stub();
+  const routes = {
+    ...stub(),
+    ...(options.filesFail === true
+      ? { [FILES_PATH]: refuse(500, 'internal', 'Something went wrong.') }
+      : {}),
+    ...options.stub,
+  };
   const h = await open('/board?project=laika-core&task=t3', routes, {
     before: async (page) => {
       await page.setViewportSize({ width: size.width, height: size.height });
@@ -628,9 +634,9 @@ void describe('the Outputs line under Proof (D-162)', () => {
           );
           const download = viewer(h).getByRole('link', { name: 'Download' });
           assert.equal(await download.getAttribute('download'), 'dark-1440.png');
-          // Across the 302 a browser opens the file instead: never in the board's tab.
-          assert.equal(await download.getAttribute('target'), '_blank');
-          assert.match((await download.getAttribute('rel')) ?? '', /noopener/);
+          // Saved through `?download=1`, in this tab: no new tab (LAI-1361).
+          assert.equal(await download.getAttribute('href'), `${url(SHOT_2)}?download=1`);
+          assert.equal(await download.getAttribute('target'), null);
           await shoot(h.page, `outputs-viewer-${size.name}-${theme}`);
         } finally {
           await h.close();
@@ -941,6 +947,54 @@ void describe('the Attachments section (D-162)', () => {
   });
 });
 
+void describe('Download saves the file, and the board stays in its tab (LAI-1361)', () => {
+  void test('an image is saved through ?download=1, in this tab, with no new one opened', async () => {
+    // A download's own request is not one `page.route` sees, so the stub
+    // board answers it — as the store answers the 302 the real board gives,
+    // with the file as an attachment.
+    const asked = `${url(SHOT_2)}?download=1`;
+    const h = await panel(SIZES[0], {
+      stub: {
+        [asked]: () =>
+          reply(200, 'png bytes', {
+            'content-disposition': 'attachment; filename="dark-1440.png"',
+          }),
+      },
+    });
+    try {
+      const strip = await openStrip(h);
+      await strip.locator('.out-tile').nth(1).click();
+      await viewer(h).waitFor({ timeout: 10_000 });
+      const board = h.page.url();
+      const tabs = h.page.context().pages().length;
+      let popups = 0;
+      h.page.on('popup', () => {
+        popups += 1;
+      });
+
+      const [saved] = await Promise.all([
+        h.page.waitForEvent('download', { timeout: 10_000 }),
+        viewer(h).getByRole('link', { name: 'Download' }).click(),
+      ]);
+
+      assert.equal(saved.suggestedFilename(), 'dark-1440.png');
+      assert.equal(new URL(saved.url()).pathname + new URL(saved.url()).search, asked);
+      assert.deepEqual(
+        h.requests.filter((r) => r.url.startsWith(url(SHOT_2))).map((r) => r.url),
+        [asked],
+      );
+      // Nothing opened: the same tab, on the same page, with the viewer still up.
+      assert.equal(popups, 0);
+      assert.equal(h.page.context().pages().length, tabs);
+      assert.equal(h.page.url(), board);
+      assert.equal(await viewer(h).count(), 1);
+      await saved.cancel();
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('Inbox › Unlisted (D-162 item 8)', () => {
   void test('a finding’s attached files are the same strip under its note', async () => {
     const note = {
@@ -948,10 +1002,35 @@ void describe('Inbox › Unlisted (D-162 item 8)', () => {
       user_id: 'u1',
       token_id: 'tok1',
       repo: 'PawanSirsat/Laika',
-      note: `The deploy script fails on a clean clone.\n\n**Attached**\n\n- ![The error](${url(NOTE_SHOT)})\n- [deploy.log](${url(NOTE_LOG)})\n- ![Before the fix](${url(NOTE_GONE)})`,
+      note: `The deploy script fails on a clean clone.\n\n**Attached**\n\n- ![The error](${url(NOTE_SHOT)})\n- [Deploy output](${url(NOTE_LOG)})\n- ![Before the fix](${url(NOTE_GONE)})\n- [Not yours](${url(NOTE_HIDDEN)})`,
       promoted_task_id: null,
       dismissed_at: null,
       created_at: NOW - 3_600_000,
+      // The files this reader may open, as `GET /unlisted` names them
+      // (LAI-1361): not NOTE_HIDDEN, so its link draws nothing.
+      files: [
+        {
+          id: NOTE_SHOT,
+          filename: 'spec.png',
+          content_type: 'image/png',
+          size_bytes: 51_200,
+          inline: true,
+        },
+        {
+          id: NOTE_LOG,
+          filename: 'deploy.log',
+          content_type: 'text/plain',
+          size_bytes: 2_458,
+          inline: false,
+        },
+        {
+          id: NOTE_GONE,
+          filename: 'before.png',
+          content_type: 'image/png',
+          size_bytes: 40_960,
+          inline: true,
+        },
+      ],
     };
     const h = await open(
       '/inbox?tab=unlisted',
@@ -972,8 +1051,8 @@ void describe('Inbox › Unlisted (D-162 item 8)', () => {
         '/api/v1/unlisted': () => ({ data: [note], next_cursor: null }),
         '/api/v1/unlisted/n1': () => reply(204, undefined),
       },
-      // Two of its files are not this reader's to open (LAI-1302's gate): 404.
-      { before: (page) => routeContent(page, { missing: new Set([NOTE_LOG, NOTE_GONE]) }) },
+      // One was removed after the list was read: the board answers 404.
+      { before: (page) => routeContent(page, { missing: new Set([NOTE_GONE]) }) },
     );
     try {
       const line = h.page.locator('.unl-line').first();
@@ -990,7 +1069,12 @@ void describe('Inbox › Unlisted (D-162 item 8)', () => {
         await strip
           .locator('.out-tile')
           .evaluateAll((tiles) => tiles.map((t) => t.getAttribute('aria-label'))),
-        ['The error', 'deploy.log', 'Before the fix'],
+        ['The error', 'Deploy output', 'Before the fix'],
+      );
+      // The log is a report by its name, not a bare file by its caption.
+      assert.equal(
+        await strip.locator(`[data-output="${NOTE_LOG}"]`).getAttribute('data-kind'),
+        'report',
       );
       // An image the reader may not open is its glyph, never a broken frame;
       // the one they may is a picture.
@@ -1009,21 +1093,31 @@ void describe('Inbox › Unlisted (D-162 item 8)', () => {
         (await viewer(h).locator('.overlay-dialog-desc').innerText()).trim(),
         '1 / 3 · by Ada Lovelace’s agent',
       );
-      // A file the board answers 404 for says so, not that it opens elsewhere.
+      // A file that is not an image is named by its file, with its size.
+      const title = viewer(h).locator('.overlay-dialog-title');
       const note = viewer(h).locator('.ovw-card-note');
-      for (const caption of ['deploy.log', 'Before the fix']) {
-        await h.page.keyboard.press('ArrowRight');
-        await settle(
-          async () =>
-            (await viewer(h).locator('.overlay-dialog-title').innerText()).trim() === caption,
-          `→ stepped to ${caption}`,
-        );
-        await settle(
-          async () => (await note.getAttribute('data-readable')) === 'no',
-          `${caption}: the board said 404`,
-        );
-        assert.equal((await note.innerText()).trim(), 'This file isn’t available to you.');
-      }
+      await h.page.keyboard.press('ArrowRight');
+      await settle(
+        async () => (await title.innerText()).trim() === 'Deploy output',
+        '→ stepped to the log',
+      );
+      assert.equal((await viewer(h).locator('.ovw-card-name').innerText()).trim(), 'deploy.log');
+      assert.equal((await viewer(h).locator('.ovw-card-meta').innerText()).trim(), '2.4 KB');
+      await settle(
+        async () => (await note.getAttribute('data-readable')) === 'yes',
+        'the log: the board would serve it',
+      );
+      // A file the board answers 404 for says so, not that it opens elsewhere.
+      await h.page.keyboard.press('ArrowRight');
+      await settle(
+        async () => (await title.innerText()).trim() === 'Before the fix',
+        '→ stepped to the removed image',
+      );
+      await settle(
+        async () => (await note.getAttribute('data-readable')) === 'no',
+        'the removed image: the board said 404',
+      );
+      assert.equal((await note.innerText()).trim(), 'This file isn’t available to you.');
     } finally {
       await h.close();
     }

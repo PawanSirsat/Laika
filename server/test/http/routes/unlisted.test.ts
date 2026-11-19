@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { newId } from '../../../src/db/ids.ts';
-import { orgs, unlistedWork, users } from '../../../src/db/schema.ts';
+import { attachments, orgs, projects, unlistedWork, users } from '../../../src/db/schema.ts';
 import {
   type AuthHarness,
   authHarness,
@@ -144,6 +144,74 @@ describe('GET /api/v1/unlisted', () => {
     // for a slice — the §6.3 rule about ignored input, on a query string.
     expect((await req('/api/v1/unlisted?since=yesterday')).status).toBe(400);
     expect((await req('/api/v1/unlisted?include_dismissed=maybe')).status).toBe(400);
+  });
+
+  it('names each finding’s files, ready and not removed, oldest first (LAI-1361)', async () => {
+    const projectId = h.db.select().from(projects).where(eq(projects.slug, 'laika')).get()!.id;
+    const withFiles = note({ createdAt: 2000 });
+    const bare = note({ createdAt: 1000 });
+    const file = (
+      unlistedWorkId: string,
+      over: Partial<typeof attachments.$inferInsert> = {},
+    ): string => {
+      const id = newId();
+      h.db
+        .insert(attachments)
+        .values({
+          id,
+          projectId,
+          unlistedWorkId,
+          uploadedBy: ownerId,
+          filename: 'deploy.log',
+          contentType: 'text/plain',
+          sizeBytes: 2048,
+          storageKey: `p/${projectId}/${id}`,
+          state: 'ready',
+          inline: 0,
+          createdAt: 20,
+          readyAt: 20,
+          ...over,
+        })
+        .run();
+      return id;
+    };
+    const log = file(withFiles);
+    const shot = file(withFiles, {
+      filename: 'error.png',
+      contentType: 'image/png',
+      sizeBytes: 51_200,
+      inline: 1,
+      createdAt: 10,
+    });
+    // Not served by the content route, so not named here either.
+    file(withFiles, { state: 'pending', readyAt: null });
+    file(withFiles, { deletedAt: 30, deletedBy: ownerId });
+
+    const page = (await (await req('/api/v1/unlisted')).json()) as {
+      data: { id: string; files: unknown[] }[];
+    };
+    expect(page.data.map((row) => [row.id, row.files])).toEqual([
+      [
+        withFiles,
+        [
+          {
+            id: shot,
+            filename: 'error.png',
+            content_type: 'image/png',
+            size_bytes: 51_200,
+            inline: true,
+          },
+          {
+            id: log,
+            filename: 'deploy.log',
+            content_type: 'text/plain',
+            size_bytes: 2048,
+            inline: false,
+          },
+        ],
+      ],
+      [bare, []],
+    ]);
   });
 });
 

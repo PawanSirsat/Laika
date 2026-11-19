@@ -43,6 +43,17 @@ const CreateBody = strictObject({
 /** How long a browser may keep the redirect: shorter than the URL it points at lives. */
 const CONTENT_CACHE_CONTROL = 'private, max-age=60';
 
+/**
+ * `?download=1` — save it, whatever it is (LAI-1361); absent, `''` or `0` is
+ * the file as it is shown. Anything else is a `400`, as `include_dismissed`
+ * is on `GET /unlisted`.
+ */
+function parseDownload(raw: string | undefined): boolean {
+  if (raw === undefined || raw === '' || raw === '0') return false;
+  if (raw === '1') return true;
+  throw ApiError.badRequest('download must be 1 or 0', { download: raw });
+}
+
 function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) {
   const actor = c.get('actor');
   if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
@@ -97,7 +108,13 @@ export function attachmentRoutes(options: AttachmentRouteOptions): Hono<AppEnv> 
 
   app.get('/:id/content', (c) => {
     const actor = requireActor(c);
-    const url = attachmentContentUrl(db, actor, options.attachments, c.req.param('id'));
+    const url = attachmentContentUrl(
+      db,
+      actor,
+      options.attachments,
+      c.req.param('id'),
+      parseDownload(c.req.query('download')),
+    );
     c.header('Cache-Control', CONTENT_CACHE_CONTROL);
     return c.redirect(url, 302);
   });

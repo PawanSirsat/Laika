@@ -13,8 +13,10 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { Attachment } from '../../../../src/api/attachments.ts';
 import type { Round } from '../../../../src/api/review.ts';
+import type { UnlistedFile } from '../../../../src/api/unlisted.ts';
 import {
   ATTACHMENT_GROUP_TITLES,
+  downloadUrl,
   groupAttachments,
   outputBy,
   outputItem,
@@ -212,6 +214,41 @@ void describe('outputItems', () => {
 
   void test('unread, every link is kept as written', () => {
     assert.equal(outputItems(refs, undefined, null).length, 4);
+  });
+
+  void test('an unlisted note’s files name a file its link only captions (LAI-1361)', () => {
+    // As `GET /unlisted` lists them: no `url`, so each opens at its content route.
+    const files: UnlistedFile[] = [
+      {
+        id: C,
+        filename: 'accounts.csv',
+        content_type: 'text/csv',
+        size_bytes: 2048,
+        inline: false,
+      },
+      {
+        id: D,
+        filename: 'run.pdf',
+        content_type: 'application/pdf',
+        size_bytes: 4096,
+        inline: true,
+      },
+    ];
+    const items = outputItems(refs, files, null);
+    assert.deepEqual(
+      items.map((i) => [i.caption, i.filename, i.kind, i.size, i.url]),
+      [
+        ['Accounts created (masked)', 'accounts.csv', 'sheet', '2 KB', url(C)],
+        ['Run report', 'run.pdf', 'report', '4 KB', url(D)],
+      ],
+    );
+  });
+});
+
+void describe('downloadUrl', () => {
+  void test('asks the board to have the file saved, not opened (LAI-1361)', () => {
+    assert.equal(downloadUrl(url(A)), `${url(A)}?download=1`);
+    assert.equal(downloadUrl('/x?v=2'), '/x?v=2&download=1');
   });
 });
 
