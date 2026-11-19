@@ -6,8 +6,9 @@ assignee: chief
 priority: p2
 depends-on: [LAI-1353]
 discovered-from:
-status: in-progress
+status: review
 started: 2026-11-18T23:30:41Z
+finished: 2026-11-18T23:59:41Z
 ---
 
 ## Goal
@@ -24,30 +25,30 @@ restored for 30 days. In Trash a task:
 
 ## Acceptance criteria
 
-- [ ] `tasks` gains `deleted_at` and `deleted_by`, in a migration numbered after
+- [x] `tasks` gains `deleted_at` and `deleted_by`, in a migration numbered after
   integration-ksage's latest.
-- [ ] `liveTask()` also leaves deleted tasks out. The census guard holds every live reader to it,
+- [x] `liveTask()` also leaves deleted tasks out. The census guard holds every live reader to it,
   raw SQL included.
-- [ ] `DELETE /api/v1/tasks/:id` moves a task and its live subtasks to Trash.
+- [x] `DELETE /api/v1/tasks/:id` moves a task and its live subtasks to Trash.
   - `POST /api/v1/tasks/:id/restore` brings back exactly those.
   - Both are gated by `task.delete` (a space admin any task, a member their own) and are signed
     in only: a token is refused.
   - They write `task.deleted` and `task.undeleted`.
   - Deleting releases the live claim, closes live offers and cancels the open work request.
-- [ ] A write to a task in Trash answers `409` with `reason: deleted` to a person, and `404` to a
+- [x] A write to a task in Trash answers `409` with `reason: deleted` to a person, and `404` to a
   token. Reading it by id answers a person and is `404` to a token.
-- [ ] `GET /projects/:slug/tasks?trash=only` lists the space's Trash. `updated_since` tombstones a
+- [x] `GET /projects/:slug/tasks?trash=only` lists the space's Trash. `updated_since` tombstones a
   task deleted since then. A deleted task is never in `?archived=only`.
-- [ ] A deleted blocker stops blocking. A reply by email to a deleted task's thread is refused,
+- [x] A deleted blocker stops blocking. A reply by email to a deleted task's thread is refused,
   never made into a new task.
-- [ ] The web shows:
+- [x] The web shows:
   - *Delete…* in the drawer's ⋯ menu (confirm, then an Undo toast), for whoever may delete;
   - a Trash banner with the days left and Restore;
   - *Delete* in the List bulk bar, with a confirm;
   - a Trash panel from the board toolbar, with the days left and Restore.
-- [ ] The two new verbs are in `enums.ts`, the activity CHECK, `stream-types.ts`, and the activity
+- [x] The two new verbs are in `enums.ts`, the activity CHECK, `stream-types.ts`, and the activity
   and dashboard wording.
-- [ ] Both themes. CI green on the PR into `integration-ksage`.
+- [x] Both themes. CI green on the PR into `integration-ksage`.
 
 ## Notes / context
 
