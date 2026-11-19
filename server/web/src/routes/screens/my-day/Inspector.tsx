@@ -271,10 +271,13 @@ export function Inspector({
 
   const at = (m: number): number => (line.midnight === undefined ? 0 : instantOf(line.midnight, m));
   const placed = (id: string): LaneBlock | undefined => line.blocks.find((b) => b.id === id);
+  // The head reads in the day's zone, like the When fields under it. An
+  // Outlook meeting is stored in UTC, and in its own zone the head said
+  // 9:00 AM over fields saying 2:30 PM (LAI-1362).
   const whenOf = (item: TimeDraft | TimeEntry): string =>
     item.started_at === null || item.ended_at === null
       ? 'No set time'
-      : span(item.started_at, item.ended_at, item.tz);
+      : span(item.started_at, item.ended_at, view.tz);
   /** A placed block's name, for a refusal that names what is in the way. */
   const labelOf = (b: LaneBlock): string => {
     const entry = view.entries.find((e) => e.id === b.id);
@@ -492,7 +495,7 @@ export function Inspector({
             )}
             {draft.general && draft.task === null && draft.project === null && (
               <p className="editor-task-line inspector-card">
-                <span className="editor-task-key">No task</span>
+                <span className="editor-task-key editor-task-none">No task</span>
                 <span className="editor-task-title">
                   Shows as {words.kind === undefined ? 'General' : kindLabel(words.kind)} on the
                   Timeline
@@ -701,7 +704,7 @@ export function Inspector({
                 ? `${subject}’s confirmed time. Changes you make are kept with your name and shown to them.`
                 : 'Read-only. You can see this because you may read everyone’s day.'
               : outlook
-                ? 'Logged from your Outlook calendar. Change or delete it here — once you do, later syncs leave it alone.'
+                ? 'Synced from your Outlook calendar. Once you change or delete it here, later syncs leave it alone.'
                 : undefined;
       return (
         <EditorFrame
@@ -733,28 +736,93 @@ export function Inspector({
                 ? changeable
                   ? `${subject}’s entry · ${outlook ? 'from Outlook' : 'confirmed'}`
                   : `Read-only · ${subject}’s entry${outlook ? ' · from Outlook' : ''}`
-                : outlook
-                  ? 'From your Outlook calendar · owners and admins can see it'
-                  : 'Confirmed · owners and admins can see it'
+                : 'Owners and admins can see it'
           }${entry.note !== null ? ` · “${entry.note}”` : ''}`}
           banner={banner}
           bannerTone={stopped === entry.id ? 'accent' : 'blue'}
           foot={
-            changeable ? (
-              <button
-                type="button"
-                className="editor-act editor-act-danger"
-                data-entry-delete
-                disabled={busy}
-                onClick={() => {
-                  actions.remove(entry);
-                }}
-              >
-                Delete entry
-              </button>
+            // Done to finish, Delete kept apart and quieter; edits already
+            // save as they are made, and the footer says so (LAI-1362).
+            changeable || onClose !== undefined ? (
+              <>
+                {changeable && (
+                  <button
+                    type="button"
+                    className="editor-act editor-act-danger editor-act-quiet"
+                    data-entry-delete
+                    disabled={busy}
+                    onClick={() => {
+                      actions.remove(entry);
+                    }}
+                  >
+                    Delete
+                  </button>
+                )}
+                <span className="editor-foot-gap" />
+                {changeable && (
+                  <span className="editor-foot-hint" data-entry-autosave>
+                    {busy ? 'Saving…' : 'Changes save as you go'}
+                  </span>
+                )}
+                {onClose !== undefined && (
+                  <button
+                    type="button"
+                    className="editor-primary"
+                    data-entry-done
+                    onClick={onClose}
+                  >
+                    Done
+                  </button>
+                )}
+              </>
             ) : undefined
           }
         >
+          {/* What it was first: it is what the reader came to check (LAI-1362). */}
+          <section className="editor-section" data-entry-words>
+            <h3 className="editor-label">What it was</h3>
+            <input
+              className="input editor-input editor-words"
+              data-entry-title
+              value={said.title}
+              maxLength={120}
+              placeholder={
+                changeable
+                  ? `e.g. ${entry.task?.title ?? 'Code review for the onboarding epic'}`
+                  : 'No title'
+              }
+              aria-label="What it was"
+              readOnly={!changeable}
+              disabled={busy}
+              onChange={(event) => {
+                setDetails({ ...said, title: event.target.value });
+              }}
+              onBlur={saveWords}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+            {(changeable || said.description !== '') && (
+              <textarea
+                className="input editor-textarea"
+                data-entry-description
+                rows={2}
+                value={said.description}
+                maxLength={2000}
+                placeholder="Add a description (optional)"
+                aria-label="Description"
+                readOnly={!changeable}
+                disabled={busy}
+                onChange={(event) => {
+                  setDetails({ ...said, description: event.target.value });
+                }}
+                onBlur={saveWords}
+              />
+            )}
+          </section>
           <section className="editor-section">
             <h3 className="editor-label">When</h3>
             <EditorWhen
@@ -785,7 +853,7 @@ export function Inspector({
                 </>
               ) : (
                 <>
-                  <span className="editor-task-key">No task</span>
+                  <span className="editor-task-key editor-task-none">No task</span>
                   <span className="editor-task-title">
                     Shows as{' '}
                     {entry.kind === undefined || entry.kind === null
@@ -837,57 +905,8 @@ export function Inspector({
               actions.setKind(entry, entry.kind === kind ? null : kind);
             })}
           </section>
-          <section
-            className={
-              block !== undefined && agentsIn !== undefined && !readOnly
-                ? 'editor-section'
-                : 'editor-section editor-section-last'
-            }
-          >
-            <h3 className="editor-label">What it was</h3>
-            <input
-              className="input editor-input editor-words"
-              data-entry-title
-              value={said.title}
-              maxLength={120}
-              placeholder={
-                changeable
-                  ? `e.g. ${entry.task?.title ?? 'Code review for the onboarding epic'}`
-                  : 'No title'
-              }
-              aria-label="What it was"
-              readOnly={!changeable}
-              disabled={busy}
-              onChange={(event) => {
-                setDetails({ ...said, title: event.target.value });
-              }}
-              onBlur={saveWords}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault();
-                  event.currentTarget.blur();
-                }
-              }}
-            />
-            {(changeable || said.description !== '') && (
-              <textarea
-                className="input editor-textarea"
-                data-entry-description
-                rows={2}
-                value={said.description}
-                maxLength={2000}
-                placeholder="Add a description (optional)"
-                aria-label="Description"
-                readOnly={!changeable}
-                disabled={busy}
-                onChange={(event) => {
-                  setDetails({ ...said, description: event.target.value });
-                }}
-                onBlur={saveWords}
-              />
-            )}
-          </section>
-          {block !== undefined && agentsIn !== undefined && (
+          {/* Only when an agent ran in it: a lone 0 said nothing (LAI-1362). */}
+          {block !== undefined && agentsIn !== undefined && agentsIn(block).runs > 0 && (
             <section className={readOnly ? 'editor-section editor-section-last' : 'editor-section'}>
               <h3 className="editor-label">Built from</h3>
               <div className="editor-tiles editor-tiles-one">
