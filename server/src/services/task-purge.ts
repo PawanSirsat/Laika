@@ -63,15 +63,17 @@ export function purgeTask(
     );
   }
   assertCan(withProject(actor, task.projectId), 'task.purge', { projectId: task.projectId });
-  if (task.deletedAt === null) {
-    throw new ApiError('conflict', 'Move the task to Trash first.', { reason: 'not_in_trash' });
-  }
+  const notInTrash = () =>
+    new ApiError('conflict', 'Move the task to Trash first.', { reason: 'not_in_trash' });
+  if (task.deletedAt === null) throw notInTrash();
 
   return db.transaction(
     () => {
-      // Under the write lock: two people at once scrub once.
+      // Under the write lock, both again, as the job asks: two people at once
+      // scrub once, and a restore that landed first is never undone by this.
       const row = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
       if (row.purgedAt !== null) throw noSuchTask(taskId);
+      if (row.deletedAt === null) throw notInTrash();
       return { purged: scrub(db, actor, row, now) };
     },
     { behavior: 'immediate' },
