@@ -334,7 +334,7 @@ function credentialColumn(cell: string): 'named' | 'bare' | null {
  */
 function isNotSecretCell(value: string): boolean {
   const v = value.trim();
-  if (isMasked(v) || v.length < 4) return true;
+  if (v.length < 4 || isMasked(v)) return true;
   if (/\s/.test(v)) return true;
   if (/^[-+]?[\d.,:%]+$/.test(v)) return true;
   return NOT_A_SECRET.has(v.toLowerCase());
@@ -361,7 +361,13 @@ const MAX_HEADER = 1024;
 
 /** The first `limit` cells of a row — enough for the columns asked about, and no more. */
 function cells(line: string, delimiter: string, limit?: number): string[] {
-  const parts = line.split(delimiter, limit).map((c) => c.trim().replace(/^"(.*)"$/, '$1'));
+  const parts = line.split(delimiter, limit).map((c) => {
+    const cell = c.trim();
+    // Its quotes off, `"…"`: a plain test, as this runs on every cell of every row.
+    return cell.length >= 2 && cell.startsWith('"') && cell.endsWith('"')
+      ? cell.slice(1, -1)
+      : cell;
+  });
   // A markdown table row starts and ends with its delimiter.
   if (delimiter === '|') {
     if (parts[0] === '') parts.shift();
@@ -395,6 +401,8 @@ function credentialTable(lines: readonly string[]): SecretHit | null {
     }
     if (line.length > MAX_HEADER) continue;
     for (const delimiter of DELIMITERS) {
+      // A line without the delimiter is one cell, never a header: not split.
+      if (!line.includes(delimiter)) continue;
       const header = cells(line, delimiter);
       if (header.length < 2 || header.some((name) => name.length > 40)) continue;
       const columns = header.flatMap((name, at) => {

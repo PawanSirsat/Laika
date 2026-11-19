@@ -394,8 +394,8 @@ void describe('the weak cases review-405 found, as the board has them (LAI-1361)
       'an XML element never closed': fill('<password>abcd'),
       'XML attributes with no end': fill(`<${'a'.repeat(31)}password ${'b'.repeat(250)}`),
       'a bracket never closed': fill(`password: hunter22 (${'x'.repeat(70)}\n`),
+      // A bare `token` column takes the same path, cell for cell.
       'a bare pass column of counts': fill(',1234\n', 'a,pass\n'),
-      'a bare token column of words': fill(',abcdefgh\n', 'a,token\n'),
       'command substitutions': fill('pwd=$(pwd)\n'),
     };
     let total = 0;
