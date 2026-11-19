@@ -65,6 +65,55 @@
   background: var(--bg-column);
 }
 
+/*
+ * The icon is the file's preview (LAI-1352): an image's own picture, scaled
+ * down and loaded as it nears the screen, or its glyph; either opens the
+ * viewer on it.
+ */
+.att-preview {
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.att-preview:hover {
+  border-color: var(--accent-border);
+}
+
+.att-preview:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.att-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* The groups (LAI-1352): Outputs, In comments, Other. */
+.att-group {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.att-group-title {
+  margin: 0;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+.att-group-count {
+  font-weight: var(--weight-normal);
+  color: var(--text-muted);
+}
+
 .att-main {
   display: grid;
   flex: 1 1 auto;

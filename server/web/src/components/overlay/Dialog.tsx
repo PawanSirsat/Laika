@@ -3,6 +3,7 @@ import {
   useRef,
   type CSSProperties,
   type FormEvent,
+  type KeyboardEvent,
   type ReactNode,
   type RefObject,
 } from 'react';
@@ -54,6 +55,12 @@ export interface DialogProps {
   readonly onSubmit?: (event: FormEvent<HTMLFormElement>) => void;
   readonly className?: string;
   readonly data?: DialogData;
+  /**
+   * Keys of the dialog's own, seen first: the output viewer's ← and →
+   * (LAI-1352). One it spends with `preventDefault` goes no further; Escape
+   * and Tab stay the dialog's.
+   */
+  readonly onKeyDown?: ((event: KeyboardEvent<HTMLElement>) => void) | undefined;
   readonly children: ReactNode;
 }
 
@@ -92,6 +99,7 @@ export function Dialog({
   onSubmit,
   className,
   data,
+  onKeyDown: ownKeys,
   children,
 }: DialogProps) {
   const box = useRef<HTMLElement | null>(null);
@@ -121,7 +129,10 @@ export function Dialog({
     'aria-describedby': description === undefined ? undefined : descId,
     'data-size': size,
     tabIndex: -1,
-    onKeyDown,
+    onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+      ownKeys?.(event);
+      onKeyDown(event);
+    },
     ...data,
   } as const;
 

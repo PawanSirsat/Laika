@@ -232,12 +232,13 @@ void describe('laika doctor — never a secret, never a write', () => {
     }
     // Read-only: the home is byte-for-byte what it was, modes included.
     assert.equal(snapshot(dir), before);
-    // Only GETs, and the agent token only to its own board's agent endpoint.
+    // Only GETs, and the agent token only to its own board: its agent
+    // endpoint, and the two reads the attach check makes (LAI-1351).
     assert.ok(seen.every((s) => s.method === 'GET'));
-    assert.ok(
-      seen
-        .filter((s) => s.auth !== undefined)
-        .every((s) => s.url === '/api/v1/agents/me/work-requests'),
+    const READS = ['/api/v1/agents/me/work-requests', '/api/v1/org', '/api/v1/me'];
+    assert.deepEqual(
+      seen.filter((s) => s.auth !== undefined && !READS.includes(s.url)).map((s) => s.url),
+      [],
     );
     assert.ok(seen.every((s) => s.auth === undefined || s.auth === `Bearer ${AGENT_TOKEN}`));
   });
@@ -662,5 +663,126 @@ void describe('laika doctor — a secret in a board URL is never printed or sent
     assert.equal(code, 2, text);
     assert.match(text, /Could not check: the board answered 409/);
     assert.doesNotMatch(text, /set up/);
+  });
+});
+
+void describe('laika doctor — whether laika attach would work (LAI-1351)', () => {
+  let store: Server | undefined;
+  afterEach(async () => {
+    if (store !== undefined) await new Promise<void>((resolve) => store?.close(() => resolve()));
+    store = undefined;
+  });
+
+  /** A store that answers anything, as a real one answers an unsigned request: refused, but there. */
+  async function liveStore(): Promise<{ origin: string; hits: () => number }> {
+    let hits = 0;
+    store = createServer((_req, res) => {
+      hits += 1;
+      res.writeHead(403).end();
+    });
+    await new Promise<void>((resolve) => store?.listen(0, '127.0.0.1', () => resolve()));
+    const address = store.address();
+    assert.ok(address !== null && typeof address === 'object');
+    return { origin: `http://127.0.0.1:${String(address.port)}`, hits: () => hits };
+  }
+
+  /** The modern board, with `GET /org`, `GET /me` and a CSP that names `storeOrigin`. */
+  function attachBoard(
+    attachments: { max_bytes: number } | null,
+    storeOrigin: string,
+    roles: readonly string[] = ['member'],
+  ): Handler {
+    const base = modernBoard();
+    return (req, res) => {
+      if (req.url === '/api/v1/org') return json(res, 200, { id: 'org', attachments });
+      if (req.url === '/api/v1/me') {
+        return json(res, 200, {
+          memberships: roles.map((role, i) => ({ project_id: `p${String(i)}`, role })),
+        });
+      }
+      if (req.url === '/api/v1/health') {
+        res.writeHead(200, {
+          'content-type': 'application/json',
+          'content-security-policy': `default-src 'self'; img-src 'self' data: ${storeOrigin}; connect-src 'self' ${storeOrigin}`,
+        });
+        res.end('{"status":"ok"}');
+        return;
+      }
+      base(req, res);
+    };
+  }
+
+  void test('OK: who uploads, to how many projects, the store answering, and the limit', async () => {
+    const s = await liveStore();
+    const { url } = await board(attachBoard({ max_bytes: 104_857_600 }, s.origin));
+    const dir = sandbox();
+    plantCredential(dir, url);
+
+    const { code, text } = await run([], dir);
+
+    assert.equal(code, 0, text);
+    assert.match(
+      text,
+      new RegExp(
+        `OK\\s+attach\\s+claude-code's credential may upload to 1 project; store ${s.origin} answers; files up to 100 MB`,
+      ),
+    );
+    assert.equal(s.hits(), 1, 'the store was not tried');
+    assert.ok(!text.includes(AGENT_TOKEN));
+  });
+
+  void test('INFO when the board has attachments off, and the store is not tried', async () => {
+    const s = await liveStore();
+    const { url } = await board(attachBoard(null, s.origin));
+    const dir = sandbox();
+    plantCredential(dir, url);
+
+    const { code, text } = await run([], dir);
+
+    assert.equal(code, 0, text);
+    assert.match(
+      text,
+      /INFO\s+attach\s+attachments are off on http:\/\/127\.0\.0\.1:\d+: laika attach cannot upload there/,
+    );
+    assert.equal(s.hits(), 0);
+  });
+
+  void test('ACTION when the store the board names does not answer from here', async () => {
+    const { url } = await board(attachBoard({ max_bytes: 26_214_400 }, 'http://127.0.0.1:9'));
+    const dir = sandbox();
+    plantCredential(dir, url);
+
+    const { code, text } = await run([], dir);
+
+    assert.equal(code, 1, text);
+    assert.match(
+      text,
+      /ACTION\s+attach\s+the file store http:\/\/127\.0\.0\.1:9 does not answer from this machine/,
+    );
+  });
+
+  void test('ACTION when the credential leads or belongs to no project it could upload to', async () => {
+    const s = await liveStore();
+    const { url } = await board(attachBoard({ max_bytes: 26_214_400 }, s.origin, ['viewer']));
+    const dir = sandbox();
+    plantCredential(dir, url);
+
+    const { code, text } = await run([], dir);
+
+    assert.equal(code, 1, text);
+    assert.match(
+      text,
+      /ACTION\s+attach\s+claude-code's credential is a lead or member of no project/,
+    );
+  });
+
+  void test('SKIPPED with --offline, and INFO with no credential at all', async () => {
+    const dir = sandbox();
+    assert.match(
+      (await run(['--offline'], dir)).text,
+      /SKIPPED\s+attach\s+not asked \(--offline\)/,
+    );
+    const none = await run(['--board', 'http://127.0.0.1:9'], dir);
+    assert.match(none.text, /INFO\s+attach\s+laika attach has no credential to use/);
   });
 });

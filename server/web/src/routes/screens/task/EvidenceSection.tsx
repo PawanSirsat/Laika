@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { listTaskAttachments, type Attachment } from '../../../api/attachments.ts';
 import {
   ciLine,
   ciVerdict,
@@ -16,6 +17,14 @@ import { timeLabel } from '../../../api/time-label.ts';
 import { InfoTip } from '../profile/InfoTip.tsx';
 import { decisionVerb, proofFolded, proofFoldLabel } from './evidence-derive.ts';
 import type { MentionCandidate } from './LazyRichEditor.tsx';
+import { OutputsStrip } from './OutputsStrip.tsx';
+import {
+  outputItems,
+  outputsFoldLabel,
+  roundBy,
+  roundOutputs,
+  type OutputItem,
+} from './outputs-derive.ts';
 import { TaskMarkdown } from './TaskMarkdown.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
@@ -125,6 +134,7 @@ export function RoundProof({
   hideReason,
   people,
   meId,
+  outputs,
 }: {
   readonly round: Round;
   readonly nameOf: (userId: string) => string;
@@ -133,6 +143,8 @@ export function RoundProof({
   readonly hideReason?: boolean | undefined;
   readonly people?: readonly MentionCandidate[] | undefined;
   readonly meId?: string | undefined;
+  /** The files the round's summary attached (D-162), folded under its proof. */
+  readonly outputs?: readonly OutputItem[] | undefined;
 }) {
   const summary = evidenceSummary(round);
   // D-120: the agent as `<harness> · <device>`, never the client's own word.
@@ -249,7 +261,33 @@ export function RoundProof({
           )}
         </dl>
       )}
+
+      {outputs !== undefined && <OutputsFold round={round.number} outputs={outputs} />}
     </div>
+  );
+}
+
+/**
+ * A round's outputs (D-162, LAI-1352), as the owner chose them: one folded
+ * line — *Outputs · 6 — 4 screenshots · 1 sheet · 1 report* — that opens to
+ * the strip, each tile opening the viewer. The Proof fold's own `<details>`,
+ * a step smaller. Nothing when the round attached none.
+ */
+export function OutputsFold({
+  round,
+  outputs,
+}: {
+  readonly round: number;
+  readonly outputs: readonly OutputItem[];
+}) {
+  if (outputs.length === 0) return null;
+  return (
+    <details className="ev-fold out-fold" data-outputs={round}>
+      <summary className="ev-fold-summary">{outputsFoldLabel(outputs)}</summary>
+      <div className="ev-fold-body">
+        <OutputsStrip items={outputs} label={`Outputs of round ${String(round)}`} />
+      </div>
+    </details>
   );
 }
 
@@ -393,9 +431,53 @@ export function EvidenceSection({
   const latest = rounds?.rounds[0];
   const earlier = rounds?.rounds.slice(1) ?? [];
 
+  /*
+   * The rounds' outputs (D-162): the files each summary links. Their names,
+   * types and whether they are shown inline are the task's file list's, read
+   * only when a round attached any — the Attachments section reads the same
+   * path, and the client shares a read in flight.
+   *
+   * **The Outputs line waits for that read**, so what it counts never changes
+   * under the reader: drawn from the links alone, a sheet and a report are
+   * just *files* until the list lands. A read that fails settles it too —
+   * every link is then kept as written (`null`).
+   */
+  const refs = useMemo(() => roundOutputs(rounds?.rounds ?? []), [rounds]);
+  const wantsFiles = [...refs.values()].some((list) => list.length > 0);
+  const [filesRead, setFilesRead] = useState<
+    { readonly taskId: string; readonly files: readonly Attachment[] | null } | undefined
+  >(undefined);
+  const settled = filesRead?.taskId === taskId;
+  const files = settled ? (filesRead.files ?? undefined) : undefined;
+  useEffect(() => {
+    if (!wantsFiles) return;
+    const controller = new AbortController();
+    listTaskAttachments(taskId, controller.signal)
+      .then((answer) => {
+        if (!controller.signal.aborted) setFilesRead({ taskId, files: answer.data });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setFilesRead({ taskId, files: null });
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [taskId, refreshKey, wantsFiles]);
+  const outputsOf = (round: Round): readonly OutputItem[] =>
+    settled ? outputItems(refs.get(round.number) ?? [], files, roundBy(round, nameOf)) : [];
+
   if (hideWhenEmpty === true && sendBack === null && rounds !== undefined && latest === undefined) {
     return null;
   }
+
+  /*
+   * Folded, the latest round's outputs line sits under the Proof line rather
+   * than inside it (the owner's preview): what the agent showed is one click
+   * away, the proof two. Open, it ends the round it belongs to.
+   */
+  const folded =
+    latest !== undefined &&
+    proofFolded({ shared: read !== undefined, status: taskStatus, sendBack, latest });
 
   const body = (
     <>
@@ -424,6 +506,7 @@ export function EvidenceSection({
             hideReason={sendBack !== null}
             people={people}
             meId={meId}
+            outputs={folded ? undefined : outputsOf(latest)}
           />
           {earlier.length > 0 && (
             <details className="ev-earlier">
@@ -438,6 +521,7 @@ export function EvidenceSection({
                   now={now}
                   people={people}
                   meId={meId}
+                  outputs={outputsOf(round)}
                 />
               ))}
             </details>
@@ -449,10 +533,7 @@ export function EvidenceSection({
 
   // In review the state panel above lists this round's commits and runs, so
   // the section folds to one line; `<details>` keeps it all in the page.
-  if (
-    latest !== undefined &&
-    proofFolded({ shared: read !== undefined, status: taskStatus, sendBack, latest })
-  ) {
+  if (folded) {
     return (
       <section className="panel-section ev" aria-label="Proof" data-section="proof" data-folded="">
         <details className="ev-fold">
@@ -464,6 +545,7 @@ export function EvidenceSection({
             {body}
           </div>
         </details>
+        <OutputsFold round={latest.number} outputs={outputsOf(latest)} />
       </section>
     );
   }

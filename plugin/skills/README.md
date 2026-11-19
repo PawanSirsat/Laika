@@ -10,6 +10,12 @@ Shipped today:
   with the `branch`, or `update_status` to `in_progress`) and name the branch
   `<KEY>-…`, so Laika ties the session's tokens to it (LAI-770, D-084 item 5).
   `cli/test/plugin-skills.test.ts` checks it names only tools the server serves.
+- `laika-show-your-work/` — attach what a person should see (screenshots
+  before and after, light and dark, laptop and phone; generated files with a
+  masked copy; reports; recordings) with `laika attach` or `finish_task`'s
+  `outputs`, captioned, never a secret; and one parent task per feature, a
+  child per part (D-162, LAI-1351). The same test checks its tools and that it
+  states the parent-and-child rule in the repo block's words.
 
 The full protocol skill below is LAI-421, still to come.
 

@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { plain, webRule } from './support/block-rules.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const SKILLS = `${ROOT}plugin/skills/`;
@@ -59,6 +60,63 @@ void describe('the skill that has an agent mark its task (LAI-770)', () => {
       .map((m) => m[1] ?? '')
       .filter((name) => name !== 'in_progress');
     assert.ok(named.length >= 3, `only ${String(named.length)} tools named — the probe is broken`);
+    assert.deepEqual(
+      named.filter((name) => !served.has(name)),
+      [],
+      'the skill names a tool the server does not serve',
+    );
+  });
+});
+
+const SHOW = `${SKILLS}laika-show-your-work/SKILL.md`;
+
+void describe('the skill that has an agent show its work (D-162, LAI-1351)', () => {
+  void test('ships as a skill: its own directory, a SKILL.md with a name and a description', () => {
+    assert.ok(existsSync(SHOW), `${SHOW} is missing`);
+    const front = /^---\n([\s\S]*?)\n---\n/.exec(readFileSync(SHOW, 'utf8'))?.[1] ?? '';
+    assert.match(front, /^name: laika-show-your-work$/m);
+    assert.match(front, /^description: .{40,}$/m);
+  });
+
+  void test('covers each case the task names', () => {
+    const body = readFileSync(SHOW, 'utf8');
+    for (const [what, pattern] of [
+      ['when to attach', /## When to attach, and when not/],
+      ['when not: tests are the proof', /tests are the whole proof/],
+      ['the command', /laika attach LAI-42 /],
+      ['before and after', /\*\*Before and after\*\*/],
+      ['light and dark', /\*\*Light and dark\*\*/],
+      ['laptop and phone', /\*\*Laptop and phone\*\*/],
+      ['captions', /## Captions/],
+      [
+        'spreadsheets: masked copy and a rendition',
+        /\*\*a masked copy\*\*[\s\S]{0,40}\*\*a PDF or screenshot rendition\*\*/,
+      ],
+      ['recordings', /## Recordings/],
+      ['blockers and incidents', /## Blockers and incidents/],
+      ['no override', /There is no override/],
+      ['masking examples', /\| `password,\*\*\*\*\*\*\*\*` \|/],
+      ['the parent and child rule', /## One parent per feature/],
+    ] as const) {
+      assert.match(body, pattern, what);
+    }
+  });
+
+  void test('states revision 3’s two rules in the repo block’s words, read from the web (LAI-1352)', () => {
+    // A blockquote's `>` markers are layout, as the block's line breaks are.
+    const skill = plain(readFileSync(SHOW, 'utf8').replace(/^> ?/gm, ''));
+    for (const rule of ['SHOW_THE_RESULT', 'ONE_PARENT_PER_FEATURE'] as const) {
+      assert.ok(skill.includes(webRule(rule)), `the skill does not say ${rule} word for word`);
+    }
+  });
+
+  void test('names only tools the server serves — read from both sides', () => {
+    const served = registeredTools();
+    const NOT_TOOLS = new Set(['id_rsa']);
+    const named = [...readFileSync(SHOW, 'utf8').matchAll(/`([a-z]+_[a-z_]+)`/g)]
+      .map((m) => m[1] ?? '')
+      .filter((name) => !NOT_TOOLS.has(name));
+    assert.ok(named.length >= 5, `only ${String(named.length)} tools named — the probe is broken`);
     assert.deepEqual(
       named.filter((name) => !served.has(name)),
       [],

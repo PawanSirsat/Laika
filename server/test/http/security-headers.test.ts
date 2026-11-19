@@ -189,19 +189,29 @@ describe('the attachments store in the policy (D-150, LAI-1300)', () => {
     expect(buildContentSecurityPolicy(hashes)).toContain("img-src 'self' data:; ");
     expect(buildContentSecurityPolicy(hashes)).toContain("connect-src 'self'; ");
     expect(buildContentSecurityPolicy(hashes)).toContain("media-src 'self'; ");
+    // A frame from itself only: what `default-src 'self'` already allowed.
+    expect(buildContentSecurityPolicy(hashes)).toContain("frame-src 'self'; ");
   });
 
-  it('adds the store to img-src, media-src and connect-src, and to nothing else', () => {
+  it('adds the store to img-src, media-src, frame-src and connect-src, and to nothing else', () => {
     const off = directives(buildContentSecurityPolicy([]));
     const on = directives(buildContentSecurityPolicy([], { storageOrigin: STORE }));
 
     expect(on.get('img-src')).toBe(`img-src 'self' data: ${STORE}`);
     // An inline recording plays through the same 302 an image is shown through (D-162).
     expect(on.get('media-src')).toBe(`media-src 'self' ${STORE}`);
+    // The output viewer's PDF frame goes through it the same way (LAI-1352).
+    expect(on.get('frame-src')).toBe(`frame-src 'self' ${STORE}`);
     expect(on.get('connect-src')).toBe(`connect-src 'self' ${STORE}`);
     // Every other directive is the off policy's, word for word.
+    const widened = new Set<string | undefined>([
+      'img-src',
+      'media-src',
+      'frame-src',
+      'connect-src',
+    ]);
     for (const [name, directive] of off) {
-      if (name === 'img-src' || name === 'media-src' || name === 'connect-src') continue;
+      if (widened.has(name)) continue;
       expect(on.get(name), name).toBe(directive);
     }
     expect([...on.keys()]).toEqual([...off.keys()]);

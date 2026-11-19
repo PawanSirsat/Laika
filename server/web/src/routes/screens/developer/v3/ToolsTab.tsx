@@ -8,6 +8,7 @@ import { AgentMark } from '../../../../components/agent-mark/AgentMark.tsx';
 import { AutoPickupChip } from './AutoPickupChip.tsx';
 import { DxIcon } from './DxIcon.tsx';
 import { NoteBlock } from './NoteBlock.tsx';
+import { OutputsNote } from './OutputsNote.tsx';
 import { SectionTitle } from './SectionTitle.tsx';
 import {
   anyPaired,
@@ -229,6 +230,7 @@ export function ToolsTab({
               {showRevoked ? 'Hide revoked' : `Show revoked (${String(revoked)})`}
             </button>
           )}
+          {listed.length > 0 && <OutputsNote />}
         </>
       )}
     </section>

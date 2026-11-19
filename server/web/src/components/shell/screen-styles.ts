@@ -39,6 +39,8 @@ import '../../routes/screens/task/tokens.css';
 import '../../routes/screens/profile/profile.css';
 import '../../routes/screens/task/evidence.css';
 import '../../routes/screens/task/attachments.css';
+// D-162 (LAI-1352): an agent's outputs — the strip, and the viewer a tile opens.
+import '../../routes/screens/task/outputs.css';
 import '../../routes/screens/task/hero.css';
 import '../../routes/screens/task/delivers.css';
 import '../../routes/screens/task/feed.css';
