@@ -5179,7 +5179,7 @@ GET    /api/v1/tasks/:id/comments            POST /api/v1/tasks/:id/comments
 PATCH  /api/v1/comments/:id                  DELETE /api/v1/comments/:id
 POST   /api/v1/projects/:slug/attachments    body { filename, content_type, size_bytes, task_id? } → 201 { attachment, upload: { url, method: 'PUT', headers: { content-type, content-disposition }, expires_at } }; `task_id` is the task's id, its key (`LAI-42`) or the outside id it carries, as every MCP tool takes a task (LAI-1302); 413 payload_too_large with max_bytes; never stored for a replay   (attachment.create; D-150; MCP `request_upload`, D-162)
 POST   /api/v1/attachments/:id/complete      → the attachment, ready; 409 conflict reason not_uploader, not_pending, upload_expired (asked for over an hour ago), upload_missing or size_mismatch; 422 unprocessable reason secret_detected with `pattern` and `line` — the file removed, never its text (§13.4, D-162)   (the uploader; MCP `complete_upload`)
-GET    /api/v1/attachments/:id/content       → 302 to a presigned GET, five minutes; Cache-Control: private, max-age=60; pending, removed or unreadable 404   (project.read)
+GET    /api/v1/attachments/:id/content       → 302 to a presigned GET, five minutes; ?download=1 has the store send any file as an attachment, ?download= anything but 1 or 0 a 400 (LAI-1361); Cache-Control: private, max-age=60; pending, removed or unreadable 404   (project.read)
 DELETE /api/v1/attachments/:id               → 204   (attachment.delete: a lead any, a member their own)
 GET    /api/v1/tasks/:id/attachments         → { data: [attachment] }, ready and not removed, oldest first   (project.read)
 GET    /api/v1/projects/:slug/activity       GET /api/v1/activity    (org-wide, viewer+) — another person's agent is withheld per row (§4.8 `agent_id`, LAI-1011)
@@ -5228,7 +5228,7 @@ POST   /api/v1/agent-sessions/:id/end        → session; its live claims are re
 GET    /api/v1/presence                      GET /api/v1/capacity
 GET    /api/v1/presence/people               who is online or away now → { enabled, people[{ user_id, name, status: online|away, last_seen, last_seen_via }] } — the header's *who's here* (§9.3, LAI-1348); nothing written
 GET    /api/v1/permissions                   every org and project action: label, scope, which roles hold it, conditions; and the caller's own grants (viewer+; LAI-885) — answered under the organisation's grants (LAI-958)
-GET    /api/v1/unlisted                      ?user=&since=  — work logged outside any project
+GET    /api/v1/unlisted                      ?user=&since=  — work logged outside any project; each finding with files: [{ id, filename, content_type, size_bytes, inline }], those the caller may read, oldest first (LAI-1361)
 POST   /api/v1/unlisted/:id/promote          body { project_slug, title, priority? } → creates a task
 DELETE /api/v1/unlisted/:id                  dismiss
 GET    /api/v1/projects/:slug/metrics        ?window=  — throughput, cycle time, stuck, WIP by user
@@ -6868,10 +6868,17 @@ relative, and never a store URL, so a stored body never expires.
   the store answer `response-content-type` — the declared type when `inline`,
   else `application/octet-stream` — and `response-content-disposition` —
   `inline` when `inline`, else `attachment` — with the RFC 6266 filename
-  (§13.1). A file on an unlisted finding not yet promoted is served only to
+  (§13.1). **`?download=1` makes the disposition `attachment` for every
+  file**, so a browser saves an image or a PDF rather than opening it: a
+  link's `download` attribute does not survive the `302` to the store's
+  origin, and the web's *Download* asks this instead (LAI-1361). The type is
+  unchanged. A file on an unlisted finding not yet promoted is served only to
   its uploader and to those who read the pile (`audit_log.export`); to anyone
   else it is the `404` below (D-162 item 8). A `pending` or removed file, or one in a project the caller cannot
-  read, is the same `404`.
+  read, is the same `404`. **`GET /unlisted` names each finding's files** —
+  `id`, `filename`, `content_type`, `size_bytes`, `inline` — under this same
+  gate, so it never lists one whose link would be that `404`, and the Inbox
+  can name a file its note only links (LAI-1361).
 - **Removing** stamps the row at once and deletes the object best effort; the
   sweep retries until it goes (§11.6). A file that belonged to a task writes
   `attachment.removed`.
@@ -9439,18 +9446,25 @@ is text or a key (`.env`, `id_rsa`, `*.pem`, `*.key`, `credentials`,
 NUL, not an image, PDF or recording) — for known shapes: a private key block,
 an AWS access key id or secret key, a Laika (`lai_`), GitHub (`ghp_`, `gho_`,
 `ghu_`, `ghs_`, `ghr_`, `github_pat_`) or `sk-` token, a `password:`-style
-value that is **one secret-shaped token** (six characters or more with a
-digit, a symbol or both cases, or twelve or more) — never prose such as
-*stored in the team vault* — a `.env` line whose name ends in a secret word,
-credentials in a URL, and a table column named for a credential (`password`,
-`api_key`, `client_secret`, `access_token` — not a bare `pass` or `token`, a
-test report's columns) whose cell is not a number, a result word or more
-than one word. A masked or placeholder value (`****`, `<redacted>`,
-`${VAR}`) passes. A hit refuses the completion with the rule and the line,
+value — or a `<password>…</password>` element's text — that is **one
+secret-shaped token** (six characters or more, and not a word that describes
+the field, such as `required` or `string`), alone or before a note in
+brackets, `hunter22 (temp)` — never prose such as *stored in the team vault*
+— a `.env` line whose name ends in a secret word, credentials in a URL, and
+a table column named for a credential (`password`, `api_key`,
+`client_secret`, `access_token`) whose cell is not a number, a result word
+or more than one word; under a bare `pass` or `token` column, a test
+report's or a word list's too, only a cell of eight characters or more with
+letters and digits both (LAI-1361). A masked or placeholder value (`****`,
+`ab**yz`, `<redacted>`, `${VAR}`), or one a script works out when it runs
+(`$(pwd)`), passes. A hit refuses the completion with the rule and the line,
 never the text, and the file is deleted. **Every rule is bounded and linear**:
 the scan runs inside the request, and a crafted 2 MiB file of each rule's
 worst case is timed in `secret-scan.test.ts`. There is no override; the list is `services/secret-scan.ts`, and
-LAI-1351's CLI checks the same list before it uploads. It catches known
+LAI-1351's CLI checks the same list before it uploads — inside a spreadsheet,
+a Word document, a presentation and any other zip as well, a zip within a
+zip four deep, within 64 MiB a part and 128 MiB for the whole file, or it
+refuses the file as one it could not check (LAI-1361). It catches known
 shapes only: the instruction to mask is the real guard.
 
 **Inbound email is the organisation's choice, and off as it ships** (D-155).
