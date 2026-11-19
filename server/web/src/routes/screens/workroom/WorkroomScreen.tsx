@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import { everyPage } from '../../../api/every-page.ts';
 import { isTombstone, listProjects, type Project } from '../../../api/projects.ts';
-import { listMembers, type Member } from '../../../api/tasks.ts';
+import { listMembers, listTasks, type Member, type TaskSummary } from '../../../api/tasks.ts';
 import { reloadProjectTasks, useProjectTasks } from '../../../api/use-project-tasks.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -76,6 +76,51 @@ function useSpaceOfKey(key: string): readonly [SpaceRead, () => void] {
   ];
 }
 
+type ShelfRead =
+  | { readonly kind: 'idle' }
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'ready'; readonly task: TaskSummary | undefined };
+
+/**
+ * **A task put away is on no live set** (LAI-1358): archived or in Trash, it
+ * left the space's task set, so a key that misses the set is looked for on
+ * the space's two shelves — `?archived=only`, then `?trash=only` — before the
+ * page says *No task*. Read again whenever the set is (`asOf`), so archiving
+ * from the page finds it there at once; a read that fails reads as nothing.
+ */
+function useShelvedTask(
+  slug: string | undefined,
+  key: string,
+  missing: boolean,
+  asOf: number | null | undefined,
+): ShelfRead {
+  const [read, setRead] = useState<ShelfRead>({ kind: 'idle' });
+  useEffect(() => {
+    if (!missing || slug === undefined) {
+      setRead({ kind: 'idle' });
+      return;
+    }
+    const controller = new AbortController();
+    setRead({ kind: 'loading' });
+    const onShelf = (filter: { archived: 'only' } | { trash: 'only' }) =>
+      everyPage((cursor) =>
+        listTasks(slug, { ...filter, limit: 200, cursor }, controller.signal),
+      ).then(({ items }) => findByKey(items, key));
+    onShelf({ archived: 'only' })
+      .then((found) => found ?? onShelf({ trash: 'only' }))
+      .then((found) => {
+        if (!controller.signal.aborted) setRead({ kind: 'ready', task: found });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setRead({ kind: 'ready', task: undefined });
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [slug, key, missing, asOf]);
+  return read;
+}
+
 /** The space's members by id, for names. An unreadable list is an empty one. */
 function useMembers(slug: string | undefined): ReadonlyMap<string, Member> {
   const [members, setMembers] = useState<ReadonlyMap<string, Member>>(new Map());
@@ -109,10 +154,27 @@ export function WorkroomScreen({ taskKey, navigate }: WorkroomScreenProps) {
   const slug = space.kind === 'ready' ? space.project?.slug : undefined;
   const set = useProjectTasks(slug);
   const members = useMembers(slug);
-  const task = useMemo(
+  const inSet = useMemo(
     () => (set === undefined ? undefined : findByKey(set.tasks, taskKey)),
     [set, taskKey],
   );
+  const shelved = useShelvedTask(
+    slug,
+    taskKey,
+    set?.status === 'ready' && inSet === undefined,
+    set?.asOf,
+  );
+  /*
+   * The task the page shows: from the live set, else from its shelf. While a
+   * shelf read is in flight the page keeps the task it had — archiving from
+   * the page must not flash a loading state between the two reads.
+   */
+  const shown = useRef<TaskSummary | undefined>(undefined);
+  const found = inSet ?? (shelved.kind === 'ready' ? shelved.task : undefined);
+  // Let go of it only once the shelves have answered without it.
+  if (found !== undefined) shown.current = found;
+  else if (shelved.kind === 'ready') shown.current = undefined;
+  const task = found ?? shown.current;
 
   useEffect(() => {
     if (task === undefined) return;
@@ -162,7 +224,7 @@ export function WorkroomScreen({ taskKey, navigate }: WorkroomScreenProps) {
     );
   }
 
-  if (set?.status === 'ready' && task === undefined) {
+  if (set?.status === 'ready' && task === undefined && shelved.kind === 'ready') {
     return <NotFoundState taskKey={taskKey} navigate={navigate} truncated={set.truncated} />;
   }
 

@@ -19,8 +19,6 @@ import {
   getTask,
   isOutsideId,
   listWatchers,
-  setTaskArchived,
-  setTaskDeleted,
   unwatchTask,
   updateTask,
   watchTask,
@@ -68,17 +66,8 @@ import type { HandoffOffer } from '../../../api/handoffs.ts';
 import { useTaskHandoffs } from '../../../api/use-task-handoffs.ts';
 import { usePermissions, holdsProjectAction, implicitlyLeads } from '../../../api/permissions.ts';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
-import { useToast } from '../../../components/toast/ToastProvider.tsx';
-import {
-  archivedBanner,
-  archivedToast,
-  archiveRefusal,
-  deleteConfirm,
-  restoredToast,
-  trashBanner,
-  trashedToast,
-  untrashedToast,
-} from '../task/archive-model.ts';
+import { useShelfActions } from '../task/use-shelf-actions.ts';
+import { ShelfBanner } from '../task/ShelfBanner.tsx';
 import { useDismiss } from '../../../components/use-dismiss.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import '../task/task-panel.css';
@@ -621,87 +610,19 @@ export function TaskDetailPanel({
   const mayAttach =
     !putAway && holdsProjectAction(permissions, task.project_id, 'attachment.create');
   /*
-   * **Archive and Restore** (LAI-1353), from the ⋯ menu and the banner. No
-   * confirm: Undo on the toast takes it back on the server. Its subtasks go
-   * with it, and the space's next read leaves them all out; this drawer stays
-   * on the task, which the host now reads by id, banner and all.
+   * **Archive and Trash** (LAI-1353, LAI-1354): the one hook the Workroom
+   * uses too (LAI-1358) — the rules, the confirm, the toasts and Undo. The
+   * drawer stays on the task, which the host now reads by id, banner and all.
    */
-  const toast = useToast();
-  const mayArchive = holdsProjectAction(permissions, task.project_id, 'task.archive');
-  const [archiveError, setArchiveError] = useState<string | undefined>(undefined);
-  const archiving = async (to: boolean): Promise<void> => {
-    setOverflowOpen(false);
-    setArchiveError(undefined);
-    const subtasks = [...byId.values()].filter(
-      (t) => t.parent_task_id === task.id && (t.archived_at == null) === to,
-    ).length;
-    const said = (archivedNow: boolean): string =>
-      archivedNow ? archivedToast(task.key, subtasks) : restoredToast(task.key);
-    try {
-      await setTaskArchived(task.id, to);
-    } catch (cause) {
-      setArchiveError(archiveRefusal(cause, to ? 'archive' : 'restore'));
-      return;
-    }
-    onTaskEdited();
-    toast.show({
-      text: said(to),
-      tone: 'info',
-      mark: 'data-archive-toast',
-      // A real reversal: the server puts it back as it was.
-      undo: async () => {
-        await setTaskArchived(task.id, !to);
-        onTaskEdited();
-        return said(!to);
-      },
-    });
-  };
-  /*
-   * **Delete, into the space's Trash, and back** (LAI-1354): `task.delete`
-   * — a lead any task, a member one they created (§3.2) — asked here as the
-   * server will, so nobody is offered a Delete that answers `403`. A confirm
-   * first, since a task in Trash is scrubbed after 30 days; then Undo.
-   */
-  const mayDelete =
-    holdsProjectAction(permissions, task.project_id, 'task.delete') &&
-    (leads || (meId !== undefined && task.created_by === meId));
-  const trashing = async (to: boolean): Promise<void> => {
-    setOverflowOpen(false);
-    setArchiveError(undefined);
-    const subtasks = [...byId.values()].filter(
-      (t) => t.parent_task_id === task.id && (t.deleted_at == null) === to,
-    ).length;
-    if (to) {
-      const ask = deleteConfirm(task.key, subtasks);
-      const yes = await confirm({
-        title: ask.title,
-        body: ask.body,
-        confirmLabel: 'Move to Trash',
-        danger: true,
-      });
-      if (!yes) return;
-    }
-    const said = (inTrash: boolean, stillArchived: boolean): string =>
-      inTrash ? trashedToast(task.key, subtasks) : untrashedToast(task.key, stillArchived);
-    let back: TaskSummary;
-    try {
-      back = await setTaskDeleted(task.id, to);
-    } catch (cause) {
-      setArchiveError(archiveRefusal(cause, to ? 'delete' : 'restore'));
-      return;
-    }
-    onTaskEdited();
-    toast.show({
-      text: said(to, back.archived_at != null),
-      tone: 'info',
-      mark: 'data-trash-toast',
-      undo: async () => {
-        const again = await setTaskDeleted(task.id, !to);
-        onTaskEdited();
-        return said(!to, again.archived_at != null);
-      },
-    });
-  };
+  const shelf = useShelfActions(task, {
+    meId,
+    siblings: [...byId.values()],
+    onChanged: onTaskEdited,
+    beforeAct: () => {
+      setOverflowOpen(false);
+    },
+  });
+  const { mayArchive, mayDelete } = shelf;
   const attach = mayAttach ? boardAttach : undefined;
   const commentAttach = mayAttach ? projectAttach : undefined;
   const isAssignee = meId !== undefined && task.assignee_id === meId;
@@ -924,7 +845,7 @@ export function TaskDetailPanel({
                       type="button"
                       data-archive-action={archived ? 'restore' : 'archive'}
                       onClick={() => {
-                        void archiving(!archived);
+                        void shelf.archive(!archived);
                       }}
                     >
                       {archived ? 'Restore from archive' : 'Archive'}
@@ -938,7 +859,7 @@ export function TaskDetailPanel({
                       className={deleted ? undefined : 'panel-overflow-danger'}
                       data-trash-action={deleted ? 'restore' : 'delete'}
                       onClick={() => {
-                        void trashing(!deleted);
+                        void shelf.trash(!deleted);
                       }}
                     >
                       {deleted ? 'Restore from Trash' : 'Delete…'}
@@ -978,59 +899,8 @@ export function TaskDetailPanel({
 
       <div className="panel-columns">
         <div className="panel-main">
-          {/* In Trash (LAI-1354): who, when, the days left, and the way back. */}
-          {task.deleted_at != null && (
-            <div className="panel-archived" data-trash-banner="" role="status">
-              <Icon name="trash" size="small" />
-              <span className="panel-archived-text">
-                {trashBanner(
-                  task.deleted_at,
-                  task.deleted_by == null ? undefined : members.get(task.deleted_by)?.name,
-                  Date.now(),
-                )}
-              </span>
-              {mayDelete && (
-                <button
-                  type="button"
-                  className="panel-archived-restore"
-                  onClick={() => {
-                    void trashing(false);
-                  }}
-                >
-                  Restore
-                </button>
-              )}
-            </div>
-          )}
-          {/* Put away (LAI-1353): who and when, read-only, and the way back. */}
-          {task.archived_at != null && task.deleted_at == null && (
-            <div className="panel-archived" data-archived-banner="" role="status">
-              <Icon name="archive" size="small" />
-              <span className="panel-archived-text">
-                {archivedBanner(
-                  task.archived_at,
-                  task.archived_by == null ? undefined : members.get(task.archived_by)?.name,
-                  Date.now(),
-                )}
-              </span>
-              {mayArchive && (
-                <button
-                  type="button"
-                  className="panel-archived-restore"
-                  onClick={() => {
-                    void archiving(false);
-                  }}
-                >
-                  Restore
-                </button>
-              )}
-            </div>
-          )}
-          {archiveError !== undefined && (
-            <p className="panel-alert" role="alert">
-              {archiveError}
-            </p>
-          )}
+          {/* Put away (LAI-1353, LAI-1354): the shared banner, Restore and refusal. */}
+          <ShelfBanner task={task} members={members} actions={shelf} />
           {/*
             The title as a heading, click to edit — the design writes it as text
             you type into rather than a field.
