@@ -69,6 +69,10 @@ const HISTORY_READERS: ReadonlyMap<string, string> = new Map([
   ['src/services/project-statuses.ts', "a status's tasks move with it, archived or not"],
   ['src/services/rounds.ts', "one task's rounds by id"],
   ['src/services/task-time.ts', "one task's time by id"],
+  [
+    'src/services/task-archive.ts',
+    'one task by id, to say whether a token may reach it (LAI-1354)',
+  ],
   ['src/services/time-drafts.ts', 'time records are kept'],
   ['src/services/time-entries.ts', 'time records are kept'],
   ['src/services/time-member-entries.ts', 'time records are kept'],
