@@ -50,10 +50,11 @@ export interface ActivityFeedProps {
    */
   readonly attach?: EditorAttach | undefined;
   /**
-   * The task is archived (LAI-1353): read-only, so no composer and no edit
-   * or delete on a comment — the thread is read as it stands.
+   * The task is archived (LAI-1353) or in Trash (LAI-1354): read-only, so no
+   * composer and no edit or delete on a comment — the thread is read as it
+   * stands.
    */
-  readonly archived?: boolean | undefined;
+  readonly putAway?: 'archived' | 'trash' | undefined;
 }
 
 type Tab = 'all' | 'comments' | 'history' | 'changes';
@@ -118,8 +119,9 @@ export function ActivityFeed({
   rounds,
   leads,
   attach,
-  archived = false,
+  putAway,
 }: ActivityFeedProps) {
+  const archived = putAway !== undefined;
   const { theme } = useTheme();
   const now = Date.now();
   /**
@@ -466,7 +468,8 @@ export function ActivityFeed({
 
   const composer = archived ? (
     <p className="cmt-none feed-archived" data-archived-composer="">
-      This task is archived. Restore it to comment.
+      {putAway === 'trash' ? 'This task is in Trash' : 'This task is archived'}. Restore it to
+      comment.
     </p>
   ) : (
     <div className="panel-composer feed-composer">

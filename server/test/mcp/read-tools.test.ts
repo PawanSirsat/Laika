@@ -323,6 +323,34 @@ describe('get_task_context', () => {
     await client.close();
   });
 
+  it('reads a task whose blocker is in Trash, the blocker shown as not visible (LAI-1354)', async () => {
+    await project('core', 'COR');
+    const blocker = await task('core', { title: 'In Trash' });
+    const waiting = await task('core', { title: 'Waiting' });
+    const added = await api(`/api/v1/tasks/${waiting.id}/dependencies`, {
+      method: 'POST',
+      body: JSON.stringify({ blocked_by_task_id: blocker.id }),
+    });
+    expect(added.status, await added.clone().text()).toBe(201);
+    const removed = await api(`/api/v1/tasks/${blocker.id}`, { method: 'DELETE' });
+    expect(removed.status, await removed.clone().text()).toBe(200);
+
+    const client = await connect(await mint());
+    const live = await client.callTool({
+      name: 'get_task_context',
+      arguments: { task: waiting.key },
+    });
+    expect(live.isError, text(live)).not.toBe(true);
+    expect(payload(live).blocked_by).toEqual([{ id: blocker.id, visible: false }]);
+    // …and the one in Trash is not there at all.
+    const gone = await client.callTool({
+      name: 'get_task_context',
+      arguments: { task: blocker.key },
+    });
+    expect(gone.isError).toBe(true);
+    await client.close();
+  });
+
   it('says none stated, in one line, when a task delivers nothing yet (LAI-1115)', async () => {
     await project('core', 'COR');
     const created = await task('core', { title: 'Bare' });

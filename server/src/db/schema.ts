@@ -755,6 +755,17 @@ export const tasks = sqliteTable(
     archivedAt: integer('archived_at'),
     /** Who archived it; null while it is live. `set null`: a task outlives its archiver. */
     archivedBy: text('archived_by').references(() => users.id, { onDelete: 'set null' }),
+    /**
+     * **In the space's Trash** (§4.5, LAI-1354): when it was deleted, null
+     * otherwise. A soft delete — the row, its key and its history stay, and
+     * it is restorable for 30 days before LAI-1355's scrub. A parent's
+     * subtasks go with it, stamped with the same instant, as archive does.
+     * Independent of `archived_at`: an archived task deleted and restored
+     * comes back archived.
+     */
+    deletedAt: integer('deleted_at'),
+    /** Who deleted it; null otherwise. */
+    deletedBy: text('deleted_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt,
     updatedAt,
   },
@@ -788,6 +799,11 @@ export const tasks = sqliteTable(
       .on(t.projectId, t.archivedAt)
       .where(sql`${t.archivedAt} IS NOT NULL`),
     index('tasks_archived_by_idx').on(t.archivedBy),
+    // A space's Trash and the scrub's sweep (LAI-1354, LAI-1355). Partial, as above.
+    index('tasks_project_deleted_at_idx')
+      .on(t.projectId, t.deletedAt)
+      .where(sql`${t.deletedAt} IS NOT NULL`),
+    index('tasks_deleted_by_idx').on(t.deletedBy),
     // **Composite, and that is the point** (LAI-738). A plain `status_id`
     // reference would let a task hold another project's status, or a status
     // whose category disagrees with `status` — two ways for the board and the

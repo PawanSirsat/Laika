@@ -2835,6 +2835,8 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         // LAI-1353's task archive: two columns on `tasks`, and `activity`
         // rebuilt for its two verbs, every row kept.
         expect.stringMatching(/_task_archive$/),
+        // LAI-1354's Trash: two more columns, and `activity` rebuilt again.
+        expect.stringMatching(/_task_trash$/),
       ]);
       writeFileSync(journalPath, JSON.stringify(journal));
 
@@ -2939,6 +2941,8 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
             // 0093 (LAI-1353): every task that predates archiving is live.
             archived_at: null,
             archived_by: null,
+            deleted_at: null,
+            deleted_by: null,
           })),
         );
         expect(db.all(sql`SELECT * FROM task_checkpoints`)).toEqual([]);
@@ -3007,6 +3011,7 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
       '0091_people_directory',
       '0092_attachments_unlisted_work',
       '0093_task_archive',
+      '0094_task_trash',
     ]);
     expect(journal.entries.at(-1)?.tag).toBe('0074_agent_capacity');
     writeFileSync(journalPath, JSON.stringify(journal));
@@ -3058,6 +3063,8 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
             // LAI-1353's two, which ride along: every task is live.
             archived_at: null,
             archived_by: null,
+            deleted_at: null,
+            deleted_by: null,
           })),
         );
         expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
@@ -3117,6 +3124,7 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
       '0091_people_directory',
       '0092_attachments_unlisted_work',
       '0093_task_archive',
+      '0094_task_trash',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3237,6 +3245,7 @@ describe('0078 rebuilds analytics_views on a populated 0077 database (LAI-1137)'
       '0091_people_directory',
       '0092_attachments_unlisted_work',
       '0093_task_archive',
+      '0094_task_trash',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3362,6 +3371,7 @@ describe('0079 rebuilds analytics_views for the profile kind (LAI-1150)', () => 
       '0091_people_directory',
       '0092_attachments_unlisted_work',
       '0093_task_archive',
+      '0094_task_trash',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3453,6 +3463,7 @@ describe('0080 rebuilds member_notices for the time_changed kind (LAI-1165)', ()
       '0091_people_directory',
       '0092_attachments_unlisted_work',
       '0093_task_archive',
+      '0094_task_trash',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3549,6 +3560,7 @@ describe('0082 adds attachments and two activity verbs to a populated 0081 datab
       '0091_people_directory',
       '0092_attachments_unlisted_work',
       '0093_task_archive',
+      '0094_task_trash',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3660,6 +3672,7 @@ describe('0084 adds the email outbox and two orgs columns to a populated 0083 da
       '0091_people_directory',
       '0092_attachments_unlisted_work',
       '0093_task_archive',
+      '0094_task_trash',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3763,6 +3776,7 @@ describe('0086 rebuilds the email outbox on a populated 0085 database and keeps 
       '0091_people_directory',
       '0092_attachments_unlisted_work',
       '0093_task_archive',
+      '0094_task_trash',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3868,6 +3882,7 @@ describe('0087 rebuilds time_entries for the calendar source on a populated 0086
       '0091_people_directory',
       '0092_attachments_unlisted_work',
       '0093_task_archive',
+      '0094_task_trash',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -4116,6 +4131,7 @@ describe('0089 rebuilds email_inbound_attachments for switch_off on a populated 
       '0091_people_directory',
       '0092_attachments_unlisted_work',
       '0093_task_archive',
+      '0094_task_trash',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;

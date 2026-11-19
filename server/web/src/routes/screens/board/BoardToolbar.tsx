@@ -140,8 +140,12 @@ export interface BoardToolbarProps {
    */
   readonly hiddenColumns?: number | undefined;
   readonly onHiddenColumns?: (() => void) | undefined;
-  /** The space's archived tasks (LAI-1353): drawn when given, before Insights. */
-  readonly onArchived?: (() => void) | undefined;
+  /**
+   * The space's shelves — its archived tasks (LAI-1353) and its Trash
+   * (LAI-1354) — one button, before Insights: the row has room for one more
+   * icon at 920px with the sidebar open, not two.
+   */
+  readonly onShelves?: (() => void) | undefined;
   /** The board's sprint scope, at the end of the active-filter row (LAI-1198). */
   readonly scope?: ReactNode;
 }
@@ -294,7 +298,7 @@ export function BoardToolbar({
   onRefresh,
   hiddenColumns = 0,
   onHiddenColumns,
-  onArchived,
+  onShelves,
   scope,
 }: BoardToolbarProps) {
   const [open, setOpen] = useState<'filter' | 'group' | 'members' | undefined>(undefined);
@@ -1015,16 +1019,16 @@ export function BoardToolbar({
             </Tooltip>
           )}
 
-          {/* **Archived** (LAI-1353): the shelf of tasks put away, with Restore. */}
-          {onArchived !== undefined && (
-            <Tooltip content="Archived tasks">
+          {/* **Archived and Trash** (LAI-1353, LAI-1354): tasks put away, with Restore. */}
+          {onShelves !== undefined && (
+            <Tooltip content="Archived and Trash">
               <button
                 type="button"
                 className="bt-icon"
-                data-board-action="archived"
-                aria-label="Archived tasks"
+                data-board-action="shelves"
+                aria-label="Archived and Trash"
                 aria-haspopup="dialog"
-                onClick={onArchived}
+                onClick={onShelves}
               >
                 <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
                   <path d="M3.5 4.5h17v4h-17z" strokeLinejoin="round" />

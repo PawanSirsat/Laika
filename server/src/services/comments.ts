@@ -229,7 +229,7 @@ export function addComment(
 ): CommentView {
   const { task, project } = requireTaskContext(db, taskId);
   assertCan(withProject(actor, project.id), 'comment.create', { projectId: project.id });
-  assertTaskLive(task);
+  assertTaskLive(task, actor);
 
   const id = newId();
   // **No author, and `webhook` says why** (§10.1, LAI-449). The two fields are
@@ -297,7 +297,7 @@ export function editComment(
     projectId: project.id,
     ownerId: comment.authorId,
   });
-  assertTaskLive(task);
+  assertTaskLive(task, actor);
 
   db.update(comments)
     .set({ bodyMd, editedAt: now, updatedAt: now })
@@ -352,7 +352,7 @@ export function deleteComment(
     projectId: project.id,
     ownerId: comment.authorId,
   });
-  assertTaskLive(task);
+  assertTaskLive(task, actor);
 
   db.update(comments)
     .set({ deletedAt: now, updatedAt: now })

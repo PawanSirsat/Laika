@@ -14,7 +14,7 @@ import { SERVER_ROOT } from '../../src/paths.ts';
  * table is named here, once, as one of two things:
  *
  * - a **live reader** — "the work there is" — which must use `liveTask()`
- *   (or, in raw SQL, `archived_at IS NULL`);
+ *   (or, in raw SQL, `liveTaskSql(alias)`);
  * - a **history or by-id reader** — time, activity, estimates, usage, one task
  *   by its id — with the reason an archived task belongs in it.
  *
@@ -69,6 +69,10 @@ const HISTORY_READERS: ReadonlyMap<string, string> = new Map([
   ['src/services/project-statuses.ts', "a status's tasks move with it, archived or not"],
   ['src/services/rounds.ts', "one task's rounds by id"],
   ['src/services/task-time.ts', "one task's time by id"],
+  [
+    'src/services/task-archive.ts',
+    'one task by id, to say whether a token may reach it (LAI-1354)',
+  ],
   ['src/services/time-drafts.ts', 'time records are kept'],
   ['src/services/time-entries.ts', 'time records are kept'],
   ['src/services/time-member-entries.ts', 'time records are kept'],
@@ -84,7 +88,9 @@ const NOT_SCANNED = new Set(['src/db/schema.ts', 'src/db/live-task.ts']);
 
 const READS_TASKS =
   /\.from\(tasks[),]|(?:inner|left)Join\(tasks,|\bFROM tasks\b|\bJOIN tasks\b|query\.tasks\./;
-const FILTERS_LIVE = /\bliveTask\(|\barchived_at IS NULL\b/;
+// `liveTask(` or raw SQL's `liveTaskSql(`. A hand-written `archived_at IS NULL`
+// does not count: it would leave Trash in (LAI-1354).
+const FILTERS_LIVE = /\bliveTask(?:Sql)?\(/;
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {

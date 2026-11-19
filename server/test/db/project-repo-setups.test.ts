@@ -59,6 +59,7 @@ function folderBefore0073(): string {
     '0091_people_directory',
     '0092_attachments_unlisted_work',
     '0093_task_archive',
+    '0094_task_trash',
   ]);
   journal.entries.splice(at);
   writeFileSync(journalPath, JSON.stringify(journal));

@@ -99,6 +99,7 @@ import { unlistedRoutes } from './http/routes/unlisted.ts';
 import { heartbeatRoutes } from './http/routes/heartbeats.ts';
 import { capacityRoutes, presenceRoutes } from './http/routes/presence.ts';
 import { setupGate } from './http/middleware/setup-gate.ts';
+import { trashGate } from './http/middleware/trash-gate.ts';
 import { stoppingGate } from './http/middleware/stopping.ts';
 import { setupRequired } from './services/setup.ts';
 import { AUTH_BASE_PATH, SSO_ONLY_MESSAGE, type Auth } from './auth/auth.ts';
@@ -432,6 +433,13 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   // loop on a stored 201 becomes a free unlimited request.
   if (options.db !== undefined) {
     app.use('*', idempotencyMiddleware(options.db));
+  }
+
+  // After auth: a task in Trash is `404` to a token under every `/tasks/:id`
+  // route (LAI-1354), asked once here rather than by each route.
+  if (options.db !== undefined) {
+    app.use(`${API_BASE}/tasks/:id`, trashGate(options.db));
+    app.use(`${API_BASE}/tasks/:id/*`, trashGate(options.db));
   }
 
   // Routes before the static handler: whoever matches first wins, and the SPA

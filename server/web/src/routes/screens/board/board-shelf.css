@@ -1,18 +1,18 @@
-/* The board's Archived panel (LAI-1353): Insights' panel, wider, with rows. Tokens only. */
+/* The board's shelves — Archived and Trash (LAI-1353, LAI-1354): Insights' panel, wider, with rows. Tokens only. */
 
-.barch {
+.bshelf {
   width: min(26rem, calc(100vw - 2rem));
   max-height: min(32rem, calc(100vh - 6rem));
   display: flex;
   flex-direction: column;
 }
 
-.barch-count {
+.bshelf-count {
   font-weight: var(--weight-normal);
   color: var(--text-muted);
 }
 
-.barch-list {
+.bshelf-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -20,7 +20,7 @@
   border-top: 1px solid var(--border-subtle);
 }
 
-.barch-row {
+.bshelf-row {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -28,7 +28,7 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.barch-open {
+.bshelf-open {
   flex: 1;
   min-width: 0;
   display: grid;
@@ -45,36 +45,36 @@
   cursor: pointer;
 }
 
-.barch-open:hover {
+.bshelf-open:hover {
   background: var(--bg-column);
 }
 
-.barch-open:focus-visible,
-.barch-restore:focus-visible {
+.bshelf-open:focus-visible,
+.bshelf-restore:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
 
-.barch-key {
+.bshelf-key {
   font-family: var(--font-mono);
   font-size: var(--text-small);
   color: var(--text-muted);
 }
 
-.barch-title {
+.bshelf-title {
   font-size: var(--text-body);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.barch-meta {
+.bshelf-meta {
   grid-column: 2;
   font-size: var(--text-small);
   color: var(--text-secondary);
 }
 
-.barch-restore {
+.bshelf-restore {
   flex: none;
   border: 1px solid var(--border-default);
   background: var(--bg-card);
@@ -87,12 +87,43 @@
   cursor: pointer;
 }
 
-.barch-restore:hover:not(:disabled) {
+.bshelf-restore:hover:not(:disabled) {
   border-color: var(--accent-border);
   color: var(--accent);
 }
 
-.barch-restore:disabled {
+.bshelf-restore:disabled {
   cursor: default;
   opacity: 0.6;
+}
+
+.bshelf-tabs {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.bshelf-tab {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-bold);
+  color: var(--text-muted);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+}
+
+.bshelf-tab[aria-selected='true'] {
+  color: var(--text-primary);
+  background: var(--bg-column);
+}
+
+.bshelf-tab:hover {
+  color: var(--text-primary);
+}
+
+.bshelf-tab:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }

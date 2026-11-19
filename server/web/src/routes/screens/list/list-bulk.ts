@@ -6,6 +6,7 @@ import {
   assignTask,
   changeStatus,
   setTaskArchived,
+  setTaskDeleted,
   updateTask,
   type TaskSummary,
   type TaskPriority,
@@ -143,7 +144,13 @@ export type BulkAction =
    * Put away, whole (LAI-1353): off the board, its history kept, restorable
    * from the space's Archived panel. A parent takes its subtasks with it.
    */
-  | { readonly kind: 'archive' };
+  | { readonly kind: 'archive' }
+  /**
+   * Into the space's Trash (LAI-1354), restorable for 30 days. The server
+   * refuses a member's delete of a task they did not create, and the report
+   * names each refusal.
+   */
+  | { readonly kind: 'delete' };
 
 export interface BulkPlan {
   /** The tasks that need a request, in selection order. */
@@ -161,6 +168,8 @@ function alreadyThere(action: BulkAction, task: TaskSummary): boolean {
       return task.status === 'cancelled';
     case 'archive':
       return task.archived_at != null;
+    case 'delete':
+      return task.deleted_at != null;
     case 'priority':
       return task.priority === action.priority;
     case 'assignee':
@@ -215,6 +224,10 @@ export function applyAction(action: BulkAction, task: TaskSummary): Promise<unkn
       // A subtask selected with its parent is already archived by the time
       // its own request lands; the server writes nothing and answers 200.
       return setTaskArchived(task.id, true);
+    case 'delete':
+      // A subtask selected with its parent is already in Trash by then; the
+      // server writes nothing and answers 200, as for archive.
+      return setTaskDeleted(task.id, true);
     case 'priority':
       return updateTask(task.id, { priority: action.priority });
     case 'assignee':

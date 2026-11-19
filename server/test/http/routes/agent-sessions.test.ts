@@ -650,6 +650,11 @@ const NOT_FENCED: Record<string, string> = {
   'POST /api/v1/tasks/:id/send-back':
     'session only (§3.1): no token reaches it, and a person is never fenced',
   'PUT /api/v1/tasks/:id/budget': 'session only (budget.set, §3.1)',
+  // LAI-1354: Trash — a person's decision; it releases any claim on the task.
+  'DELETE /api/v1/tasks/:id':
+    'session only (task.delete, LAI-1354): no token reaches it, and a person is never fenced',
+  'POST /api/v1/tasks/:id/restore':
+    'session only (task.delete, LAI-1354): no token reaches it, and a person is never fenced',
   'PUT /api/v1/tasks/:id/watch': "the caller's own subscription; changes no field of the task",
   'DELETE /api/v1/tasks/:id/watch': "the caller's own subscription; changes no field of the task",
   'POST /api/v1/tasks/:id/comments':

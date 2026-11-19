@@ -20,6 +20,7 @@ import {
   isOutsideId,
   listWatchers,
   setTaskArchived,
+  setTaskDeleted,
   unwatchTask,
   updateTask,
   watchTask,
@@ -72,7 +73,11 @@ import {
   archivedBanner,
   archivedToast,
   archiveRefusal,
+  deleteConfirm,
   restoredToast,
+  trashBanner,
+  trashedToast,
+  untrashedToast,
 } from '../task/archive-model.ts';
 import { useDismiss } from '../../../components/use-dismiss.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
@@ -255,15 +260,18 @@ export function TaskDetailPanel({
   onExpand,
 }: TaskDetailPanelProps) {
   /*
-   * **An archived task is read-only** (LAI-1353): every control that writes
-   * reads one of these, so this one line takes them all away. Restore — in
-   * the banner and the ⋯ menu — is the one write left.
+   * **An archived task, or one in Trash, is read-only** (LAI-1353,
+   * LAI-1354): every control that writes reads one of these, so this one
+   * line takes them all away. Restore — in the banner and the ⋯ menu — is
+   * the one write left.
    */
   const archived = task.archived_at != null;
-  const mayEdit = mayEditGranted && !archived;
-  const mayAssign = mayAssignGranted && !archived;
-  const mayCreate = mayCreateGranted && !archived;
-  const maySetSprint = maySetSprintGranted && !archived;
+  const deleted = task.deleted_at != null;
+  const putAway = archived || deleted;
+  const mayEdit = mayEditGranted && !putAway;
+  const mayAssign = mayAssignGranted && !putAway;
+  const mayCreate = mayCreateGranted && !putAway;
+  const maySetSprint = maySetSprintGranted && !putAway;
   const detail = useTaskDetail(slug, task.id);
   /*
    * A claim taken, lapsed or taken back while the drawer is open (LAI-543):
@@ -611,7 +619,7 @@ export function TaskDetailPanel({
   const boardAttach = useEditorAttach(slug, task.id);
   const projectAttach = useEditorAttach(slug, undefined);
   const mayAttach =
-    !archived && holdsProjectAction(permissions, task.project_id, 'attachment.create');
+    !putAway && holdsProjectAction(permissions, task.project_id, 'attachment.create');
   /*
    * **Archive and Restore** (LAI-1353), from the ⋯ menu and the banner. No
    * confirm: Undo on the toast takes it back on the server. Its subtasks go
@@ -632,7 +640,7 @@ export function TaskDetailPanel({
     try {
       await setTaskArchived(task.id, to);
     } catch (cause) {
-      setArchiveError(archiveRefusal(cause, to));
+      setArchiveError(archiveRefusal(cause, to ? 'archive' : 'restore'));
       return;
     }
     onTaskEdited();
@@ -645,6 +653,52 @@ export function TaskDetailPanel({
         await setTaskArchived(task.id, !to);
         onTaskEdited();
         return said(!to);
+      },
+    });
+  };
+  /*
+   * **Delete, into the space's Trash, and back** (LAI-1354): `task.delete`
+   * — a lead any task, a member one they created (§3.2) — asked here as the
+   * server will, so nobody is offered a Delete that answers `403`. A confirm
+   * first, since a task in Trash is scrubbed after 30 days; then Undo.
+   */
+  const mayDelete =
+    holdsProjectAction(permissions, task.project_id, 'task.delete') &&
+    (leads || (meId !== undefined && task.created_by === meId));
+  const trashing = async (to: boolean): Promise<void> => {
+    setOverflowOpen(false);
+    setArchiveError(undefined);
+    const subtasks = [...byId.values()].filter(
+      (t) => t.parent_task_id === task.id && (t.deleted_at == null) === to,
+    ).length;
+    if (to) {
+      const ask = deleteConfirm(task.key, subtasks);
+      const yes = await confirm({
+        title: ask.title,
+        body: ask.body,
+        confirmLabel: 'Move to Trash',
+        danger: true,
+      });
+      if (!yes) return;
+    }
+    const said = (inTrash: boolean, stillArchived: boolean): string =>
+      inTrash ? trashedToast(task.key, subtasks) : untrashedToast(task.key, stillArchived);
+    let back: TaskSummary;
+    try {
+      back = await setTaskDeleted(task.id, to);
+    } catch (cause) {
+      setArchiveError(archiveRefusal(cause, to ? 'delete' : 'restore'));
+      return;
+    }
+    onTaskEdited();
+    toast.show({
+      text: said(to, back.archived_at != null),
+      tone: 'info',
+      mark: 'data-trash-toast',
+      undo: async () => {
+        const again = await setTaskDeleted(task.id, !to);
+        onTaskEdited();
+        return said(!to, again.archived_at != null);
       },
     });
   };
@@ -864,7 +918,7 @@ export function TaskDetailPanel({
                     </button>
                   </li>
                 )}
-                {mayArchive && (
+                {mayArchive && !deleted && (
                   <li>
                     <button
                       type="button"
@@ -874,6 +928,20 @@ export function TaskDetailPanel({
                       }}
                     >
                       {archived ? 'Restore from archive' : 'Archive'}
+                    </button>
+                  </li>
+                )}
+                {mayDelete && (
+                  <li>
+                    <button
+                      type="button"
+                      className={deleted ? undefined : 'panel-overflow-danger'}
+                      data-trash-action={deleted ? 'restore' : 'delete'}
+                      onClick={() => {
+                        void trashing(!deleted);
+                      }}
+                    >
+                      {deleted ? 'Restore from Trash' : 'Delete…'}
                     </button>
                   </li>
                 )}
@@ -910,8 +978,32 @@ export function TaskDetailPanel({
 
       <div className="panel-columns">
         <div className="panel-main">
+          {/* In Trash (LAI-1354): who, when, the days left, and the way back. */}
+          {task.deleted_at != null && (
+            <div className="panel-archived" data-trash-banner="" role="status">
+              <Icon name="trash" size="small" />
+              <span className="panel-archived-text">
+                {trashBanner(
+                  task.deleted_at,
+                  task.deleted_by == null ? undefined : members.get(task.deleted_by)?.name,
+                  Date.now(),
+                )}
+              </span>
+              {mayDelete && (
+                <button
+                  type="button"
+                  className="panel-archived-restore"
+                  onClick={() => {
+                    void trashing(false);
+                  }}
+                >
+                  Restore
+                </button>
+              )}
+            </div>
+          )}
           {/* Put away (LAI-1353): who and when, read-only, and the way back. */}
-          {task.archived_at != null && (
+          {task.archived_at != null && task.deleted_at == null && (
             <div className="panel-archived" data-archived-banner="" role="status">
               <Icon name="archive" size="small" />
               <span className="panel-archived-text">
@@ -999,7 +1091,7 @@ export function TaskDetailPanel({
             offers={handoffs.offers}
             nameOf={(id) => personName(id, members)}
             claimNow={claimNow}
-            mayDecide={!archived && mayDecideReview({ meId, assigneeId: task.assignee_id, leads })}
+            mayDecide={!putAway && mayDecideReview({ meId, assigneeId: task.assignee_id, leads })}
             deciding={review.deciding}
             decideError={review.decideError}
             onAccept={review.accept}
@@ -1259,7 +1351,7 @@ export function TaskDetailPanel({
             rounds={rounds?.rounds ?? []}
             leads={leads}
             attach={commentAttach}
-            archived={archived}
+            putAway={deleted ? 'trash' : archived ? 'archived' : undefined}
           />
         </div>
 

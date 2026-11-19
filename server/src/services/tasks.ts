@@ -82,7 +82,7 @@ import {
   type TaskLiveClaimView,
 } from './claims.ts';
 import { handoffViews, NO_HANDOFF, type TaskHandoffView } from './task-handoff.ts';
-import { assertTaskLive } from './task-archive.ts';
+import { assertTaskLive, isTokenCaller, noSuchTask } from './task-archive.ts';
 import { addComment, commentCounts } from './comments.ts';
 import {
   freezeEstimateAtStart,
@@ -271,6 +271,13 @@ export interface TaskSummaryView {
    */
   archived_at: number | null;
   archived_by: string | null;
+  /**
+   * When the task was moved into the space's Trash and by whom (§4.5,
+   * LAI-1354), both null otherwise. A token never reads one: a task in Trash
+   * is `404` to it. Restorable for 30 days (LAI-1355 scrubs after).
+   */
+  deleted_at: number | null;
+  deleted_by: string | null;
   /**
    * Ids this task is **blocked by** — the forward edge of §4.6.
    *
@@ -535,6 +542,7 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     // nobody's queue (LAI-1353), so it is never ready.
     ready:
       row.archivedAt === null &&
+      row.deletedAt === null &&
       isReady({
         status: row.status,
         assigneeId: row.assigneeId,
@@ -557,6 +565,8 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     stale_flagged_at: row.staleFlaggedAt,
     archived_at: row.archivedAt,
     archived_by: row.archivedBy,
+    deleted_at: row.deletedAt,
+    deleted_by: row.deletedBy,
     position: row.position,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
@@ -694,6 +704,8 @@ function requireTask(
 function assertParentAllowed(
   db: Db,
   input: { taskId: string | null; projectId: string; parentId: string },
+  /** Who asks: a parent in Trash is `404` to a token, as any read of it is (LAI-1354). */
+  actor?: ServiceCaller,
 ): void {
   if (input.taskId !== null && input.parentId === input.taskId) {
     throw parentRefused('self', 'A task cannot be a subtask of itself');
@@ -701,9 +713,11 @@ function assertParentAllowed(
 
   const parent = db
     .select({
+      id: tasks.id,
       projectId: tasks.projectId,
       parentTaskId: tasks.parentTaskId,
       archivedAt: tasks.archivedAt,
+      deletedAt: tasks.deletedAt,
     })
     .from(tasks)
     .where(eq(tasks.id, input.parentId))
@@ -713,7 +727,7 @@ function assertParentAllowed(
   }
   // A subtask added under an archived parent would be archived work nobody
   // archived (LAI-1353).
-  assertTaskLive(parent);
+  assertTaskLive(parent, actor);
   if (parent.parentTaskId !== null) {
     throw parentRefused('depth', 'That task is itself a subtask — subtasks go one level deep');
   }
@@ -930,6 +944,9 @@ export function getTask(
   now: number = Date.now(),
 ): TaskView {
   const { task, project } = requireTask(db, taskId);
+  // A task in Trash does not exist to a token (LAI-1354) — every MCP read
+  // comes through here, so an agent is never shown one.
+  if (task.deletedAt !== null && isTokenCaller(actor)) throw noSuchTask(taskId);
   assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
 
   return viewOne(db, task, project.prefix, now, readerOf(actor));
@@ -1012,7 +1029,7 @@ export function createTask(
     // between the check and the insert.
     const parentId = input.parent_task_id ?? null;
     if (parentId !== null) {
-      assertParentAllowed(db, { taskId: null, projectId: project.id, parentId });
+      assertParentAllowed(db, { taskId: null, projectId: project.id, parentId }, actor);
     }
 
     // Inside the write lock: `nextTaskNumber` reads MAX(number), and a deferred
@@ -1146,6 +1163,10 @@ export function createTask(
 export const TASK_ARCHIVED_FILTERS = ['only'] as const;
 export type TaskArchivedFilter = (typeof TASK_ARCHIVED_FILTERS)[number];
 
+/** `?trash=` on a space's list (LAI-1354): `only` lists its Trash. Signed in only. */
+export const TASK_TRASH_FILTERS = ['only'] as const;
+export type TaskTrashFilter = (typeof TASK_TRASH_FILTERS)[number];
+
 export interface ListTasksFilter {
   /** A category — every status of it (LAI-738). */
   status?: TaskStatus | undefined;
@@ -1163,6 +1184,8 @@ export interface ListTasksFilter {
   parent?: string | undefined;
   /** Only archived tasks (LAI-1353); absent, only live ones. */
   archived?: TaskArchivedFilter | undefined;
+  /** Only the space's Trash (LAI-1354). */
+  trash?: TaskTrashFilter | undefined;
   updatedSince?: number | null;
   limit: number;
   cursor: { sortKey: string | number; id: string } | null;
@@ -1178,6 +1201,13 @@ export function listTasks(
 ): TaskView[] {
   const project = requireProjectBySlug(db, slug);
   assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
+  // Trash does not exist to a token (LAI-1354): asked for, it is refused, not
+  // answered empty — an empty Trash and no right to see one are different.
+  if (filter.trash === 'only' && isTokenCaller(actor)) {
+    throw new ApiError('forbidden', 'A space’s Trash is read on a signed-in web session', {
+      reason: 'session_required',
+    });
+  }
 
   const conditions = [eq(tasks.projectId, project.id), ...sharedConditions(filter)];
 
@@ -1203,16 +1233,24 @@ export function listTasks(
  * `archived` and `updated_since`, each the same predicate whichever list asks.
  */
 function sharedConditions(
-  filter: Pick<ListAllTasksFilter, 'status' | 'assignee' | 'sprint' | 'archived' | 'updatedSince'>,
+  filter: Pick<
+    ListAllTasksFilter,
+    'status' | 'assignee' | 'sprint' | 'archived' | 'updatedSince'
+  > & {
+    trash?: TaskTrashFilter | undefined;
+  },
 ): SQL[] {
   const conditions: SQL[] = [];
 
-  // **Live work only, unless archived work is what was asked for** (LAI-1353).
-  // Catching up with `updated_since` is the one other case: a task archived
-  // since the watermark comes back so the route can send it as a §6.3
+  // **Live work only, unless a shelf is what was asked for** (LAI-1353,
+  // LAI-1354): the Trash, or the archive — which never shows what is in
+  // Trash. Catching up with `updated_since` is the one other case: a task put
+  // away since the watermark comes back so the route can send it as a §6.3
   // tombstone — a client that reads only changes must learn that it left.
-  if (filter.archived === 'only') conditions.push(isNotNull(tasks.archivedAt));
-  else if (filter.updatedSince === null || filter.updatedSince === undefined) {
+  if (filter.trash === 'only') conditions.push(isNotNull(tasks.deletedAt));
+  else if (filter.archived === 'only') {
+    conditions.push(isNotNull(tasks.archivedAt), isNull(tasks.deletedAt));
+  } else if (filter.updatedSince === null || filter.updatedSince === undefined) {
     conditions.push(liveTask());
   }
 
@@ -1705,7 +1743,7 @@ export function updateTask(
   const { task, project } = requireTask(db, taskId);
   const scoped = withProject(actor, project.id);
   assertCan(scoped, 'task.write', { projectId: project.id });
-  assertTaskLive(task);
+  assertTaskLive(task, actor);
 
   const now = input.now ?? Date.now();
   const changes: Record<string, unknown> = {};
@@ -1733,11 +1771,15 @@ export function updateTask(
     // is two concurrent PATCHes forming a two-deep chain, recorded in LAI-493
     // as accepted rather than threading `sqlite` through every caller.
     if (input.parent_task_id !== null) {
-      assertParentAllowed(db, {
-        taskId,
-        projectId: project.id,
-        parentId: input.parent_task_id,
-      });
+      assertParentAllowed(
+        db,
+        {
+          taskId,
+          projectId: project.id,
+          parentId: input.parent_task_id,
+        },
+        actor,
+      );
     }
     changes.parentTaskId = input.parent_task_id;
   }
@@ -1935,6 +1977,37 @@ export function updateTask(
 }
 
 /**
+ * **The two shelves a task is put away on** (§4.5): the archive (LAI-1353)
+ * and the space's Trash (LAI-1354). Each is a pair of columns, a pair of
+ * verbs and a refusal for a subtask whose parent is still on it — and the
+ * one mechanism below puts a task on either and takes it back off.
+ */
+type Shelf = 'archive' | 'trash';
+
+const SHELVES = {
+  archive: {
+    stampOf: (row: Pick<TaskRow, 'archivedAt'>) => row.archivedAt,
+    column: tasks.archivedAt,
+    put: (at: number, by: string) => ({ archivedAt: at, archivedBy: by }),
+    clear: { archivedAt: null, archivedBy: null },
+    away: 'task.archived',
+    back: 'task.restored',
+    parentReason: 'parent_archived',
+    parentWords: 'Its parent task is archived. Restore the parent first.',
+  },
+  trash: {
+    stampOf: (row: Pick<TaskRow, 'deletedAt'>) => row.deletedAt,
+    column: tasks.deletedAt,
+    put: (at: number, by: string) => ({ deletedAt: at, deletedBy: by }),
+    clear: { deletedAt: null, deletedBy: null },
+    away: 'task.deleted',
+    back: 'task.undeleted',
+    parentReason: 'parent_deleted',
+    parentWords: 'Its parent task is in Trash. Restore the parent first.',
+  },
+} as const;
+
+/**
  * **Archive a task, or restore it** (§4.5, LAI-1353) — `PATCH /tasks/:id
  * { archived }`. `task.archive`: whoever may edit it, signed in.
  *
@@ -1951,7 +2024,9 @@ export function updateTask(
  * cancelled `task_closed` — an agent is never asked to do work nobody can
  * see. The selection itself stays, so a restore asks that agent again.
  *
- * Asking for what the task already is changes nothing and writes nothing.
+ * A task in Trash is neither archived nor restored here (`deleted`): it
+ * comes out of Trash first. Asking for what the task already is changes
+ * nothing and writes nothing.
  */
 export function setTaskArchived(
   db: Db,
@@ -1960,22 +2035,91 @@ export function setTaskArchived(
   archived: boolean,
   now: number = Date.now(),
 ): TaskView {
-  const { project } = requireTask(db, taskId);
+  const { task, project } = requireTask(db, taskId);
+  if (task.deletedAt !== null && isTokenCaller(actor)) throw noSuchTask(taskId);
   assertCan(withProject(actor, project.id), 'task.archive', { projectId: project.id });
 
+  return onShelf(
+    db,
+    actor,
+    project,
+    taskId,
+    (row) => {
+      if (row.deletedAt !== null) assertTaskLive(row, actor);
+      if (archived && row.archivedAt === null) putAway(db, actor, project, row, 'archive', now);
+      if (!archived && row.archivedAt !== null) bringBack(db, actor, project, row, 'archive', now);
+    },
+    now,
+  );
+}
+
+/**
+ * **Move a task into the space's Trash, or out of it** (§4.5, LAI-1354) —
+ * `DELETE /tasks/:id` and `POST /tasks/:id/restore`.
+ *
+ * `task.delete` (§3.2 *Cancel / delete task*): a space admin any task, a
+ * member a task they created — and **signed in only** (`session_required`),
+ * asked here as review's accept is, so the §3.2 cell stays as it is while
+ * LAI-1356 decides what cancel asks. An agent can never make work vanish.
+ *
+ * The shelf archive uses (`putAway`): the subtasks go with it at the same
+ * instant and come back with it; the work in flight ends; it is read-only,
+ * and to a token it does not exist. A task archived before it was deleted
+ * comes back archived. Restoring after the 30 days is LAI-1355's question.
+ */
+export function setTaskDeleted(
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+  deleted: boolean,
+  now: number = Date.now(),
+): TaskView {
+  const { task, project } = requireTask(db, taskId);
+  // Trash does not exist to a token; a live task's delete is the session rule.
+  if (task.deletedAt !== null && isTokenCaller(actor)) throw noSuchTask(taskId);
+  if (isTokenCaller(actor)) {
+    throw new ApiError(
+      'forbidden',
+      'Deleting a task and restoring it from Trash are a person’s decisions, on a signed-in web session',
+      { reason: 'session_required' },
+    );
+  }
+  assertCan(withProject(actor, project.id), 'task.delete', {
+    projectId: project.id,
+    createdBy: task.createdBy,
+  });
+
+  return onShelf(
+    db,
+    actor,
+    project,
+    taskId,
+    (row) => {
+      if (deleted && row.deletedAt === null) putAway(db, actor, project, row, 'trash', now);
+      if (!deleted && row.deletedAt !== null) bringBack(db, actor, project, row, 'trash', now);
+    },
+    now,
+  );
+}
+
+/** Read the row under the write lock, let `change` move it, answer the view. */
+function onShelf(
+  db: Db,
+  actor: ResolvedActor,
+  project: typeof projects.$inferSelect,
+  taskId: string,
+  change: (row: TaskRow) => void,
+  now: number,
+): TaskView {
   return db.transaction(
     () => {
-      // Read under the write lock: two people archiving at once write once.
-      const row = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
+      // Under the write lock: two people at once write once.
+      change(db.select().from(tasks).where(eq(tasks.id, taskId)).get()!);
       const prefix = db
         .select({ prefix: projects.prefix })
         .from(projects)
         .where(eq(projects.id, project.id))
         .get()!.prefix;
-
-      if (archived && row.archivedAt === null) archiveWithSubtasks(db, actor, project, row, now);
-      if (!archived && row.archivedAt !== null) restoreWithSubtasks(db, actor, project, row, now);
-
       return viewOne(
         db,
         db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
@@ -1988,23 +2132,27 @@ export function setTaskArchived(
   );
 }
 
-function archiveWithSubtasks(
+function putAway(
   db: Db,
   actor: ResolvedActor,
   project: typeof projects.$inferSelect,
   row: TaskRow,
+  shelf: Shelf,
   now: number,
 ): void {
+  const on = SHELVES[shelf];
+  // The subtasks not already on this shelf. Into Trash an archived subtask
+  // goes too — it belongs to the parent — and comes back archived.
   const subtasks = db
     .select({ id: tasks.id })
     .from(tasks)
-    .where(and(eq(tasks.parentTaskId, row.id), liveTask()))
+    .where(and(eq(tasks.parentTaskId, row.id), shelf === 'trash' ? isNull(on.column) : liveTask()))
     .all()
     .map((t) => t.id);
   const ids = [row.id, ...subtasks];
 
   db.update(tasks)
-    .set({ archivedAt: now, archivedBy: actor.userId, updatedAt: now })
+    .set({ ...on.put(now, actor.userId), updatedAt: now })
     .where(inArray(tasks.id, ids))
     .run();
 
@@ -2025,7 +2173,7 @@ function archiveWithSubtasks(
       projectId: project.id,
       taskId: id,
       ...activityActor(actor),
-      type: 'task.archived',
+      type: on.away,
       // A subtask names the parent it went with, so its history says why.
       payload: id === row.id ? {} : { with_parent: row.id },
       now,
@@ -2033,41 +2181,54 @@ function archiveWithSubtasks(
   }
 }
 
-function restoreWithSubtasks(
+function bringBack(
   db: Db,
   actor: ResolvedActor,
   project: typeof projects.$inferSelect,
   row: TaskRow,
+  shelf: Shelf,
   now: number,
 ): void {
+  const on = SHELVES[shelf];
+  const stamp = on.stampOf(row)!;
   if (row.parentTaskId !== null) {
     const parent = db
-      .select({ archivedAt: tasks.archivedAt })
+      .select({ archivedAt: tasks.archivedAt, deletedAt: tasks.deletedAt })
       .from(tasks)
       .where(eq(tasks.id, row.parentTaskId))
       .get();
-    if (parent !== undefined && parent.archivedAt !== null) {
-      throw new ApiError('conflict', 'Its parent task is archived. Restore the parent first.', {
-        reason: 'parent_archived',
+    // On either shelf: a subtask never comes back live under a parent that
+    // is put away, whichever way the parent went.
+    const holding =
+      parent === undefined
+        ? undefined
+        : parent.deletedAt !== null
+          ? SHELVES.trash
+          : parent.archivedAt !== null
+            ? SHELVES.archive
+            : undefined;
+    if (holding !== undefined) {
+      throw new ApiError('conflict', holding.parentWords, {
+        reason: holding.parentReason,
         parent_task_id: row.parentTaskId,
       });
     }
   }
 
-  // The subtasks archived **with** it — same instant — and no others.
+  // The subtasks put away **with** it — same instant — and no others.
   const restored = db
-    .select({ id: tasks.id, selectedAgentId: tasks.selectedAgentId })
+    .select({
+      id: tasks.id,
+      selectedAgentId: tasks.selectedAgentId,
+      archivedAt: tasks.archivedAt,
+      deletedAt: tasks.deletedAt,
+    })
     .from(tasks)
-    .where(
-      or(
-        eq(tasks.id, row.id),
-        and(eq(tasks.parentTaskId, row.id), eq(tasks.archivedAt, row.archivedAt!)),
-      ),
-    )
+    .where(or(eq(tasks.id, row.id), and(eq(tasks.parentTaskId, row.id), eq(on.column, stamp))))
     .all();
 
   db.update(tasks)
-    .set({ archivedAt: null, archivedBy: null, updatedAt: now })
+    .set({ ...on.clear, updatedAt: now })
     .where(
       inArray(
         tasks.id,
@@ -2077,11 +2238,12 @@ function restoreWithSubtasks(
     .run();
 
   for (const task of restored) {
-    // The work request the archive cancelled is asked again, if the agent is
-    // still the one selected — and only that one: a request declined before
-    // the archive stays declined.
+    // Live again — not still on the other shelf — so the work request the
+    // shelf cancelled is asked again, if the agent is still the one selected,
+    // and only that one: a request declined before stays declined.
+    const live = shelf === 'archive' ? task.deletedAt === null : task.archivedAt === null;
     const cancelled =
-      task.selectedAgentId === null
+      !live || task.selectedAgentId === null
         ? undefined
         : db
             .select({ id: handoffOffers.id })
@@ -2092,7 +2254,7 @@ function restoreWithSubtasks(
                 eq(handoffOffers.kind, 'work_request'),
                 eq(handoffOffers.toAgentId, task.selectedAgentId),
                 eq(handoffOffers.closedReason, 'task_closed'),
-                eq(handoffOffers.closedAt, row.archivedAt!),
+                eq(handoffOffers.closedAt, stamp),
               ),
             )
             .get();
@@ -2105,7 +2267,7 @@ function restoreWithSubtasks(
       projectId: project.id,
       taskId: task.id,
       ...activityActor(actor),
-      type: 'task.restored',
+      type: on.back,
       payload: task.id === row.id ? {} : { with_parent: row.id },
       now,
     });
@@ -2184,7 +2346,7 @@ export function startWorking(
   return immediateTransaction(sqlite, () => {
     const before = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
     // Under the lock, so an archive that commits first is seen (LAI-1353).
-    assertTaskLive(before);
+    assertTaskLive(before, actor);
     const from = statusRow(db, project.id, before.statusId)!;
 
     if (agent !== null) return agentStartWorking(db, actor, project, before, from, options, now);
@@ -2479,7 +2641,7 @@ export function changeStatus(
   const { task, project } = requireTask(db, taskId);
   const scoped = withProject(actor, project.id);
   assertCan(scoped, 'task.write', { projectId: project.id });
-  assertTaskLive(task);
+  assertTaskLive(task, actor);
   // Every move — the holder's finish, a person's accept or send-back — passes
   // the claim fence first (LAI-541).
   assertClaimFence(db, actor, taskId, now);
@@ -2786,12 +2948,12 @@ export function addTaskDependency(
 ): TaskView {
   const { task, project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'task.dependency.write', { projectId: project.id });
-  assertTaskLive(task);
+  assertTaskLive(task, actor);
   assertClaimFence(db, actor, taskId, now);
 
   // Both ends must exist, or a typo silently creates an unsatisfiable blocker.
   // An archived blocker blocks nothing (LAI-1353), so it cannot be added as one.
-  assertTaskLive(requireTask(db, dependsOnTaskId).task);
+  assertTaskLive(requireTask(db, dependsOnTaskId).task, actor);
 
   try {
     addDependency(sqlite, db, taskId, dependsOnTaskId, now);
@@ -2836,7 +2998,7 @@ export function removeTaskDependency(
 ): TaskView {
   const { task, project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'task.dependency.write', { projectId: project.id });
-  assertTaskLive(task);
+  assertTaskLive(task, actor);
   assertClaimFence(db, actor, taskId, now);
 
   const removed = db
@@ -2906,7 +3068,7 @@ export function reorderTask(
   const found = requireTask(db, taskId);
   const { project } = found;
   assertCan(withProject(actor, project.id), 'task.write', { projectId: project.id });
-  assertTaskLive(found.task);
+  assertTaskLive(found.task, actor);
 
   const afterId = input.after_task_id;
   const beforeId = input.before_task_id;
