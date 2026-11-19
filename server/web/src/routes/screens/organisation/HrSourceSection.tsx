@@ -363,7 +363,7 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
   const chosenMethod = method ?? methods[0];
 
   return (
-    // Folded to one row that says its state (LAI-1318).
+    // Folded to one row that says its state (LAI-1345).
     <OrgAccordion
       name="hr"
       id="org-hr"

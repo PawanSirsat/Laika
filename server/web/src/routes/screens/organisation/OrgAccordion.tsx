@@ -23,7 +23,7 @@ function writeOpen(name: string, open: boolean): void {
 
 /**
  * `flat` draws every `OrgAccordion` under it as an open card with no fold —
- * a section on a page of its own (LAI-1318: each connection's page) needs no
+ * a section on a page of its own (LAI-1345: each connection's page) needs no
  * row to open it. Same heading id, same hooks, same body.
  */
 export const OrgFoldMode = createContext<'fold' | 'flat'>('fold');

@@ -296,8 +296,7 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
   const running = view.backfill_running;
 
   return (
-    // Folded to one row that says its state (LAI-1318); the card is
-    // Microsoft 365, its calendar and its people (D-161).
+    // Folded to one row that says its state (LAI-1345).
     <OrgAccordion
       name="calendar"
       id="org-cal"

@@ -73,7 +73,7 @@ export function TeamsPostingSection({ onNavigate }: TeamsPostingSectionProps) {
   const on = read.kind === 'ready' && read.settings.posting_enabled;
 
   return (
-    // Folded to one row that says its state (LAI-1318).
+    // Folded to one row that says its state (LAI-1345).
     <OrgAccordion
       name="teams"
       id="org-teams"

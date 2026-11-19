@@ -136,7 +136,7 @@ void describe('a withdrawn admin is never shown a withdrawn control', () => {
   void test('while /permissions is slow, and after it answers', async () => {
     let release: (() => void) | undefined;
     const h = await open(
-      '/organisation',
+      '/organisation?tab=time',
       {
         ...BASE,
         '/api/v1/me': me('u3', 'admin'),

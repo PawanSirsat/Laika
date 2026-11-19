@@ -27,7 +27,7 @@ import {
 } from './harness.ts';
 import { ME_MEMBER, ME_OWNER, PROJECT, SLUG, spaceSettingsStub } from './space-settings-fixture.ts';
 
-// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1345).
 openSectionsByDefault('teams');
 
 const MINUTE = 60_000;
