@@ -6,8 +6,9 @@ assignee: chief
 priority: p2
 depends-on: [LAI-1353, LAI-1354]
 discovered-from: LAI-1354
-status: in-progress
+status: review
 started: 2026-11-19T06:47:49Z
+finished: 2026-11-19T07:02:56Z
 ---
 
 ## Goal
@@ -24,15 +25,15 @@ the Workroom (`/task/LC-12`, reached by *Expand to full page*). There:
 
 ## Acceptance criteria
 
-- [ ] The archive and Trash actions and the banner live in **one shared hook and component**,
+- [x] The archive and Trash actions and the banner live in **one shared hook and component**,
   and both the drawer and the Workroom use them. The drawer behaves as before; its browser tests
   are unchanged and green.
-- [ ] The Workroom header offers *Archive* and *Delete…* to whoever may, with the drawer's
+- [x] The Workroom header offers *Archive* and *Delete…* to whoever may, with the drawer's
   confirm and Undo. A task put away shows the banner with *Restore*.
-- [ ] Nothing on the Workroom can edit a task that is archived or in Trash.
-- [ ] `/task/<key>` opens a task that is archived or in Trash: when the key misses the live set,
+- [x] Nothing on the Workroom can edit a task that is archived or in Trash.
+- [x] `/task/<key>` opens a task that is archived or in Trash: when the key misses the live set,
   the page looks on the space's two shelves before saying *No task*.
-- [ ] Both themes. CI green on the PR into `integration-ksage`.
+- [x] Both themes. CI green on the PR into `integration-ksage`.
 
 ## Notes / context
 
