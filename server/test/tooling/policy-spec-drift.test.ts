@@ -182,6 +182,8 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
   ['Cancel / delete task', ['task.delete']],
   // LAI-1353.
   ['Archive or restore a task', ['task.archive']],
+  // LAI-1355.
+  ['Delete a task from Trash now', ['task.purge']],
   ['Add / remove dependencies', ['task.dependency.write']],
   ['Read tasks, comments, activity, capacity', ['project.read']],
   ['Watch / unwatch a task', ['task.watch']],

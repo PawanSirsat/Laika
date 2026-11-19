@@ -160,6 +160,9 @@ export const PROJECT_ACTIONS = [
   // LAI-1353: put a task away and bring it back — *Edit / move any task*'s
   // holders, signed in (SESSION_ONLY_ACTIONS below).
   'task.archive',
+  // LAI-1355: scrub a task in Trash at once rather than after 30 days — a
+  // space admin, signed in (SESSION_ONLY_ACTIONS below).
+  'task.purge',
   'task.dependency.write',
   'task.watch',
   'project.read',
@@ -253,6 +256,9 @@ export const SYSTEM_ACTIONS = [
   // §11.6: every enabled Member of the Microsoft directory added as a member,
   // every 15 minutes, when directory sync is on (D-158, LAI-1239, LAI-1317).
   'system.directory.sync',
+  // §11.6: a task 30 days in Trash scrubbed, daily and once at boot (LAI-1355)
+  // — nobody deleted it today, so nobody is the actor.
+  'system.task.purge',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];
@@ -495,6 +501,9 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // (LAI-1353): a person decides that, signed in. An agent that could
   // archive could make work it was asked to do disappear.
   'task.archive',
+  // **Delete now erases what was written on a task for good** (LAI-1355):
+  // nothing brings it back, so only a person, signed in, decides it.
+  'task.purge',
 ]);
 
 /**

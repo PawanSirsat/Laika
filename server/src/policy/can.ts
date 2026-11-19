@@ -269,6 +269,7 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.email.attachments',
   'system.people.sync',
   'system.directory.sync',
+  'system.task.purge',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
   'comment.create',
@@ -976,6 +977,13 @@ function canProjectAction(
     // may (`SESSION_ONLY_ACTIONS`).
     case 'task.archive':
       return isMemberUp;
+
+    // | Delete a task from Trash now | ✓ (session only) | — | — |
+    //
+    // LAI-1355: what the 30 days would do, at once and for good — a space
+    // admin's call. A token never may (`SESSION_ONLY_ACTIONS`).
+    case 'task.purge':
+      return isLead;
 
     // | Cancel / delete task | ✓ | own-created | — |
     case 'task.delete':

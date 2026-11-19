@@ -647,6 +647,7 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Remove an attachment | own + any | own | — |
 | Cancel / delete task | ✓ | own-created | — |
 | Archive or restore a task | ✓ (session only) | ✓ (session only) | — |
+| Delete a task from Trash now | ✓ (session only) | — | — |
 | Add / remove dependencies | ✓ | ✓ | — |
 | Read tasks, comments, activity, capacity | ✓ | ✓ | ✓ |
 | Watch / unwatch a task | ✓ | ✓ | ✓ |
@@ -821,6 +822,7 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.email.attachments` | §11.6: every 30 seconds, an inbound mail's queued attachments fetched from Brevo and stored — each stored as the mail's sender, under their own `attachment.create` (§4.106, D-155 item 6, LAI-1315) |
 | `system.people.sync` | §11.6: every hour, each member's photo, job title, department and manager read from Microsoft and kept (§4.108), and — with *Leavers* on — a person Microsoft says has left deactivated behind its guards, as `user.deactivated` with no human actor (§4.109, D-161, LAI-1330) |
 | `system.directory.sync` | §11.6: every enabled Member of the Microsoft directory added as a `member`, every 15 minutes and once at boot, while `LAIKA_MICROSOFT_DIRECTORY_SYNC` is on; *Sync now* runs the same code after asking the person `org.settings.edit` (D-158, LAI-1239, LAI-1317) |
+| `system.task.purge` | §11.6: daily and once at boot, a task 30 days in Trash scrubbed — its title, text, comments, files, tags, watchers, dependencies and outside id — with its row, key, history and time kept (§4.5, LAI-1355) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
 does for §3.1 and §3.2.
@@ -1003,6 +1005,7 @@ which is the check working on the document it exists to pin.
 | `archived_by` | nullable FK `users`, `ON DELETE SET NULL` — who archived it; null while it is live. Set and cleared together with `archived_at`. Served on `TaskView` |
 | `deleted_at` | nullable — when the task was moved into the space's **Trash** (LAI-1354): a soft delete, restorable for 30 days; null otherwise. A parent's subtasks are stamped with the same instant. Independent of `archived_at` — an archived task deleted and restored comes back archived. Served on `TaskView`; a token never reads a task with one (`404`) |
 | `deleted_by` | nullable FK `users`, `ON DELETE SET NULL` — who deleted it; null otherwise. Set and cleared together with `deleted_at` |
+| `purged_at` | nullable — when the task was **scrubbed** (LAI-1355): 30 days after `deleted_at`, by §11.6's daily job, or at once by a space admin's *Delete now* (`POST /tasks/:id/purge`, §6.4). Set only on a task in Trash, and never cleared. A scrubbed task is `404` to everyone and leaves the Trash |
 
 **`started_at`** is set the first time a task enters `in_progress` and is never
 moved again. **`completed_at`** is set on **every** arrival at `done`, and is
@@ -1137,7 +1140,8 @@ Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `task.handoff_approved`, `task.handoff_accepted`, `task.handoff_declined`,
 `task.handoff_cancelled`, `task.handoff_expired`, `task.recovered`,
 `agent.capacity_requested`, `attachment.added`, `attachment.removed`,
-`task.archived`, `task.restored`, `task.deleted`, `task.undeleted`.
+`task.archived`, `task.restored`, `task.deleted`, `task.undeleted`,
+`task.purged`.
 
 **`task.agent_selected`** (D-114 item 7, LAI-535) is a task's selected agent
 set, changed or cleared — one verb for every direction, payload `{ from, to }`,
@@ -1231,6 +1235,15 @@ Not the archive's pair: *"who deleted this"* is a different question with a
 different end — a task left in Trash is scrubbed after 30 days (LAI-1355).
 Three owners: this row, the enum and CHECK in migration 0094, and the web
 mirror and its wording.
+
+**`task.purged`** (LAI-1355) is a task in Trash scrubbed: by §11.6's daily job
+30 days on, as the system, or by a space admin's *Delete now* (`POST
+/tasks/:id/purge`, §6.4). One row per task, `{ with_parent }` on a subtask
+scrubbed with its parent, as the shelves write. **The rows before it stay as
+they are** — §4.8 is append-only, so a `task.updated` row still carries the
+values it recorded; the scrub erases the task, not its history. Three owners:
+this row, the enum and CHECK in migration 0095, and the web mirror and its
+wording.
 
 **The nine verbs added 2026-09-01 are the same argument, four more times.**
 Sprints, the project context document, unlisted-work triage and deactivation
@@ -5108,6 +5121,7 @@ GET    /api/v1/tasks/summary                 /tasks' filters, same set → { tot
 GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id
 DELETE /api/v1/tasks/:id                     POST /api/v1/tasks/:id/restore
                                              into the space's Trash and back out (LAI-1354) — see below
+POST   /api/v1/tasks/:id/purge               Delete now: a task in Trash scrubbed at once → { purged: [ids] } (LAI-1355) — see below
 POST   /api/v1/tasks/:id/claim               POST /api/v1/tasks/:id/status
                                              claim: body { branch?, estimate?, session_id? }, optional — the branch is kept
                                              on the task (LAI-770); estimate { size?, confidence? } (§4.34); on a registered
@@ -5296,7 +5310,7 @@ re-filed to the status the work moves to, still put away, with a
 
 **`DELETE /tasks/:id` moves a task into its space's Trash; `POST
 /tasks/:id/restore` brings it back** (LAI-1354). A soft delete: the row, its key
-and its history stay, and it is restorable for 30 days (LAI-1355 scrubs after).
+and its history stay, and it is restorable for 30 days, until it is scrubbed (below).
 Both ask §3.2's *Cancel / delete task* (`task.delete`: a lead any task, a member
 one they created) and are **signed in only** — a token is `403` with `reason:
 session_required`. Both answer the task as it then is. The subtasks go and come
@@ -5312,6 +5326,23 @@ a parent it is that `404` too, and beside a live task (a blocker) MCP shows it
 as `{ id, visible: false }`. It
 is never archived or restored from the archive while in Trash; an archived task
 deleted and restored comes back archived.
+
+**After 30 days in Trash a task is scrubbed** (LAI-1355): §11.6's daily job
+does it as the system, and **`POST /tasks/:id/purge`** — *Delete now* — does
+it at once, under §3.2's *Delete a task from Trash now* (`task.purge`: a space
+admin, **signed in only**), on a task already in Trash (`409 conflict`,
+`reason: not_in_trash`, otherwise). Its subtasks in Trash go with it, and it
+answers `{ purged: [ids] }`. A scrub erases what was written on the task — its
+title becomes *Deleted task*; its description, acceptance, Ships, solves,
+unlocks and branch are cleared; its comments are removed with their bodies; its
+files are removed, names too, and §11.6's sweep deletes the stored objects; its
+rounds' summaries, reviews' reasons and checkpoints' summaries are cleared; its
+tags, watchers and dependencies, both ways, are dropped; and its outside id is
+released for another card — and writes `task.purged` (§4.8). **It keeps the
+row**, so the number is never reused and the key still names it, its history,
+its estimates, and its time entries, which keep their own copied text (§4.48).
+From then on the task is **`404` to everyone**, under all of `/tasks/:id`, and
+is in no list — the Trash included; a restore is that `404` too.
 **`null` clears a field; absent leaves it alone** — they are different requests,
 and `acceptance_md`, `assignee_id`, `parent_task_id` and both dates draw the
 distinction. `tags` replaces the whole set, and so do `deliverables`, `solves`
@@ -9141,6 +9172,11 @@ One interval-driven scheduler in the same process:
   Activity tab's Stale panel calls
   `staleTasks()`, which filters by `isStale`, longest-flagged first; the List's
   amber Updated cell calls `isStale` itself
+- **Trash scrub** (§4.5, §6.4, LAI-1355) — daily **and once at boot**, under
+  §3.4's `system.task.purge`: every task in Trash 30 days or more is scrubbed,
+  one task to a transaction and at most 500 a run, its subtasks in Trash with
+  it, each writing `task.purged` as the system. What a scrub erases and keeps
+  is §6.4's
 - invite expiry, meeting-review expiry (7 days)
 - **claim expiry** (§4.66, §9.1.1, LAI-541) — every `LAIKA_CLAIM_SCAN_SECONDS`
   (30 s by default), each **live** claim — `active` or `paused` — whose lease has lapsed becomes

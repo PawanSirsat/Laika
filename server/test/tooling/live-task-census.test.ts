@@ -73,6 +73,7 @@ const HISTORY_READERS: ReadonlyMap<string, string> = new Map([
     'src/services/task-archive.ts',
     'one task by id, to say whether a token may reach it (LAI-1354)',
   ],
+  ['src/services/task-purge.ts', 'Trash itself: the tasks there 30 days, and one by id (LAI-1355)'],
   ['src/services/time-drafts.ts', 'time records are kept'],
   ['src/services/time-entries.ts', 'time records are kept'],
   ['src/services/time-member-entries.ts', 'time records are kept'],

@@ -55,6 +55,7 @@ import {
   startWorking,
   updateTask,
 } from '../../src/services/tasks.ts';
+import { purgeTask } from '../../src/services/task-purge.ts';
 import { expireClaims, reclaimTask } from '../../src/services/claims.ts';
 import { applyCheckpointDelivery, registerCheckpoint } from '../../src/services/checkpoints.ts';
 import {
@@ -674,6 +675,10 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       // …and into Trash and out (LAI-1354): task.deleted, task.undeleted.
       setTaskDeleted(t.db, owner(), putAway.id, true);
       setTaskDeleted(t.db, owner(), putAway.id, false);
+      // …and scrubbed from Trash (LAI-1355): task.purged, its subtask's
+      // `with_parent` too.
+      setTaskDeleted(t.db, owner(), putAway.id, true);
+      purgeTask(t.db, owner(), putAway.id);
 
       // --- comments.ts: added, edited, deleted -----------------------------
       const comment = addComment(t.db, owner(), task.id, 'A remark');

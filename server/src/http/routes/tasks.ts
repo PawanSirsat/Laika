@@ -33,6 +33,7 @@ import {
   type TaskView,
   DELIVERABLE_STATES,
 } from '../../services/tasks.ts';
+import { purgeTask } from '../../services/task-purge.ts';
 import { ATTACHMENT_REF_LIMITS } from '../../services/attachments.ts';
 import { reclaimTask, type ReclaimView } from '../../services/claims.ts';
 import { EVIDENCE_LIMITS, listTaskRounds } from '../../services/rounds.ts';
@@ -503,6 +504,14 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
     c.header('ETag', taskEtag(task));
     return c.json(task);
   });
+
+  /**
+   * **Delete now** (§6.4, LAI-1355): a task in Trash scrubbed at once rather
+   * than when its 30 days are up — `task.purge`, a space admin, signed in.
+   * Answers the ids scrubbed, the task's subtasks in Trash with it; each is
+   * `404` from then on.
+   */
+  app.post('/:id/purge', (c) => c.json(purgeTask(db, requireActor(c), c.req.param('id'))));
 
   app.post('/:id/claim', async (c) => {
     const actor = requireActor(c);

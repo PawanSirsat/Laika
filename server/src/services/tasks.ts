@@ -1247,7 +1247,8 @@ function sharedConditions(
   // Trash. Catching up with `updated_since` is the one other case: a task put
   // away since the watermark comes back so the route can send it as a §6.3
   // tombstone — a client that reads only changes must learn that it left.
-  if (filter.trash === 'only') conditions.push(isNotNull(tasks.deletedAt));
+  // A scrubbed task has left the Trash too (LAI-1355): it is gone.
+  if (filter.trash === 'only') conditions.push(isNotNull(tasks.deletedAt), isNull(tasks.purgedAt));
   else if (filter.archived === 'only') {
     conditions.push(isNotNull(tasks.archivedAt), isNull(tasks.deletedAt));
   } else if (filter.updatedSince === null || filter.updatedSince === undefined) {
@@ -2065,7 +2066,7 @@ export function setTaskArchived(
  * The shelf archive uses (`putAway`): the subtasks go with it at the same
  * instant and come back with it; the work in flight ends; it is read-only,
  * and to a token it does not exist. A task archived before it was deleted
- * comes back archived. Restoring after the 30 days is LAI-1355's question.
+ * comes back archived. Once scrubbed (LAI-1355) it is gone, and a restore is `404`.
  */
 export function setTaskDeleted(
   db: Db,
@@ -2075,6 +2076,8 @@ export function setTaskDeleted(
   now: number = Date.now(),
 ): TaskView {
   const { task, project } = requireTask(db, taskId);
+  // A scrubbed task is gone to everyone (LAI-1355): nothing to restore.
+  if (task.purgedAt !== null) throw noSuchTask(taskId);
   // Trash does not exist to a token; a live task's delete is the session rule.
   if (task.deletedAt !== null && isTokenCaller(actor)) throw noSuchTask(taskId);
   if (isTokenCaller(actor)) {

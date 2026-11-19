@@ -376,6 +376,9 @@ const PROJECT_MATRIX: ProjectRow[] = [
   // LAI-1353: whoever may edit, signed in — the token half is
   // `policy-spec-drift.test.ts`'s `(session only)` check.
   ['task.archive', true, true, false],
+  // LAI-1355: a space admin, signed in — the token half is
+  // `policy-spec-drift.test.ts`'s `(session only)` check.
+  ['task.purge', true, false, false],
   // | Claim a task (start_working) | ✓ | ✓ | — |
   ['task.claim', true, true, false],
   // | Save a checkpoint on a task your agent holds | ✓ | ✓ | — |
@@ -540,6 +543,7 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.email.attachments', {}],
     ['system.people.sync', {}],
     ['system.directory.sync', {}],
+    ['system.task.purge', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
     ['system.checkpoint.verify', { projectId: PROJECT }],

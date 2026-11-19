@@ -57,17 +57,22 @@ export function assertTaskLive(
  * itself. Asked once, ahead of every route under it (`trashGate`), so no
  * route can be the one that forgot. A person, and an id that names nothing,
  * pass through to the route's own answer.
+ *
+ * **A scrubbed task is gone to everyone** (LAI-1355): what was written on it
+ * is erased and nothing brings it back, so a person is answered the same
+ * `404` — never a *Deleted task* with a Restore that cannot work.
  */
 export function assertTaskReachable(
   db: Db,
   actor: ServiceCaller | null | undefined,
   taskId: string,
 ): void {
-  if (!isTokenCaller(actor ?? undefined)) return;
   const row = db
-    .select({ deletedAt: tasks.deletedAt })
+    .select({ deletedAt: tasks.deletedAt, purgedAt: tasks.purgedAt })
     .from(tasks)
     .where(eq(tasks.id, taskId))
     .get();
-  if (row !== undefined && row.deletedAt !== null) throw noSuchTask(taskId);
+  if (row === undefined) return;
+  if (row.purgedAt !== null) throw noSuchTask(taskId);
+  if (row.deletedAt !== null && isTokenCaller(actor ?? undefined)) throw noSuchTask(taskId);
 }

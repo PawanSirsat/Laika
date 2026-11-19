@@ -766,6 +766,14 @@ export const tasks = sqliteTable(
     deletedAt: integer('deleted_at'),
     /** Who deleted it; null otherwise. */
     deletedBy: text('deleted_by').references(() => users.id, { onDelete: 'set null' }),
+    /**
+     * **Scrubbed** (§4.5, LAI-1355): when what was written on the task was
+     * erased — 30 days after it went into Trash, or at once by a space
+     * admin's *Delete now*. The row, its key, its history and its time stay;
+     * its title becomes *Deleted task*. Never cleared: a scrubbed task does
+     * not come back, and is `404` to everyone.
+     */
+    purgedAt: integer('purged_at'),
     createdAt,
     updatedAt,
   },

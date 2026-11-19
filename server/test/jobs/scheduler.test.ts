@@ -139,6 +139,7 @@ describe('the jobs §11.6 names', () => {
       'offer.expiry',
       'people.sync',
       'task.stale',
+      'task.trash_purge',
       'teams.post',
       'time.retention',
     ]);
@@ -205,6 +206,12 @@ describe('the jobs §11.6 names', () => {
       reason: 'switch_off',
     });
     expect(fetched).toEqual([]);
+  });
+
+  it('scrubs Trash daily and once at boot (LAI-1355)', () => {
+    const purge = buildJobs(deps()).find((j) => j.name === 'task.trash_purge');
+    expect(purge?.everyMs).toBe(24 * 60 * 60 * 1000);
+    expect(purge?.atStart).toBe(true);
   });
 
   it('runs time retention daily and once at boot (D-088 item 11, LAI-787)', () => {

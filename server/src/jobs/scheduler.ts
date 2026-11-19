@@ -9,6 +9,7 @@ import {
   runInboundAttachments,
 } from '../services/email-inbound-attachments.ts';
 import { pruneCheckpoints } from '../services/checkpoints.ts';
+import { purgeExpiredTrash } from '../services/task-purge.ts';
 import { claimSettings, expireClaims } from '../services/claims.ts';
 import { expireOffers } from '../services/handoffs.ts';
 import { refitEstimates } from '../services/estimates.ts';
@@ -187,6 +188,14 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
       },
     },
     { name: 'task.stale', everyMs: DAY, run: (now) => flagStaleTasks(db, now) },
+    // A task 30 days in Trash scrubbed (§4.5, LAI-1355), and once at boot so
+    // the Trash banner's days left hold on a server restarted every night.
+    {
+      name: 'task.trash_purge',
+      everyMs: DAY,
+      run: (now) => purgeExpiredTrash(db, now),
+      atStart: true,
+    },
     { name: 'invite.expiry', everyMs: HOUR, run: (now) => expireInvites(db, now) },
     // Expired keys, and the pre-LAI-534 rows that may hold secrets — once at
     // boot so a deploy deletes those at once.

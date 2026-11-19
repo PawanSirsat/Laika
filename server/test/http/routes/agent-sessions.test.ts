@@ -655,6 +655,9 @@ const NOT_FENCED: Record<string, string> = {
     'session only (task.delete, LAI-1354): no token reaches it, and a person is never fenced',
   'POST /api/v1/tasks/:id/restore':
     'session only (task.delete, LAI-1354): no token reaches it, and a person is never fenced',
+  // LAI-1355: Delete now — a task already in Trash, so no claim is left on it.
+  'POST /api/v1/tasks/:id/purge':
+    'session only (task.purge, LAI-1355): no token reaches it, and a person is never fenced',
   'PUT /api/v1/tasks/:id/watch': "the caller's own subscription; changes no field of the task",
   'DELETE /api/v1/tasks/:id/watch': "the caller's own subscription; changes no field of the task",
   'POST /api/v1/tasks/:id/comments':

@@ -282,6 +282,9 @@ export const ACTIVITY_TYPES = [
   // task is scrubbed after 30 days). Three owners, as above.
   'task.deleted',
   'task.undeleted',
+  // LAI-1355: a task in Trash scrubbed — by the daily job 30 days on, as the
+  // system, or by a space admin's *Delete now*. Three owners, as above.
+  'task.purged',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 

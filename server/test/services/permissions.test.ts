@@ -211,6 +211,7 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'attachment.delete': 'YCN',
   'task.delete': 'YCN',
   'task.archive': 'YYN',
+  'task.purge': 'YNN',
   'task.dependency.write': 'YYN',
   'task.watch': 'YYY',
   'project.read': 'YYY',

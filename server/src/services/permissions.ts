@@ -153,6 +153,7 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'attachment.delete': 'Remove an attachment',
   'task.delete': 'Cancel / delete task',
   'task.archive': 'Archive or restore a task',
+  'task.purge': 'Delete a task from Trash now',
   'task.dependency.write': 'Add / remove dependencies',
   'task.watch': 'Watch / unwatch a task',
   'project.read': 'Read tasks, comments, activity, capacity',
