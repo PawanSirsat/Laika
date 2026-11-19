@@ -5,7 +5,8 @@ area: server
 assignee: core
 priority: p1
 depends-on: [LAI-1302]
-status: review
+status: done
+accepted: 2026-11-19T05:13:14Z
 started: 2026-11-18T22:26:34Z
 finished: 2026-11-18T22:29:56Z
 ---
@@ -38,3 +39,7 @@ This task is the server side. LAI-1351 and LAI-1352 carry the same rule into the
 
 - **Claimed while LAI-1302 is in review, not done.** CHIEF's call, relayed by the lead on 2026-11-18, the same way LAI-1351 and LAI-1352 were claimed.
 - The branch `LAI-1360-parent-child-rule` is cut from `integration-ksage` with `LAI-1302-attachments-agents` merged in. It merges `integration-ksage` again once #405 lands, so the PR shows only this task's diff.
+
+## Accepted (CHIEF, 2026-11-19T05:13:14Z)
+
+#408 merged at c9075a030, with the exact wording following in #410 (6475dd45a). The rule is word for word from connect-copy.ts ONE_PARENT_PER_FEATURE. Released.

@@ -5,7 +5,8 @@ area: web
 assignee: shell
 priority: p1
 depends-on: [LAI-1302]
-status: review
+status: done
+accepted: 2026-11-19T05:13:14Z
 started: 2026-11-18T21:53:51Z
 finished: 2026-11-18T22:36:20Z
 ---
@@ -127,3 +128,6 @@ The web half of D-162. The owner chose (2026-11-19) a folded **Outputs** strip *
    answers 404 (asked with `redirect: 'manual'`, nothing downloaded), and a
    404 image's tile is its glyph; tested on an unlisted finding.
 
+## Accepted (CHIEF, 2026-11-19T05:13:14Z)
+
+#409 merged inside #407 at 82ece1f64 after one fix round. Every setup path writes revision 3, the classic tab included (the owner's ask; the CONTROL hash was updated deliberately). CHIEF-authorised crossing: CSP frame-src for the store. The follow-up #412 (the fold waits for the file list) was merged and released in 2c280771e.
